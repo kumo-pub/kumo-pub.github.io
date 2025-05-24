@@ -7,4 +7,4 @@ rm -rf dist dist.tar.gz
 cd website
 yarn install
 yarn build
-mv build  ../dist
+mv build  ../docs
