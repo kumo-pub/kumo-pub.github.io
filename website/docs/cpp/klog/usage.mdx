@@ -1,0 +1,20 @@
+# CMake工程集成`turbo/log`
+
+
+假设 `turbo/log` 之前是[使用 CMake 构建的](build.mdx#cmake) 或使用包管理器安装，可以使用 CMake 命令 `cmake
+find_package` 在 CMake 项目中针对 `turbo/log` 进行构建，如下所示：
+
+``` cmake title="CMakeLists.txt"
+cmake_minimum_required (VERSION 3.16)
+project (myproj VERSION 1.0)
+
+find_package (turbo 0.8.0 REQUIRED)
+
+add_executable (myapp main.cpp)
+target_link_libraries (myapp turbo::turbo_static)
+```
+
+编译的的目标`myapp`会根据需要，自动将klog添加到依赖中。
+
+或者，可以使用 CMake 命令 `cmake` 将 `turbo` 加入到其中`add_subdirectory` 直接包含项目子目录中的 `turbo`
+将上一个代码片段中的 `cmake find_package` 调用替换为`add_subdirectory`。

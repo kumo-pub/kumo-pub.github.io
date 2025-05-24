@@ -1,0 +1,159 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_extract_source_archive
+
+提取存档。
+
+## 使用情况
+
+```cmake
+kmpkg_extract_source_archive(
+    <out-var>
+    ARCHIVE <path>
+    [NO_REMOVE_ONE_LEVEL]
+    [SKIP_PATCH_CHECK]
+    [PATCHES <patch>...]
+    [SOURCE_BASE <base>]
+    [BASE_DIRECTORY <relative-path> | WORKING_DIRECTORY <absolute-path>]
+)
+```
+
+## 参数
+
+### `<out-var>` {#out-var}
+
+要使用包含提取内容的目录设置的变量的名称。
+
+### ARCHIVE
+
+要提取的存档的完整路径。
+
+### NO_REMOVE_ONE_LEVEL
+
+跳过移除存档的顶级目录。
+
+大多数存档包含一个顶级目录，例如：
+
+```
+zlib-1.2.11/
+    doc/
+        ...
+    examples/
+        ...
+    ChangeLog
+    CMakeLists.txt
+    README
+    zlib.h
+    ...
+```
+
+默认情况下，`kmpkg_extract_source_archive` 会移除此目录并将所有内容移动到 `<out-var>` 中返回的目录中。
+如果没有顶级目录，则会出现错误。
+
+使用此标志时，将保留顶级目录，没有顶级目录也不会出现错误。
+
+### SKIP_PATCH_CHECK
+
+应用修补程序时，无提示并忽略错误。
+
+仅当在以不稳定模式（如 `--head`）下运行时，才应传递此选项。 如果源已固定，则无法应用修补程序应被视为致命错误。
+
+### PATCHES
+
+要应用于提取源的修补程序列表。
+
+移除任何顶级目录后，将按顺序应用修补程序（请参阅 [`NO_REMOVE_ONE_LEVEL`](#no_remove_one_level)）。 相对路径解读为相对于当前端口目录。
+
+如果应根据目标信息有条件地应用修补程序，则可以构造一个列表并将其展开。
+
+```cmake
+set(patches "")
+if(KMPKG_TARGET_IS_WINDOWS)
+    list(APPEND patches only-windows.patch)
+endif()
+kmpkg_extract_source_archive(src
+    ARCHIVE "${archive}"
+    PATCHES
+        always-applied.patch
+        ${patches}
+)
+```
+
+### SOURCE_BASE
+
+
+提取目录的易记名称。
+
+不得包含路径分隔符（`/` 或 `\\`）。
+
+有关更多详细信息，请参阅[`WORKING_DIRECTORY`](#working_directory)。
+
+### BASE_DIRECTORY
+
+提取目录的根子文件夹。
+
+默认为 `src`。 必须为相对路径。
+
+有关更多详细信息，请参阅[`WORKING_DIRECTORY`](#working_directory)。
+
+### WORKING_DIRECTORY
+
+提取目录的根文件夹。
+
+默认为 `${CURRENT_BUILDTREES_DIR}/<BASE_DIRECTORY>`。 必须为绝对路径。
+
+`kmpkg_extract_source_archive` 将存档提取到 `<WORKING_DIRECTORY>/<SOURCE_BASE>-<short-hash>.clean` 中。
+如果该文件夹存在，则会在提取之前将其删除。 如果未指定 `SOURCE_BASE`、`BASE_DIRECTORY` 或 `WORKING_DIRECTORY`，
+默认为 `${CURRENT_BUILDTREES_DIR}/src/<archive-stem>-<short-hash>.clean`。
+
+在 [`--editable`](../../commands/install.mdx#editable) 模式下：
+1. 不会将任何 .clean 后缀添加到提取文件夹
+2. 不会删除提取文件夹。 如果存在，kmpkg_extract_source_archive 不执行任何操作。
+
+
+`<short-hash>` 明确标识一组特定的存档和修补文件内容。 调用此函数后对工作目录内容进行的任何修改都应无条件应用，以避免在可编辑模式下出现意外行为。
+
+
+## 示例
+
+```cmake
+kmpkg_download_distfile(
+    archive # "archive" is set to the path to the downloaded file
+    URLS "https://nmap.org/dist/nmap-7.70.tar.bz2"
+    FILENAME "nmap-7.70.tar.bz2"
+    SHA512 084c148b022ff6550e269d976d0077f7932a10e2ef218236fe13aa3a70b4eb6506df03329868fc68cb3ce78e4360b200f5a7a491d3145028fed679ef1c9ecae5
+)
+kmpkg_extract_source_archive(
+    src # "src" is set to the path to the extracted files
+    ARCHIVE "${archive}"
+    SOURCE_BASE nmap.org-nmap-7.70
+    PATCHES
+        0001-disable-werror.patch
+)
+kmpkg_cmake_configure(SOURCE_PATH "${src}")
+```
+
+- [GitHub 搜索](https://gitee.com/kumo-pub/kmpkg/search?q=kmpkg_extract_source_archive+path%3A%2Fports)
+
+## 注解
+
+### 已弃用的语法
+
+此命令还支持已弃用的重载：
+
+```cmake
+kmpkg_extract_source_archive(<archive> [<working_directory>])
+```
+
+如果目标不存在，则已弃用的重载会将 `<archive>` 提取到 `${working_directory}/<archive-filename>.extracted` 中。
+这种不正确的行为会在不同的构建之间泄漏修补程序和其他修改，从而导致难以调试的错误。
+
+已弃用重载的所有使用都应替换为上面用法中的语法，方法是添加显式 ARCHIVE 参数并将对提取路径的直接引用替换为使用 `<out-var>`。
+
+### 替代功能
+
+
+## Source
+
+[scripts/cmake/kmpkg\_extract\_source\_archive.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_extract_source_archive.cmake)

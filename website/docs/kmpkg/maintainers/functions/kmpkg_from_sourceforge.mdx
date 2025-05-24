@@ -1,0 +1,81 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_from_sourceforge
+
+从 SourceForge 的项目中下载并提取存档。
+
+此函数会自动检查一组 SourceForge 镜像。 可通过三联密码中的 `KMPKG_SOURCEFORGE_EXTRA_MIRRORS` 列表变量注入其他镜像。
+
+## 使用情况
+
+```cmake
+kmpkg_from_sourceforge(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO <cunit/CUnit>
+    [REF <2.1-3>]
+    SHA512 <547b417109332...>
+    FILENAME <CUnit-2.1-3.tar.bz2>
+    [NO_REMOVE_ONE_LEVEL]
+    [PATCHES <patch1.patch> <patch2.patch>...]
+)
+```
+
+## 参数
+
+### OUT_SOURCE_PATH
+
+指定将包含提取位置的输出变量。
+
+此项应按约定设置为 `SOURCE_PATH`。
+
+### REPO
+
+SourceForge 上的组织或用户和存储库（可选）。
+
+### REF
+
+不会更改内容的稳定版本号。
+
+### FILENAME
+
+文件的本地名称。 文件在端口之间共享，因此可能需要重命名该文件，使其清楚地归因于此端口并避免发生冲突。
+
+例如，我们可以获取下载链接：`https://sourceforge.net/settings/mirror_choices?projectname=mad&filename=libmad/0.15.1b/libmad-0.15.1b.tar.gz&selected=nchc` ，
+其中 REPO 是 `mad/libmad`，`REF` 是 `0.15.1b`，`FILENAME` 是 `libmad-0.15.1b.tar.gz`
+
+在某些特殊链接中：`https://sourceforge.net/settings/mirror_choices?projectname=soxr&filename=soxr-0.1.3-Source.tar.xz&selected=nchc` ，
+`REPO` 是 `soxr`，`REF` 不存在，而 `FILENAME` 是 `soxr-0.1.3-Source.tar.xz`
+
+### SHA512
+
+应与存档匹配的 SHA512 哈希。
+
+这是最简单的确定方法，即先将其设置为 `0`，然后尝试生成该端口。 错误消息将包含可以复制回端口文件的完整哈希。
+
+### WORKING_DIRECTORY
+
+如果指定，存档将提取到工作目录而不是 `${CURRENT_BUILDTREES_DIR}/src/` 中
+
+仍然会将存储提取到该目录 (`${WORKING_DIRECTORY}/${REF}-${HASH}/`) 下的子文件夹中。
+
+
+### PATCHES
+
+要应用于提取的源代码的修补程序列表。
+
+相对路径基于端口目录。
+
+### NO_REMOVE_ONE_LEVEL
+
+指定不应出现的顶级文件夹的默认移除。
+
+## 示例
+
+- [cunit](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/cunit/portfile.cmake)
+- [polyclipping](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/polyclipping/portfile.cmake)
+- [tinyfiledialogs](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/tinyfiledialogs/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_from\_sourceforge.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_from_sourceforge.cmake)

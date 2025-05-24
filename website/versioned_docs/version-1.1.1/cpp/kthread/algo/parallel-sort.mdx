@@ -1,0 +1,85 @@
+
+# 并行排序
+
+`Taskflow` 提供了模板函数，用于构建任务来并行对一系列项目进行排序。
+
+## 头文件
+
+```cpp
+#include <kthread/algorithm/sort.h>
+```
+
+## 对一系列项目进行排序
+
+`kthread::sort(B first, E last)` 创建的任务执行并行排序，以按升序对 `[first, last)` 指定的元素范围进行排序。给定的迭代器必须
+是随机可访问的。以下示例创建一个任务，以按升序对数据向量进行排序。
+```cpp
+kthread::Taskflow taskflow;
+kthread::Executor executor;
+
+std::vector<int> data = {1, 4, 9, 2, 3, 11, -8};
+
+kthread::Task sort = taskflow.sort(data.begin(), data.end());
+
+executor.run(taskflow).wait();
+
+assert(std::is_sorted(data.begin(), data.end()));
+```
+
+:::warning
+注意
+使用运算符 `<` 来比较元素。
+:::
+
+## 使用自定义比较器对一系列项目进行排序
+
+`kthread::sort(B first, E last, C cmp)` 是并行排序的重载，允许用户指定自定义比较器。以下示例按降序对数据向量进行排序。
+
+```cpp
+kthread::Taskflow taskflow;
+kthread::Executor executor;
+
+std::vector<int> data = {1, 4, 9, 2, 3, 11, -8};
+
+kthread::Task sort = taskflow.sort(data.begin(), data.end(),
+  [](int a, int b) { return a > b; }
+);
+
+executor.run(taskflow).wait();
+
+assert(std::is_sorted(data.begin(), data.end(), std::greater<int>{}));
+```
+:::warning
+注意
+`kthread::sort` 不稳定。也就是说，在排序之前，两个或多个具有相同键的对象可能不会以相同的顺序出现。
+:::
+
+## 启用状态数据传递
+`kthread::sort` 采用的迭代器是模板化的。您可以使用 `std::reference_wrapper` 在 `sort` 任务和其他
+任务之间启用状态数据传递。以下示例创建任务 `init` 来初始化数据向量，并在 `init` 完成后创建任务 `sort` 来并行对数据进行排序。
+
+```cpp
+kthread::Taskflow taskflow;
+kthread::Executor executor;
+
+std::vector<int> data;
+std::vector<int>::iterator first, last;
+
+kthread::Task init = taskflow.emplace([&](){
+  data  = {1, 4, 9, 2, 3, 11, -8};
+  first = data.begin();
+  last  = data.end();
+});
+kthread::Task sort = taskflow.sort(
+  std::ref(first), std::ref(last), [] (int l, int r) { return l < r; }
+);
+init.precede(sort);
+
+executor.run(taskflow).wait();
+
+assert(std::is_sorted(data.begin(), data.end()));
+```
+
+:::info
+更多信息请参见[算法索引](../algo.mdx)
+:::

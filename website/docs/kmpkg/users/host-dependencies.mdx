@@ -1,0 +1,84 @@
+---
+date: 01/10/2024
+---
+# 主机依赖项
+
+其他端口在构建时用来生成代码或实现自定义构建系统的工具可以打包在 kmpkg 内。
+
+## 使用
+
+使用端口作为工具时，必须将依赖项字段 `host` 设置为 true。 例如：
+
+```json
+{
+    "name": "contoso-http-library",
+    "version-string": "1.0.0",
+    "description": "Contoso's http runtime library",
+    "dependencies": [
+        "contoso-core-library",
+        {
+            "name": "contoso-code-generator",
+            "host": true
+        },
+        {
+            "name": "contoso-build-system",
+            "host": true
+        }
+    ]
+}
+```
+
+在这种情况下，将在构建`contoso-http-library`之前为主机三元组构建并安装`contoso-code-generator`和`contoso-build-system`（包括任何传递依赖项）。
+
+:::info
+消费者必须使用`kmpkg.json`而不是`CONTROL`作为元数据格式。您可以使用`kmpkg format-manifest /path/to/CONTROL`轻松转换现有的`CONTROL`文件。
+:::
+
+然后，在使用者的端口文件中（示例中的`contoso-http-library`），CMake 变量`CURRENT_HOST_INSTALLED_DIR`将被定义为`installed/<host-triplet>`，并且应用于查找任何所需的资产。在示例中，`contoso-code-generator`可能已安装`tools/contoso-code-generator/ccg.exe`，使用者可以通过以下方式将其添加到其本地路径：
+
+```cmake
+# ports/contoso-http-library/portfile.cmake
+kmpkg_add_to_path(${CURRENT_HOST_INSTALLED_DIR}/tools/contoso-code-generator)
+```
+
+## 指定主机三元组
+
+默认主机三元组是根据主机架构和操作系统选择的，例如“x64-windows”、“x64-linux”或“x64-osx”。可以通过以下方式覆盖它们：
+
+1. 在基于 CMake 的清单模式下，在第一个 `project()` 指令之前调用 `set(KMPKG_HOST_TRIPLET "<triplet>" CACHE STRING "")`
+2. 在基于 MSBuild 的清单模式下，设置 `KmpkgHostTriplet` 属性
+3. 在命令行上，通过标志 `--host-triplet=...`
+4.`KMPKG_DEFAULT_HOST_TRIPLET`环境变量
+
+## 生产
+
+生产工具没有特殊要求；工具应被编写为标准端口，遵循所有正常的策略和实践。值得注意的是，他们应该在端口文件上下文中针对`TARGET_TRIPLET`而不是`HOST_TRIPLET`进行构建。
+
+如果当前上下文是交叉编译（`TARGET_TRIPLET`不是`HOST_TRIPLET`），则`KMPKG_CROSSCOMPILING`将设置为真值。
+
+```cmake
+if(KMPKG_CROSSCOMPILING)
+    # This is a native build
+else()
+    # This is a cross build
+endif()
+```
+
+## 仅限主机端口
+
+某些端口只能通过主机依赖项来依赖；脚本端口和工具端口是常见的例子。在这种情况下，您可以使用`“native”`
+支持表达式来描述这一点。这支持表达式为真时`KMPKG_CROSSCOMPILING` 为 false（意味着 `TARGET_TRIPLET == HOST_TRIPLET`）。
+
+## KMPKG_USE_HOST_TOOLS
+
+设置此 CMake 选项以将 kmpkg 构建的可执行文件添加到
+[`CMAKE_PROGRAM_PATH`](https://cmake.org/cmake/help/latest/variable/CMAKE_PROGRAM_PATH.html)。
+并使它们在构建过程中可用。
+
+要使此选项生效，必须在调用`project()`之前设置它您的`CMakeLists.txt`文件。还必须设置`KMPKG_HOST_TRIPLET`变量。
+
+仅安装在 [`tools` 文件夹](../reference/installation-tree-layout.mdx#layout-tools) 中的工具
+将主机三元组添加到`CMAKE_PROGRAM_PATH`。实际上，添加了以下位置：
+
+* `${KMPKG_INSTALLED/DIR}/${KMPKG_HOST_TRIPLET}/tools`
+* `${KMPKG_INSTALLED/DIR}/${KMPKG_HOST_TRIPLET}/tools/*/bin`

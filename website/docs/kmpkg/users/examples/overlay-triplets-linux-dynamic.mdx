@@ -1,0 +1,133 @@
+---
+date: 01/10/2024
+---
+# 用例： 为自定义生成配置安装包
+
+学习使用覆盖三元组在 Linux 上构建共享库。
+
+## 在Linux上构建动态库
+
+使用**kmpkg**，您可以为许多开箱即用的配置构建库。但是，目前不包括 Linux 和 Mac OS 上的共享库。
+
+这并不意味着您不能使用 **kmpkg** 在这些平台上构建动态库！本文档将指导您使用“--overlay-triplets”创建自己的自定义三元组，以便在 Linux 上轻松构建动态库。
+
+### 步骤 1：创建自定义三元组文件
+
+为了节省时间，请复制现有的“x64-linux.cmake”三元组文件。
+
+```sh
+~/git$ mkdir custom-triplets
+~/git$ cp kmpkg/triplets/x64-linux.cmake custom-triplets/x64-linux-dynamic.cmake
+```
+
+并修改“custom-triplets/x64-linux-dynamic.cmake”以匹配以下内容：
+
+```cmake
+# ~/git/custom-triplets/x64-linux-dynamic.cmake
+set(KMPKG_TARGET_ARCHITECTURE x64)
+set(KMPKG_CRT_LINKAGE dynamic)
+set(KMPKG_LIBRARY_LINKAGE dynamic) # This changed from static to dynamic
+
+set(KMPKG_CMAKE_SYSTEM_NAME Linux)
+```
+
+### 第2步：使用`--overlay-triplets`构建动态库
+
+使用“--overlay-triplets”选项将三元组包含在“custom-triplets”目录中。
+
+```sh
+~/git$ kmpkg/kmpkg install sqlite3:x64-linux-dynamic --overlay-triplets=custom-triplets
+The following packages will be built and installed:
+    sqlite3[core]:x64-linux-dynamic
+Starting package 1/1: sqlite3:x64-linux-dynamic
+Building package sqlite3[core]:x64-linux-dynamic...
+-- Loading triplet configuration from: /home/victor/git/custom-triplets/x64-linux-dynamic.cmake
+-- Downloading https://sqlite.org/2019/sqlite-amalgamation-3280000.zip...
+-- Extracting source /home/victor/git/kmpkg/downloads/sqlite-amalgamation-3280000.zip
+-- Applying patch fix-arm-uwp.patch
+-- Using source at /home/victor/git/kmpkg/buildtrees/sqlite3/src/3280000-6a3ff7ce92
+-- Configuring x64-linux-dynamic-dbg
+-- Configuring x64-linux-dynamic-rel
+-- Building x64-linux-dynamic-dbg
+-- Building x64-linux-dynamic-rel
+-- Performing post-build validation
+-- Performing post-build validation done
+Building package sqlite3[core]:x64-linux-dynamic... done
+Installing package sqlite3[core]:x64-linux-dynamic...
+Installing package sqlite3[core]:x64-linux-dynamic... done
+Elapsed time for package sqlite3:x64-linux-dynamic: 44.82 s
+
+Total elapsed time: 44.82 s
+
+The package sqlite3:x64-linux-dynamic provides CMake targets:
+
+    find_package(unofficial-sqlite3 CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::sqlite3::sqlite3)
+```
+
+使用“kmpkg install”、“kmpkg update”、“kmpkg Upgrade”和“kmpkg remove”时，覆盖三元组可启用自定义三元组文件。
+
+使用“--overlay-triplets”选项时，类似以下的消息会让您知道正在使用自定义三元组：
+
+```console
+-- Loading triplet configuration from: /home/custom-triplets/x64-linux-dynamic.cmake
+```
+
+## 覆盖默认三元组
+
+您可能已经注意到，Windows 的默认三元组（“x86-windows”和“x64-windows”）安装动态库，而静态库需要后缀（“-static”）。这与 Linux 和 Mac OS 不同，在 Linux 和 Mac OS 中，静态库是由 `x64-linux` 和 `x64-osx` 构建的。
+
+使用 `--overlay-triplets` 可以覆盖默认的三元组以在 Linux 上完成相同的行为：
+
+- `x64-linux`：构建动态库，
+- `x64-linux-static`：构建静态库。
+
+### 第 1 步：创建叠加三元组
+
+使用上一示例中创建的自定义三元组，将`custom-triplets/x64-linux-dynamic.cmake`重命名为`custom-triplets/x64-linux.cmake`。然后，
+将默认的`x64-linux`三元组（用于构建静态库）复制到`custom-triplets`文件夹中，并将其重命名为`x64-linux-static.cmake`。
+
+```sh
+~/git$ mv custom-triplets/x64-linux-dynamic.cmake custom-triplets/x64-linux.cmake
+~/git$ cp kmpkg/triplets/x64-linux.cmake custom-triplets/x64-linux-static.cmake
+```
+
+### 第 2 步：使用 `--overlay-triplets` 覆盖默认三元组
+
+使用“--overlay-triplets”选项将三元组包含在“custom-triplets”目录中。
+
+```console
+~/git$ kmpkg/kmpkg install sqlite3:x64-linux --overlay-triplets=custom-triplets
+The following packages will be built and installed:
+    sqlite3[core]:x64-linux
+Starting package 1/1: sqlite3:x64-linux
+Building package sqlite3[core]:x64-linux...
+-- Loading triplet configuration from: /home/victor/git/custom-triplets/x64-linux.cmake
+-- Downloading https://sqlite.org/2019/sqlite-amalgamation-3280000.zip...
+-- Extracting source /home/victor/git/kmpkg/downloads/sqlite-amalgamation-3280000.zip
+-- Applying patch fix-arm-uwp.patch
+-- Using source at /home/victor/git/kmpkg/buildtrees/sqlite3/src/3280000-6a3ff7ce92
+-- Configuring x64-linux-dbg
+-- Configuring x64-linux-rel
+-- Building x64-linux-dbg
+-- Building x64-linux-rel
+-- Performing post-build validation
+-- Performing post-build validation done
+Building package sqlite3[core]:x64-linux... done
+Installing package sqlite3[core]:x64-linux...
+Installing package sqlite3[core]:x64-linux... done
+Elapsed time for package sqlite3:x64-linux: 44.82 s
+
+Total elapsed time: 44.82 s
+
+The package sqlite3:x64-linux provides CMake targets:
+
+    find_package(unofficial-sqlite3 CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::sqlite3::sqlite3)
+```
+
+默认三元组被您的自定义三元组屏蔽：
+
+```console
+-- Loading triplet configuration from: /home/victor/git/custom-triplets/x64-linux.cmake
+```

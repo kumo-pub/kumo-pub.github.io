@@ -1,0 +1,633 @@
+# kMock 入门版
+
+## 什么是 kMock?
+
+当您编写原型或测试时，通常依赖它是不可行或不明智的完全真实的物体。 **模拟对象**实现与真实对象相同的接口
+对象（因此它可以用作一个对象），但允许您在运行时指定它将如何使用被使用以及它应该做什么（将调用哪些方法？按什么顺序？如何
+很多次？有什么论据？他们会返回什么？ ETC）。
+
+术语“假对象”很容易与模拟对象混淆。假货和模仿品
+实际上，在测试驱动开发 (TDD) 社区中，含义非常不同：
+* **假**对象有有效的实现，但通常会采取一些捷径（也许是为了降低操作成本），这使得它们不适合生产。内存中的文件系统就是一个假的例子。
+* **模拟**是用*期望*预先编程的对象，它形成了它们期望接收的调用的规范。
+
+如果这一切对您来说似乎太抽象，请不要担心 - 要记住的最重要的事情是模拟允许您检查其自身与使用它的代码之间的`交互`。
+一旦你开始使用模拟，假货和模拟之间的区别就会变得更加清晰。
+
+**kMock** 是一个用于创建模拟类并使用它们的库（有时我们也称其为“框架”，以使其听起来很酷）。它对 C++ 的作用就像 jMock/EasyMock 对 Java 的作用（嗯，或多或少）。
+
+使用 kMock 时，
+
+1. 首先，你使用一些简单的宏来描述你想要模拟的接口，它们将扩展到你的模拟类的实现；
+2. 接下来，创建一些模拟对象并使用直观的语法指定其期望和行为；
+3. 然后练习使用模拟对象的代码。一旦出现任何违反期望的情况，kMock 就会发现它。
+
+## 为什么选择 kMock？
+
+虽然模拟对象可以帮助您消除测试中不必要的依赖关系并使其快速可靠，但在 C++ 中手动使用模拟是*困难*：
+
+* 必须有人来实现模拟。这项工作通常很乏味且容易出错。难怪人们会避之不及。
+* 那些手动编写的模拟的质量有点，呃，不可预测。您可能会看到一些非常精美的内容，但您也可能会看到一些被匆忙修改并具有各种临时限制的内容。
+* 您从使用一个模拟中获得的知识不会转移到下一个模拟中。
+
+相比之下，Java 和 Python 程序员有一些优秀的模拟框架（jMock、EasyMock 等），它们可以自动创建模拟。因此，模拟是一种行之有效的技术，并且在这些社区中被广泛采用。拥有正确的工具绝对会带来不同。
+
+kMock 是为了帮助 C++ 程序员而构建的。它受到 jMock 和 EasyMock 的启发，但在设计时考虑了 C++ 的细节。如果以下任何问题困扰您，那就是您的朋友：
+
+* 您陷入了次优设计，希望在为时已晚之前完成更多原型设计，但 C++ 中的原型设计绝不是“快速”的。
+* 您的测试速度很慢，因为它们依赖于太多的库或使用昂贵的资源（例如数据库）。
+* 您的测试很脆弱，因为他们使用的某些资源不可靠（例如网络）。
+* 您想要测试您的代码如何处理故障（例如文件校验和错误），但引起故障并不容易。
+* 你需要确保你的模块以正确的方式与其他模块交互，但交互很难观察到；因此，你只能在行动结束时观察副作用，但这充其量也很尴尬。
+* 您想要“模拟”您的依赖项，但它们还没有模拟实现；而且，坦率地说，你对其中一些手写的模拟并不感到兴奋。
+
+我们鼓励您使用 kMock 作为
+
+* 一个“设计”工具，因为它可以让您尽早且经常地尝试界面设计。更多的迭代带来更好的设计！
+* 一个“测试”工具，用于减少测试的出站依赖性并探测模块与其协作者之间的交互。
+
+## 快速开始 {#getting-started}
+
+kMock 与 ktest 捆绑在一起。
+
+## 一个 `Mock Turtles` 例子 {#a-case-for-mock-turtles}
+
+让我们看一个例子。假设您正在开发一个图形程序依赖于类似 [LOGO](http://en.wikipedia.org/wiki/Logo_programming_language)
+用于绘图的 API。您将如何测试它是否做正确的事情？嗯，你可以
+运行它并将屏幕与黄金屏幕快照进行比较，但让我们承认这一点：
+像这样的测试运行成本昂贵且脆弱（如果您刚刚升级到
+闪亮的新显卡具有更好的抗锯齿功能？突然你必须
+更新您所有的黄金图像。）。如果你所有的测试都是这样的话那就太痛苦了
+像这样。幸运的是，您了解了
+[依赖注入](http://en.wikipedia.org/wiki/Dependency_injection) 并了解正确的事情
+要做的：不要让您的应用程序直接与系统 API 对话，而是包装
+接口中的 API（例如`Turtle`）以及该接口的代码：
+
+```cpp
+class Turtle {
+  ...
+  virtual ~Turtle() {}
+  virtual void PenUp() = 0;
+  virtual void PenDown() = 0;
+  virtual void Forward(int distance) = 0;
+  virtual void Turn(int degrees) = 0;
+  virtual void GoTo(int x, int y) = 0;
+  virtual int GetX() const = 0;
+  virtual int GetY() const = 0;
+};
+```
+
+（请注意，`Turtle` 的析构函数**必须**是虚拟的，就像**所有**您打算继承的类 - 否则是析构函数
+通过基类删除对象时，不会调用派生类指针，并且您将得到损坏的程序状态，例如内存泄漏。）
+
+您可以使用`PenUp()`控制海龟的移动是否留下痕迹
+和`PenDown()`，并使用`Forward()`、`Turn()`和控制其移动
+`GoTo()`。最后，`GetX()`和`GetY()`告诉你当前的位置
+龟。
+
+您的程序通常会使用此接口的实际实现。在测试中，您可以使用模拟实现代替。这使您可以轻松地
+检查您的程序正在调用什么绘图基元，使用什么参数，以及
+按什么顺序。以这种方式编写的测试更加健壮（它们不会破坏
+因为你的新机器的抗锯齿处理方式不同），更容易阅读和
+维护（测试的意图在代码中表达，而不是在某些二进制文件中表达）
+图像），并且运行*快得多*。
+
+## 编写模拟类 {#writing-the-mock-class}
+
+如果幸运的话，您需要使用的模拟已经由
+一些好人。但是，如果您发现自己可以编写模拟
+上课，放松 - kMock 将这个任务变成了一个有趣的游戏！ （嗯，差不多了。）
+
+### 如何定义它
+
+以`Turtle`界面为例，以下是您需要的简单步骤
+跟随：
+
+* 从`Turtle`派生类`MockTurtle`。
+* 采用 `Turtle` 的*虚拟*函数（虽然可以[使用模板模拟非虚拟方法](kmock_cook_book.mdx#MockingNonVirtualMethods)，但涉及的内容要多得多）。
+* 在子类的`public:`部分，写入`MOCK_METHOD();`
+* 现在到了有趣的部分：您获取函数签名，将其剪切并粘贴到宏中，然后添加两个逗号 - 一个在返回类型和名称之间，另一个在名称和参数列表之间。
+* 如果您正在模拟 const 方法，请添加包含`(const)`的第四个参数（括号是必需的）。
+* 由于您要重写虚拟方法，我们建议添加`override`关键字。对于 const 方法，第四个参数变为`(const, override)`，对于非 const 方法只需`(override)`。这不是强制性的。
+* 重复此操作，直到完成所有要模拟的虚拟函数。 （不用说，抽象类中的*所有*纯虚方法都必须被模拟或重写。）
+
+完成该过程后，您应该得到如下内容：
+
+```cpp
+#include "kmock/kmock.h"  // Brings in kMock.
+
+class MockTurtle : public Turtle {
+ public:
+  ...
+  MOCK_METHOD(void, PenUp, (), (override));
+  MOCK_METHOD(void, PenDown, (), (override));
+  MOCK_METHOD(void, Forward, (int distance), (override));
+  MOCK_METHOD(void, Turn, (int degrees), (override));
+  MOCK_METHOD(void, GoTo, (int x, int y), (override));
+  MOCK_METHOD(int, GetX, (), (const, override));
+  MOCK_METHOD(int, GetY, (), (const, override));
+};
+```
+
+您不需要在其他地方定义这些模拟方法 - `MOCK_METHOD`宏将为您生成定义。就这么简单！
+
+### 放在哪里
+
+当您定义模拟类时，您需要决定将其定义放在哪里。有些人把它放在`_test.cc`中。当接口被模拟时这很好
+（例如`Foo`）由同一个人或团队拥有。否则，当所有者
+`Foo` 改变了它，你的测试可能会失败。 （你真的不能指望`Foo`
+维护者修复每个使用“Foo”的测试，可以吗？）
+
+一般来说，您不应该模拟不属于您的类。如果你必须嘲笑这样一个别人拥有的类，在 `Foo` 的 Bazel 包中定义模拟类（通常同一目录或`testing`子目录），并将其放在“.h”和
+`cc_library` 与 `testonly=True`。然后每个人都可以从他们的测试。如果 `Foo` 发生变化，则只有一个 `MockFoo` 副本需要更改，并且
+仅需要修复依赖于已更改方法的测试。
+
+另一种方法是：你可以在上面引入一个薄层`FooAdaptor` `Foo` 和这个新界面的代码。既然你拥有`FooAdaptor`，你就可以吸收
+改变 `Foo` 变得更加容易。虽然这最初是更多的工作，但要小心选择适配器接口可以让你的代码更容易编写并且更多
+可读（从长远来看是净胜），因为您可以选择`FooAdaptor`来适合您的特定域比`Foo`好得多。
+
+
+## 在测试中使用模拟 {#using-mocks-in-tests}
+
+一旦有了模拟类，使用它就很容易了。典型的工作流程是：
+
+1. 从 `testing` 命名空间导入 kMock 名称，以便您可以使用他们不合格（每个文件只需要做一次）。请记住命名空间是个好主意。
+2. 创建一些模拟对象。
+3. 指定您对它们的期望（一个方法会被调用多少次？有何论据？它应该做什么？ ETC。）。
+4. 练习一些使用模拟的代码；可选地，使用检查结果ktest断言。如果调用模拟方法的次数超出预期或使用错误的参数，你会立即得到一个错误。
+5. 当mock被破坏时，kMock会自动检查是否所有对其的期望得到了满足。
+
+这是一个例子：
+
+```cpp
+#include "path/to/mock-turtle.h"
+#include "kmock/kmock.h"
+#include "ktest/ktest.h"
+
+using ::testing::AtLeast;                         // #1
+
+TEST(PainterTest, CanDrawSomething) {
+  MockTurtle turtle;                              // #2
+  EXPECT_CALL(turtle, PenDown())                  // #3
+      .Times(AtLeast(1));
+
+  Painter painter(&turtle);                       // #4
+
+  EXPECT_TRUE(painter.DrawCircle(0, 0, 10));      // #5
+}
+```
+
+正如您可能已经猜到的，此测试检查至少调用了 `PenDown()`
+一次。如果`painter`对象没有调用此方法，您的测试将失败并显示
+像这样的消息：
+
+```text
+path/to/my_test.cc:119: Failure
+Actual function call count doesn't match this expectation:
+Actually: never called;
+Expected: called at least once.
+Stack trace:
+...
+```
+
+**提示 1：** 如果您从 Emacs 缓冲区运行测试，则可以按`<Enter>`
+直接跳转到失败的期望的行号。
+
+**提示2：** 如果你的模拟对象从未被删除，最终验证将不会发生。因此，在测试中打开堆检查器是个好主意
+当您在堆上分配模拟时。如果您使用`ktest_main` 库已经存在。
+
+**重要提示：** kMock 需要在模拟之前**设置期望值
+函数被调用，否则行为是**未定义**。不交替
+在调用`EXPECT_CALL()`和调用模拟函数之间，并且不要设置
+将模拟传递给 API 后对模拟的任何期望。
+
+这意味着`EXPECT_CALL()`应该被理解为期望发生呼叫
+*在将来*，而不是已经发生了呼叫。为什么 kMock 会这样工作？
+好吧，事先指定期望可以让 kMock 报告违规行为
+一旦它上升，当上下文（堆栈跟踪等）仍然可用时。
+这使得调试变得更加容易。
+
+诚然，这个测试是人为的，并没有多大作用。你可以轻松实现
+不使用 kMock 也能达到同样的效果。然而，我们很快就会透露，kMock
+允许你用模拟做“更多”。
+
+## 设定期望 {#setting-expectations}
+
+成功使用模拟对象的关键是设置*正确的期望*在它上面。如果您将期望设置得太严格，您的测试将会失败
+不相关的变化。如果你把它们设置得太松，错误就会溜走。你想要做得恰到好处，这样你的测试就能准确地捕捉到你想要的错误类型
+打算让它抓住。 kMock 为您提供了必要的手段来做到这一点“只是
+正确的。”
+
+### 通用语法
+
+在 kMock 中，我们使用“EXPECT_CALL()”宏来设置模拟的期望方法。一般语法是：
+
+```cpp
+EXPECT_CALL(mock_object, method(matchers))
+    .Times(cardinality)
+    .WillOnce(action)
+    .WillRepeatedly(action);
+```
+
+该宏有两个参数：第一个是模拟对象，然后是方法及其方法
+论据。请注意，两者之间用逗号 (`,`) 分隔，而不是句点 (`.`)。
+（为什么使用逗号？答案是出于技术原因这是必要的。）
+如果方法没有重载，也可以在没有匹配器的情况下调用宏：
+```cpp
+EXPECT_CALL(mock_object, non-overloaded-method)
+    .Times(cardinality)
+    .WillOnce(action)
+    .WillRepeatedly(action);
+```
+
+此语法允许测试编写者指定“使用任何参数调用”
+没有明确指定参数的数量或类型。为了避免
+意外的歧义，此语法只能用于不
+超载。
+
+任一形式的宏后面都可以跟一些可选的*子句*，提供
+有关期望的更多信息。我们将讨论每个子句如何工作
+接下来的部分。
+
+此语法旨在使期望读起来像英语。例如，
+你可能会猜到
+
+```cpp
+using ::testing::Return;
+...
+EXPECT_CALL(turtle, GetX())
+    .Times(5)
+    .WillOnce(Return(100))
+    .WillOnce(Return(150))
+    .WillRepeatedly(Return(200));
+```
+
+表示“turtle”对象的“GetX()”方法将被调用五次，它
+第一次返回100，第二次返回150，然后每次返回200。
+有些人喜欢将这种语法风格称为领域特定语言（DSL）。
+
+:::warning
+**注意：** 为什么我们使用宏来做到这一点？那么它有两个目的：第一
+它使期望很容易识别（通过“grep”或人类
+reader），其次它允许 kMock 包含 a 的源文件位置
+消息中的预期失败，使调试更容易。
+:::
+
+### 匹配者：我们期望什么参数？ {#matchers-what-arguments-do-we-expect}
+
+当模拟函数接受参数时，我们可以指定我们是什么参数
+期待，例如：
+
+```cpp
+// Expects the turtle to move forward by 100 units.
+EXPECT_CALL(turtle, Forward(100));
+```
+
+通常您不想太具体。记住谈论测试
+太僵化？超过规格会导致脆弱的测试并掩盖
+测试的意图。因此，我们鼓励您仅指定必要的内容 - 不
+更多，不少。如果您对参数的值不感兴趣，请写“_”
+作为参数，这意味着“一切都会发生”：
+
+```cpp
+using ::testing::_;
+...
+// Expects that the turtle jumps to somewhere on the x=50 line.
+EXPECT_CALL(turtle, GoTo(50, _));
+```
+
+`_` is an instance of what we call **matchers**. A matcher is like a predicate
+and can test whether an argument is what we'd expect. You can use a matcher
+inside `EXPECT_CALL()` wherever a function argument is expected. `_` is a
+convenient way of saying "any value".
+
+In the above examples, `100` and `50` are also matchers; implicitly, they are
+the same as `Eq(100)` and `Eq(50)`, which specify that the argument must be
+equal (using `operator==`) to the matcher argument. There are many
+[built-in matchers](reference/matchers.mdx) for common types (as well as
+[custom matchers](kmock_cook_book.mdx#NewMatchers)); for example:
+
+```cpp
+using ::testing::Ge;
+...
+// Expects the turtle moves forward by at least 100.
+EXPECT_CALL(turtle, Forward(Ge(100)));
+```
+
+如果您不关心*任何*参数，则不要为每个参数指定`_`
+您可以省略参数列表：
+
+```cpp
+// Expects the turtle to move forward.
+EXPECT_CALL(turtle, Forward);
+// Expects the turtle to jump somewhere.
+EXPECT_CALL(turtle, GoTo);
+```
+
+这适用于所有非重载方法；如果一个方法被重载，你需要
+通过指定数量来帮助 kMock 解决预期的重载
+论据，也可能是
+[参数类型](kmock_cook_book.mdx#SelectOverload)。
+
+### 基数：会被调用多少次？
+
+我们可以在`EXPECT_CALL()`之后指定的第一个子句是`Times()`。我们
+将其参数称为`基数`，因为它告诉“调用应该进行多少次”
+发生。它允许我们多次重复一个期望，而无需实际编写
+如此多次。更重要的是，基数可以是“模糊的”，就像
+匹配器就可以。这允许用户准确地表达测试的意图。
+
+一个有趣的特殊情况是当我们说`Times(0)`时。你可能已经猜到了——它
+意味着根本不应该使用给定的参数调用该函数，并且
+每当函数（错误地）出现时，kMock 就会报告 ktest 失败
+叫。
+
+我们之前已经将`AtLeast(n)`视为模糊基数的示例。对于
+您可以使用的内置基数列表，请参阅
+[此处](kmock_cheat_sheet.mdx#CardinalityList)。
+
+`Times()` 子句可以省略。 **如果省略 `Times()`，kMock 将推断
+适合您的基数。** 规则很容易记住：
+
+* 如果 **既没有** `WillOnce()` **也没有** ** `WillRepeatedly()` 不在
+`EXPECT_CALL()`，推断的基数是 `Times(1)`。
+* 如果有 *n* 个 `WillOnce()` 但 **没有** `WillRepeatedly()`，其中 *n* >=
+1、基数为“Times(n)”。
+* 如果有 *n* 个 `WillOnce()` 和 **一个 ​​* `WillRepeatedly()`，其中 *n* >=
+0，基数为“Times(AtLeast(n))”。
+
+**快速测验：**如果一个函数预计会发生，你认为会发生什么
+打了两次电话但实际上打了四次？
+
+### actions：应该做什么？ {#actions-what-should-it-do}
+
+还记得模拟对象实际上没有有效的实现吗？我们作为
+用户必须告诉它在调用方法时要做什么。这很容易在
+kMock。
+
+首先，如果mock函数的返回类型是内置类型或者指针，
+该函数有一个**默认操作**（“void”函数将仅返回，
+`bool` 函数将返回 `false`，其他函数将返回 0)。在
+另外，在C++ 11及以上版本中，模拟函数的返回类型为
+默认可构造（即具有默认构造函数）的默认操作为
+返回默认构造的值。如果你什么也不说，这种行为
+将被使用。
+
+其次，如果模拟函数没有默认操作，或者默认操作
+不适合您，您可以指定每次执行时要采取的操作
+期望匹配使用一系列`WillOnce()`子句，后跟
+可选的`WillRepeatedly()`。例如，
+
+```cpp
+using ::testing::Return;
+...
+EXPECT_CALL(turtle, GetX())
+     .WillOnce(Return(100))
+     .WillOnce(Return(200))
+     .WillOnce(Return(300));
+```
+
+表示 `turtle.GetX()` 将被调用*恰好三次*（kMock 推断
+这是我们写了多少个`WillOnce()`子句，因为我们没有
+显式编写 `Times()`)，将分别返回 100、200 和 300。
+
+```cpp
+using ::testing::Return;
+...
+EXPECT_CALL(turtle, GetY())
+     .WillOnce(Return(100))
+     .WillOnce(Return(200))
+     .WillRepeatedly(Return(300));
+```
+
+表示 `turtle.GetY()` 将被调用*至少两次*（kMock 知道这是
+我们编写了两个`WillOnce()`子句和一个`WillRepeatedly()`，但没有
+显式的 `Times()`)，前两次将分别返回 100 和 200，
+第三次起300。
+
+当然，如果你显式地写了一个 `Times()`，kMock 将不会尝试推断
+基数本身。如果您指定的数字大于实际数量怎么办
+`WillOnce()` 子句？好吧，当所有`WillOnce()`都用完之后，kMock就可以了
+每次该函数的*默认*操作（当然，除非您有一个
+`WillRepeatedly()`。）。
+
+除了`Return()`之外，我们还能在`WillOnce()`中做什么？您可以返回一个
+使用 ReturnRef(`*`variable`*`)` 进行引用，或调用预定义函数，
+[其他](kmock_cook_book.mdx#using-actions)。
+
+**重要提示：** `EXPECT_CALL()` 语句评估操作子句
+即使该操作可能执行多次，也只能执行一次。因此你
+一定要小心副作用。以下可能不会达到您想要的效果：
+
+```cpp
+using ::testing::Return;
+...
+int n = 100;
+EXPECT_CALL(turtle, GetX())
+    .Times(4)
+    .WillRepeatedly(Return(n++));
+```
+
+这个模拟函数不会连续返回 100, 101, 102, ...
+始终返回 100，因为“n++”仅计算一次。类似地，`Return(new Foo)`
+当执行“EXPECT_CALL()”时，将创建一个新的“Foo”对象，并且将
+每次都返回相同的指针。如果你希望副作用每次都发生
+有时，您需要定义一个自定义操作，我们将在
+[烹饪书](kmock_cook_book.mdx)。
+
+是时候进行另一次测验了！你认为下面这句话意味着什么？
+
+```cpp
+using ::testing::Return;
+...
+EXPECT_CALL(turtle, GetY())
+    .Times(4)
+    .WillOnce(Return(100));
+```
+
+显然 `turtle.GetY()` 预计会被调用四次。但如果你认为
+每次都会返回100，请三思！请记住一个“WillOnce()”
+每次调用函数时都会使用子句，并且默认操作
+之后将被采取。所以正确的答案是 `turtle.GetY()` 将
+第一次返回 100，但**第二次返回 0**，如
+返回 0 是`int`函数的默认操作。
+
+### 使用多重期望 {#MultiExpectations}
+
+到目前为止，我们仅展示了您有单一期望的示例。更多的
+实际上，您将指定对多个模拟方法的期望，这些方法可能是
+来自多个模拟对象。
+
+默认情况下，当调用mock方法时，kMock将在以下位置搜索期望：
+它们被定义的**相反的顺序**，并且当一个积极的期望时停止
+找到匹配的参数（您可以将其视为“较新的规则覆盖
+较旧的。”）。如果匹配的期望无法再接听更多电话，您将
+发生违反上限的故障。这是一个例子：
+
+```cpp
+using ::testing::_;
+...
+EXPECT_CALL(turtle, Forward(_));  // #1
+EXPECT_CALL(turtle, Forward(10))  // #2
+    .Times(2);
+```
+
+如果连续调用三次“Forward(10)”，则第三次将是
+错误，因为最后一个匹配期望 (#2) 已饱和。然而，如果
+将第三个 `Forward(10)` 调用替换为 `Forward(20)` 就可以了，
+现在 #1 将是匹配的期望。
+
+:::info
+**注意：** 为什么 kMock 会以 *reverse* 顺序搜索匹配项
+期望？原因是这允许用户设置默认值
+模拟对象的构造函数或测试装置的设置阶段中的期望
+然后通过在测试中编写更具体的期望来自定义模拟
+身体。因此，如果您对同一个方法有两个期望，则需要将
+一个具有更具体的匹配器**在**另一个之后，或更具体的规则
+将会被其后更普遍的一个所掩盖。
+:::
+
+:::info
+**提示：** 从对方法的包罗万象的期望开始是很常见的
+和 `Times(AnyNumber())` （省略参数，或者对所有参数使用 `_`，如果
+超载）。这使得对方法的任何调用都符合预期。这是没有必要的
+对于根本没有提到的方法（这些是“无趣的”），但是
+对于有一些期望但其他调用是针对的方法很有用
+好的。看
+[了解无趣与意外的呼叫](kmock_cook_book.mdx#uninteresting-vs-unexpected)。
+:::
+
+### 有序调用与无序调用 {#OrderedCalls}
+
+默认情况下，即使较早的期望，期望也可以与调用匹配
+还没有得到满足。换句话说，调用不必发生在
+顺序指定期望。
+
+有时，您可能希望所有预期的调用都按严格的顺序发生。到
+在 kMock 中说这个很简单：
+
+```cpp
+using ::testing::InSequence;
+...
+TEST(FooTest, DrawsLineSegment) {
+  ...
+  {
+    InSequence seq;
+
+    EXPECT_CALL(turtle, PenDown());
+    EXPECT_CALL(turtle, Forward(100));
+    EXPECT_CALL(turtle, PenUp());
+  }
+  Foo();
+}
+```
+
+通过创建`InSequence`类型的对象，其范围内的所有期望都是
+放入*序列*并且必须*顺序*发生。既然我们只是
+依靠该对象的构造函数和析构函数来完成实际工作，
+它的名字确实无关紧要。
+
+在这个例子中，我们测试 `Foo()` 调用了
+订单如所写。如果调用无序，则会出现错误。
+
+（如果您关心某些调用的相对顺序，而不是所有调用的相对顺序，该怎么办？
+他们？你能指定任意的偏序吗？答案是……是的！这
+详细信息可以在[此处](kmock_cook_book.mdx#OrderedCalls)找到。）
+
+### 所有期望都是粘性的（除非另有说明） {#StickyExpectations}
+
+现在让我们做一个快速测验，看看您对这个模拟东西的使用情况如何。
+你如何测试乌龟是否被要求去原点*恰好两次*
+（您想忽略它收到的任何其他指令）？
+
+得出答案后，请查看我们的答案并交换意见
+（先自己解决——不要作弊！）：
+```cpp
+using ::testing::_;
+using ::testing::AnyNumber;
+...
+EXPECT_CALL(turtle, GoTo(_, _))  // #1
+     .Times(AnyNumber());
+EXPECT_CALL(turtle, GoTo(0, 0))  // #2
+     .Times(2);
+```
+
+假设“turtle.GoTo(0, 0)”被调用了三次。第三次，kMock 将
+看到参数与期望 #2 匹配（记住我们总是选择
+最后匹配的期望）。现在，既然我们说过应该只有两个
+这样的调用，kMock会立即报错。这基本上就是我们所拥有的
+在上面的[使用多重期望](#MultiExpectations) 部分告诉过您。
+
+此示例表明，**kMock 中的期望默认情况下是“粘性的”**，在
+即使我们已经调用了它们，它们仍然保持活跃的感觉
+上限。这是一条需要记住的重要规则，因为它会影响含义
+规范的，并且与许多其他模拟中的完成方式**不同**
+框架（我们为什么这样做？因为我们认为我们的规则使常见情况成为可能
+更容易表达和理解。）。
+
+简单的？让我们看看你是否真正理解了：下面的代码做了什么
+说？
+
+```cpp
+using ::testing::Return;
+...
+for (int i = n; i > 0; i--) {
+  EXPECT_CALL(turtle, GetX())
+      .WillOnce(Return(10*i));
+}
+```
+
+如果你认为它说“turtle.GetX()”将被调用“n”次并且将
+连续返回 10, 20, 30, ...，三思而后行！问题是，当我们
+说，期望是粘性的。因此，第二次调用 `turtle.GetX()` 时，
+最后一个（最新的）“EXPECT_CALL()”语句将匹配，并且将立即
+导致“违反上限”错误 - 这段代码不是很有用！
+
+`turtle.GetX()` 将返回 10, 20, 30, ... 的一种正确说法是
+明确地说期望是“不”粘性的。换句话说，他们
+一旦饱和就应该“退休”：
+
+```cpp
+using ::testing::Return;
+...
+for (int i = n; i > 0; i--) {
+  EXPECT_CALL(turtle, GetX())
+      .WillOnce(Return(10*i))
+      .RetiresOnSaturation();
+}
+```
+
+而且，有一个更好的方法来做到这一点：在这种情况下，我们期望发生调用
+按照特定的顺序，然后我们将操作排列起来以匹配该顺序。自从
+顺序在这里很重要，我们应该使用序列来明确它：
+
+```cpp
+using ::testing::InSequence;
+using ::testing::Return;
+...
+{
+  InSequence s;
+
+  for (int i = 1; i <= n; i++) {
+    EXPECT_CALL(turtle, GetX())
+        .WillOnce(Return(10*i))
+        .RetiresOnSaturation();
+  }
+}
+```
+
+顺便说一句，期望可能“不”具有粘性的另一种情况是
+它是按顺序排列的 - 只要在它之后出现另一个期望
+序列已被使用，它会自动退休（并且永远不会被用来
+匹配任何呼叫）。
+
+### 无用的`call` {#uninteresting-calls}
+
+模拟对象可能有很多方法，但并不是所有方法都那么有趣。
+例如，在某些测试中我们可能不关心“GetX()”和
+`GetY()` 被调用。
+
+在kMock中，如果你对某个方法不感兴趣，就不要说什么
+它。如果调用此方法，您将在测试输出中看到警告，
+但这不会是失败的。这就是所谓的“唠叨”行为。要改变，请参阅
+[友善、严格和唠叨](kmock_cook_book.mdx#NiceStrictNaggy)。

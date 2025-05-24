@@ -1,0 +1,378 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 对话式搜索 (RAG)
+
+kumosearch 能够通过对话式响应来回答自由形式的问题，并为后续问题和答案保留上下文。
+
+可以将此功能视为类似 ChatGPT 的问答界面，但使用您在 kumosearch 中索引的数据。
+
+kumosearch 使用检索增强生成(RAG) 技术来实现这种对话式搜索。kumosearch 本身无需构建独立的 RAG 管道，而是使用其 [向量搜索](./vector-search.mdx) 进行 [语义搜索](../../kmsearch/semantic-search.mdx) ，并与 LLM 大语言模型集成，用于生成对话响应。
+
+## 创建对话模型
+
+让我们首先创建一个对话模型资源，该资源将保存模型名称和参数。kumosearch 目前支持 OpenAI、Cloudflare 和 vLLM 托管的大语言模型。
+
+<Tabs>
+
+<TabItem value="OpenAI" label="OpenAI" default>
+
+```shell
+curl 'http://localhost:8868/conversations/models' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "model_name": "openai/gpt-3.5-turbo",
+        "api_key": "OPENAI_API_KEY",
+        "system_prompt": "You are an assistant for question-answering. You can only make conversations based on the provided context. If a response cannot be formed strictly using the provided context, politely say you don’t have knowledge about that topic."
+        "max_bytes": 16384
+      }'
+```
+
+</TabItem>
+
+    <TabItem value="Cloudflare" label="Cloudflare" default>
+
+```shell
+curl 'http://localhost:8868/conversations/models' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "model_name": "cf/mistral/mistral-7b-instruct-v0.1",
+        "api_key": "CLOUDFLARE_API_KEY",
+        "account_id": "CLOUDFLARE_ACCOUNT_ID",
+        "system_prompt": "You are an assistant for question-answering. You can only make conversations based on the provided context. If a response cannot be formed strictly using the provided context, politely say you don’t have knowledge about that topic."
+        "max_bytes": 16384
+      }'
+```
+
+    </TabItem>
+
+    <TabItem value="vLLM" label="vLLM" default>
+
+```shell
+curl 'http://localhost:8868/conversations/models' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "model_name": "vllm/NousResearch/Meta-Llama-3-8B-Instruct",
+        "vllm_url": "http://localhost:8000",
+        "system_prompt": "You are an assistant for question-answering. You can only make conversations based on the provided context. If a response cannot be formed strictly using the provided context, politely say you don’t have knowledge about that topic."
+        "max_bytes": 16384
+      }'
+```
+
+    </TabItem>
+</Tabs>
+
+#### 参数
+
+| 参数            | 描述                                                  |
+|---------------|-----------------------------------------------------|
+| model_name    | OpenAI、Cloudflare 或 vLLM 提供的 LLM 模型名称               |
+| api_key       | LLM 服务的 API 密钥                                      |
+| account_id    | LLM 服务的账户 ID（仅适用于 Cloudflare）                       |
+| system_prompt | 包含 LLM 特殊说明的系统提示符                                   |
+| max_bytes     | 每次 API 调用中发送到 LLM 的最大字节数    |
+| vllm_url      | vLLM 服务的 URL                                        |
+
+**响应：**
+
+这将返回带有自动生成的对话模型 ID，我们可以在后续的搜索查询中使用该 ID。
+
+```json
+{
+  "api_key": "sk-7K**********************************************",
+  "id": "5a11318f-e31b-4144-81b3-b302a86571d3",
+  "max_bytes": 16384,
+  "model_name": "openai/gpt-3.5-turbo",
+  "system_prompt": "You are an assistant for question-answering. You can only make conversations based on the provided context. If a response cannot be formed strictly using the provided context, politely say you don’t have knowledge about that topic."
+}
+```
+
+## 开始对话
+
+创建对话模型后，我们可以使用 [search](./federated-multi-search.mdx) 端点和以下 `search` 参数开始对话：
+
+- `conversation = true`
+- `conversation_model_id = X`
+- `q = <Any conversational question>`
+- `query_by = <an auto-embedding field>`
+
+其中 `X` 是上面步骤中 kumosearch 返回的自动生成的对话模型 ID，`query_by` 是一个 [自动嵌入字段](./vector-search.mdx#opion-b-embedding)。
+
+这是一个示例，在 q 参数中提出问题 `can you suggest an action series`，使用我们在 kumosearch 中名为 `tv_shows` 的索引表中索引的数据。
+
+```shell
+curl 'http://localhost:8868/multi_search?q=can+you+suggest+an+action+series&conversation=true&conversation_model_id=5a11318f-e31b-4144-81b3-b302a86571d3' \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+              "searches": [
+                {
+                  "collection": "tv_shows",
+                  "query_by": "embedding",
+                  "exclude_fields": "embedding"
+                }
+              ]
+            }'
+```
+
+**响应：**
+
+kumosearch 将在搜索 API 响应中返回一个名为 `conversation` 的新字段。
+
+`conversation.answer` 键的内容将作为对用户问题的答复。
+
+```json
+{
+  "conversation": {
+    "answer": "I would suggest \"Starship Salvage\", a sci-fi action series set in a post-war galaxy where a crew of salvagers faces dangers and ethical dilemmas while trying to rebuild.",
+    "conversation_history": {
+      "conversation": [
+        {
+          "user": "can you suggest an action series"
+        },
+        {
+          "assistant": "I would suggest \"Starship Salvage\", a sci-fi action series set in a post-war galaxy where a crew of salvagers faces dangers and ethical dilemmas while trying to rebuild."
+        }
+      ],
+      "id": "771aa307-b445-4987-b100-090c00a13f1b",
+      "last_updated": 1694962465,
+      "ttl": 86400
+    },
+    "conversation_id": "771aa307-b445-4987-b100-090c00a13f1b",
+    "query": "can you suggest an action series"
+  },
+  "results": [
+    {
+      "facet_counts": [],
+      "found": 10,
+      "hits": [
+        ...
+      ],
+      "out_of": 47,
+      "page": 1,
+      "request_params": {
+        "collection_name": "tv_shows",
+        "per_page": 10,
+        "q": "can you suggest an action series"
+      },
+      "search_cutoff": false,
+      "search_time_ms": 3908
+    }
+  ]
+}
+```
+
+:::tip 排除对话历史记录
+您可以通过将 `exclude_fields：conversation_history` 设置为搜索参数，从搜索 API 响应中排除对话历史记录。
+:::
+
+:::tip 多重搜索
+将 `multi_search` 端点与对话功能一起使用时，必须将 `q` 参数设置为查询参数，而不是在特定搜索中的正文参数。
+
+您可以在 `multi_search` 端点中搜索多个索引表，kumosearch 在与 LLM 通信时将使用每个索引表中的最前面结果。
+:::
+
+:::tip 自动嵌入模型
+根据我们的经验，专门用于问答用例的模型（例如 `ts/all-MiniLM-L12-v2`S-BERT 模型）在对话中表现较好。您还可以使用 OpenAI 的文本嵌入模型。
+:::
+
+## 后续对话
+
+我们可以使用 kumosearch 返回的 `conversation_id` 参数继续之前的对话并提出后续问题。
+
+继续上面的示例，让我们在 `q` 参数中提出后续问题 - `how about another one`：
+
+```shell
+curl 'http://localhost:8868/multi_search?q=how+about+another+one&conversation=true&conversation_model_id=5a11318f-e31b-4144-81b3-b302a86571d3&conversation_id=771aa307-b445-4987-b100-090c00a13f1b' \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+              "searches": [
+                {
+                  "collection": "tv_shows",
+                  "query_by": "embedding",
+                  "exclude_fields": "embedding"
+                }
+              ]
+            }'
+```
+
+请注意上面添加了 `conversation_id` 作为查询参数。此参数使 kumosearch 在与 LLM 通信时包含先前的上下文。
+
+**响应：**
+
+```json
+{
+  "conversation": {
+    "answer": "Sure! How about \"Galactic Quest\"? It could follow a group of intergalactic adventurers as they travel through different planets and encounter various challenges and mysteries along the way.",
+    "conversation_history": {
+      "conversation": [
+        {
+          "user": "can you suggest an action series"
+        },
+        {
+          "assistant": "I would suggest \"Starship Salvage\", a sci-fi action series set in a post-war galaxy where a crew of salvagers faces dangers and ethical dilemmas while trying to rebuild."
+        },
+        {
+          "user": "how about another one"
+        },
+        {
+          "assistant": "Sure! How about \"Galactic Quest\"? It follows a group of intergalactic adventurers as they travel through different planets and encounter various challenges and mysteries along the way."
+        }
+      ],
+      "id": "771aa307-b445-4987-b100-090c00a13f1b",
+      "last_updated": 1694963173,
+      "ttl": 86400
+    },
+    "conversation_id": "771aa307-b445-4987-b100-090c00a13f1b",
+    "query": "how about another one"
+  },
+  "results": [
+    {
+      "facet_counts": [],
+      "found": 10,
+      "hits": [
+        ...
+      ],
+      "out_of": 47,
+      "page": 1,
+      "request_params": {
+        "collection_name": "tv_shows",
+        "per_page": 10,
+        "q": "how about another one"
+      },
+      "search_cutoff": false,
+      "search_time_ms": 3477
+    }
+  ]
+}
+```
+
+在后台，对于每个后续对话，kumosearch 都会对 LLM 进行 API 调用，以生成一个独立的问题，使用以下提示从对话历史记录中捕获所有相关上下文：
+
+```markdown
+Rewrite the follow-up question on top of a human-assistant conversation history as a standalone question that encompasses all pertinent context.
+
+<Conversation history>
+{actual conversation history without system prompts}
+
+<Question>
+{follow up question}
+
+<Standalone Question>
+```
+
+生成的独立问题将用于索引表内的语义/混合搜索，然后结果将搜索结果作为上下文转发给大语言模型（LLM）以生成答案。
+
+:::tip 上下文窗口限制
+虽然我们在 kumosearch 中保留了整个对话历史记录，但由于上下文限制，只会发送对话历史记录中最近的 3000 个token（大约 1200 个字符）来生成独立问题。
+
+与对话历史记录类似，只有最前面的搜索结果（限制为 3000 个token）会与独立问题一起发送。
+:::
+
+## 管理历史对话
+
+kumosearch 会存储所有问题和答案以及 `conversation_id` 参数 24 小时，以支持后续跟进。
+
+对话历史记录不与特定的索引表绑定，这使得它们具有多功能性并且可以随时与不同的索引表兼容。
+
+可以使用以下端点管理对话历史记录。
+
+### 获取所有对话
+
+```bash
+curl 'http://localhost:8868/conversations' \
+  -X GET \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+### 获取单个对话
+
+```bash
+curl 'http://localhost:8868/conversations/771aa307-b445-4987-b100-090c00a13f1b' \
+  -X GET \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+### 更新对话的有效期 (TTL)
+
+对话默认存储 24 小时，然后清除。
+
+要在不同的时间范围内过期对话，您可以设置如下 TTL：
+
+```bash
+curl 'http://localhost:8868/conversations/771aa307-b445-4987-b100-090c00a13f1b' \
+  -X PUT \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "ttl": 3600
+      }'
+```
+
+### 删除对话
+
+```bash
+curl 'http://localhost:8868/conversations/771aa307-b445-4987-b100-090c00a13f1b' \
+  -X DELETE \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+## 管理对话模型
+
+### 检索所有模型
+
+```shell
+curl 'http://localhost:8868/conversations/models' \
+  -X GET \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+### 检索单个模型
+
+```shell
+curl 'http://localhost:8868/conversations/models/5a11318f-e31b-4144-81b3-b302a86571d3' \
+  -X GET \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+### 更新模型
+
+```shell
+curl 'http://localhost:8868/conversations/models/5a11318f-e31b-4144-81b3-b302a86571d3' \
+  -X PUT \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "system_prompt": "You are an assistant for question-answering. You can only make conversations based on the provided context. If a response cannot be formed strictly using the provided context, politely say you don’t have knowledge about that topic. Be very concise in your answers."
+      }'
+```
+
+### 删除模型
+
+```shell
+curl 'http://localhost:8868/conversations/models/5a11318f-e31b-4144-81b3-b302a86571d3' \
+  -X DELETE \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```

@@ -1,0 +1,31 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_extract_archive
+
+提取存档。
+
+存档可以是 `MSI`、`7zip` 自解压缩可执行文件，也可以是 `CMake` 内置 `tar` 接受的任何存档格式。
+
+## 使用情况
+
+```cmake
+kmpkg_extract_archive(
+    ARCHIVE <path>
+    DESTINATION <path>
+)
+```
+
+## 参数
+
+### ARCHIVE
+
+要提取的存档的完整路径。
+
+### DESTINATION
+
+将不存在路径的完整路径创建为目录，并将 `ARCHIVE` 的内容提取到该目录中。
+
+## Source
+
+[scripts/cmake/kmpkg\_extract\_archive.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_extract_archive.cmake)

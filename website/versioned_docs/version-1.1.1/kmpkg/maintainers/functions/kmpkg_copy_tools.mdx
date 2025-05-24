@@ -1,0 +1,47 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_copy_tools
+
+将工具及其所有 DLL 依赖项都复制到 `tools` 文件夹中。
+
+## 使用情况
+
+```cmake
+kmpkg_copy_tools(
+    TOOL_NAMES <tool1>...
+    [SEARCH_DIR <${CURRENT_PACKAGES_DIR}/bin>]
+    [DESTINATION <${CURRENT_PACKAGES_DIR}/tools/${PORT}>]
+    [AUTO_CLEAN]
+)
+```
+
+## 参数
+
+### TOOL_NAMES
+
+工具文件名（不含扩展名）列表。
+
+### SEARCH_DIR
+
+包含工具的目录的路径。 如果省略，此项将设置为 `${CURRENT_PACKAGES_DIR}/bin`。
+
+### DESTINATION
+
+Destination to copy the tools to. This will be set to `${CURRENT_PACKAGES_DIR}/tools/${PORT}` if omitted.
+
+要将工具复制到的目的地。 如果省略，此项将设置为 `${CURRENT_PACKAGES_DIR}/tools/${PORT}`。
+
+### AUTO_CLEAN
+
+自动清理 `${CURRENT_PACKAGES_DIR}/bin` 和 `${CURRENT_PACKAGES_DIR}/debug/bin` 中复制的可执行文件。
+
+## 示例
+
+- [cpuinfo](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/cpuinfo/portfile.cmake)
+- [nanomsg](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/nanomsg/portfile.cmake)
+- [uriparser](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/uriparser/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_copy\_tools.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_copy_tools.cmake)

@@ -1,0 +1,58 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_find_acquire_program
+
+下载或查找知名工具。
+
+## 使用情况
+
+```cmake
+kmpkg_find_acquire_program(<program>)
+```
+
+## 参数
+
+### program
+
+此变量指定要获取的程序以及将设置为程序可执行文件路径的输出参数。
+
+## 说明
+
+当前程序列表包括：
+
+- 7Z
+- ARIA2 (Downloader)
+- BISON
+- CLANG
+- DARK
+- DOXYGEN
+- FLEX
+- GASPREPROCESSOR
+- GPERF
+- PERL
+- PYTHON2
+- PYTHON3
+- GIT
+- GN
+- GO
+- JOM
+- MESON
+- NASM
+- NINJA
+- NUGET
+- SCONS
+- SWIG
+- YASM
+
+msys2 有专用的帮助程序函数：[`kmpkg_acquire_msys`](kmpkg_acquire_msys.mdx)。
+
+## 示例
+
+- [ffmpeg](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/ffmpeg/portfile.cmake)
+- [openssl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/openssl/portfile.cmake)
+- [qt5](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/qt5/portfile.cmake)
+
+## Source
+
+[`scripts/cmake/kmpkg_find_acquire_program.cmake`](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_find_acquire_program.cmake)

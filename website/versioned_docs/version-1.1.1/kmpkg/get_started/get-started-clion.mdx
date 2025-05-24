@@ -1,0 +1,184 @@
+---
+date: 01/10/2024
+---
+
+# 教程：在 clion 中集成
+
+
+教程指导用户完成通过 `CMake` 和 `clion` 安装和使用包的过程。
+
+本教程向您展示如何创建一个使用 C++“Hello World”程序包含 CMake、kmpkg 和 `clion` 的“fmt”库。你将安装
+依赖项、配置、构建和运行一个简单的应用程序。
+
+## 先决条件
+
+- 安装 `clion`
+- [C++ compiler](https://code.visualstudio.com/docs/languages/cpp#_install-a-compiler)
+- Windows 7或者更高版本 或者 ubuntu桌面 或者 macos桌面
+- [安装 kmpkg](setup-kmpkg.mdx)
+
+## 1 - 安装`clion` {#install-clion}
+
+[clion](https://www.jetbrains.com/clion/)是商业软件，需要购买使用，官方默认提供30天的试用时间。
+从官方网站下载试用版进行学习和测试。
+
+## 2 - Setup kmpkg
+
+创建项目目录，并进入到目录中：
+
+```shell
+mkdir helloworld && cd helloworld
+```
+
+生成清单文件并添加依赖项
+
+运行以下命令创建 kmpkg 清单文件 (`kmpkg.json`)：
+
+```console
+kmpkg new --application
+```
+
+[`kmpkg new`](../commands/new.mdx) 命令添加一个 `kmpkg.json` 文件和一个
+项目目录中的 `kmpkg-configuration.json` 文件。
+
+添加 `fmt` 包作为依赖项：
+
+```console
+kmpkg add port fmt
+```
+
+您的 `kmpkg.json` 现在应该包含：
+
+```json
+{
+  "dependencies": [
+    "fmt"
+  ]
+}
+```
+
+这是您的清单文件。 `kmpkg` 读取清单文件来了解什么安装依赖项并与 MSBuild 集成以提供依赖项您的项目需要。
+
+生成的 `kmpkg-configuration.json` 文件引入了一个[基线](../reference/kmpkg-configuration-json.mdx#registry-baseline)将
+[最低版本限制](../users/versioning.mdx)放在项目的依赖关系。修改此文件超出了本教程的范围。尽管不适用于本教程，最好保留源代码控制下的 `kmpkg-configuration.json` 文件以确保版本
+不同开发环境之间的一致性。
+
+:::warning
+`kmpkg` 从 [GITHUB](https://github.com) 逐步迁移至 [GITEE](https://gitee.com),在迁移过程中，`kmpkg-configuration.json`基线
+版本的基线存在仓库迁移带来的不可能安装问题，***直接删除`kmpkg-configuration.json`即可***
+:::
+
+## 3 - 设置项目文件
+
+创建包含以下内容的`CMakeLists.txt`文件：
+
+```cmake title=CMakelists.txt
+    cmake_minimum_required(VERSION 3.10)
+
+    project(HelloWorld)
+
+    find_package(fmt CONFIG REQUIRED)
+
+    add_executable(HelloWorld main.cpp)
+
+    target_link_libraries(HelloWorld PRIVATE fmt::fmt)
+```
+
+现在，让我们分解一下 `CMakeLists.txt` 文件中每一行的作用：
+
+- `cmake_minimum_required(VERSION 3.10)`：指定构建项目所需的最低 CMake 版本为 3.10。如果系统上安装的 CMake 版本低于此版本，则会生成错误。
+- `project(HelloWorld)`：将项目名称设置为“HelloWorld”。
+- `find_package(fmt CONFIG REQUIRED)`：使用其 CMake 配置文件查找 `fmt` 库。 `REQUIRED` 关键字确保在找不到包时生成错误。
+- `add_executable(HelloWorld main.cpp)`：添加一个名为“HelloWorld”的可执行目标，该目标是从源文件“main.cpp”构建的。
+- `target_link_libraries(HelloWorld PRIVATE fmt::fmt)`：指定 `HelloWorld` 可执行文件应链接到 `fmt` 库。 “PRIVATE”关键字表示“fmt”仅用于构建“HelloWorld”，不应传播到其他依赖项目。
+
+
+
+创建包含以下内容的“main.cpp”文件：
+
+```cpp
+#include <fmt/core.h>
+
+int main() {
+    fmt::print("Hello World!\n");
+    return 0;
+}
+```
+
+在此`main.cpp`文件中，包含`<fmt/core.h>`头文件以使用“fmt”库。然后 `main()` 函数调用 `fmt::print()` 来输出“Hello World!”消息到控制台。
+
+为了让 `CMake` 项目系统能够识别 `kmpkg` 提供的 `C++` 库，您需要提供 `kmpkg.cmake` 工具链文件。为了自动化此操作，在 `helloworld` 目录中创建一个 `CMakePresets.json` 文件
+以下内容
+
+```json
+{
+  "version": 2,
+  "configurePresets": [
+    {
+      "name": "kmpkg",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{KMPKG_CMAKE}"
+      }
+    }
+  ]
+}
+```
+
+在 `helloworld` 目录中创建 `CMakeUserPresets.json` 文件
+以下内容：
+
+```json
+{
+  "version": 2,
+  "configurePresets": [
+    {
+      "name": "default",
+      "inherits": "kmpkg",
+      "environment": {
+        "KMPKG_ROOT": "<path to kmpkg>"
+      }
+    }
+  ]
+}
+```
+
+
+这个 `CMakePresets.json` 文件包含一个用于 CMake 的 `kmpkg` 预设
+设置 `CMAKE_TOOLCHAIN_FILE` 变量。 `CMAKE_TOOLCHAIN_FILE` 允许
+CMake 项目系统可识别 `kmpkg` 提供的 `C++` 库。仅有的
+`CMakePresets.json` 的目的是检查到源代码管理，同时
+`CMakeUserPresets.json` 将在本地使用。
+
+4 - `clion`中集成
+
+1. 通过导航到 **`Main Menu` > `Setting` > `Build, Execution, Deploy` > `CMake`，打开 `CMake` 配置界面：
+
+import clion_cmake from '@site/static/img/kmpkg/get_started/clion-cmake.png';
+
+<img src={clion_cmake}/>
+
+设置环境变量`KMPKG_CMAKE`。
+
+:::warning
+kumo开发的c++服务是后台服务，并且是基于linux系列运行的服务端服务，对 `clion` 使用仅限于开发过程中的代码提示
+和其他便利功能，服务的调试，还是基于 `命令行` 的方式为主。***强烈建议在unix系（如ubuntu，macos）作为基础开发环境，系统API
+与实际生产环境相同，提升开发效率***
+:::
+
+2. 启动项目
+
+您应该看到输出：
+
+```Console
+Hello World!
+```
+
+## 后续步骤
+
+要了解有关 `kmpkg.json` 的更多信息，请参阅我们的参考文档：
+
+- [打包库](get-started-packaging.mdx)
+- [kmpkg.json](../reference/kmpkg-json.mdx)
+- [清单](../concepts/manifest-mode.mdx)

@@ -1,0 +1,542 @@
+---
+date: 7/22/2024
+---
+# 维护指南
+
+本文档列出了添加或更新端口配方时应应用的一组策略。
+
+它的目的是服务于以下角色：
+[Debian 的政策手册](https://www.debian.org/doc/debian-policy/),
+[Homebrew 的维护者指南](https://docs.brew.sh/Maintainer-Guidelines)，以及
+[Homebrew 的配方食谱](https://docs.brew.sh/Formula-Cookbook)。
+
+## 总体注册表设计目标
+
+### 当前基线中的端口必须可同时安装
+
+如果您希望向用户展示这种替代情况，请考虑描述如何有人可以创建一个 [overlay port](../concepts/overlay-ports.mdx) 来实现替代方案
+在`portfile.cmake`中添加注释，而不是尝试添加从未内置的其他端口策划的注册表的持续集成。例如，参见
+[glad@0.1.36](https://gitee.com/kumo-pub/kmpkg/blob/67cc1677c3bf5c23ea14b9d2416c7422fdeac492/ports/glad/portfile.cmake#L17)。
+
+在引入 [registries](../maintainers/registries.mdx) 之前，我们接受了一些未经测试的端口替代方案，例如`boringssl`，可能会使创作覆盖端口
+更轻松。这不再被接受，因为注册表允许发布这些未经测试的端口无需修改策划的注册表。
+
+
+## PR 结构
+
+### 为每个端口发出单独的拉取请求
+
+尽可能将更改分为多个 PR。 这样更容易进行审查，并可防止一组更改的问题妨碍所有其他更改。
+
+### 避免对未触及的文件进行微小的更改
+
+例如，避免重新格式化或重命名端口文件中的变量，否则没有理由针对当前问题进行修改。但是，如果您需要出于 PR 的主要目的（更新库）修改文件，
+那么显然有益的改变，如修复拼写错误，将受到赞赏！
+
+### 对照其他存储库检查名称
+
+端口名称应尽量明确端口是哪个包安装。理想情况下，在搜索引擎中搜索端口名称应该很快
+引导您到相应的项目。服务很好，可以检查很多包裹一次跨多个存储库的名称是[Repology](https://repology.org/)。
+
+名称简称或以常用词命名的项目可能需要消除歧义，特别是当没有具有强关联的项目时
+到给定的单词。例如，名称为“ip”的端口是不可接受的因为多个项目很可能会被类似地命名。
+
+好的消歧器的例子有：
+
+* 存储库的所有者用户名或组织：`google-cloud-cpp`。
+* 该项目所属的一组库的名称：`boost-dll`。
+
+C++ 和开源项目使用的常见前缀和后缀无效
+消歧符，一些示例包括但不限于：
+
+* `cpp`, 
+* `free`,
+* `lib`, 
+* `open`, 
+* numbers
+
+例如，在比较以下端口名称时：`ip-cpp`、`libip` 和`ip5` 并删除无效的消歧符，它们都被简化为相同的
+干（`ip`），因此被认为具有相同的名称。
+
+对于强关联的名称，此准则有一个例外与单个项目。例如：`libpng`、`openssl`和`zlib`。
+
+## Portfiles
+
+### 避免弃用的辅助函数 {#avoid-deprecated-helper-functions}
+
+目前，以下助手已被弃用：
+
+- 不推荐使用的不带“ARCHIVE”的“kmpkg_extract_source_archive()”重载应替换为支持的带“ARCHIVE”的重载。
+- `kmpkg_copy_tool_dependency()` 应替换为 [`kmpkg_copy_tools()`](../maintainers/functions/kmpkg_copy_tools.mdx)
+- 删除“PREFER_NINJA”后，“kmpkg_configure_cmake”应替换为 [`kmpkg_cmake_configure()`](../maintainers/functions/kmpkg_cmake_configure.mdx)
+- `kmpkg_build_cmake` 应替换为 [`kmpkg_cmake_build()`](../maintainers/functions/kmpkg_cmake_build.mdx)
+- `kmpkg_install_cmake` 应替换为 [`kmpkg_cmake_install()`](../maintainers/functions/kmpkg_cmake_install.mdx)
+- `kmpkg_fixup_cmake_targets` 应替换为 [`kmpkg_cmake_config_fixup`](../maintainers/functions/kmpkg_cmake_config_fixup.mdx)
+
+一些替换帮助程序功能位于“工具端口”中，以允许消费者固定他们的特定版本的行为，以允许将帮助程序的行为锁定在特定版本
+版本。工具端口需要添加到端口的“依赖项”中，如下所示：
+
+```json
+{
+  "name": "kmpkg-cmake",
+  "host": true
+},
+{
+  "name": "kmpkg-cmake-config",
+  "host": true
+}
+```
+
+### 避免端口文件中过多的注释 {#avoid-excessive-comments-in-portfiles}
+
+理想情况下，端口文件应该简短、简单并且尽可能具有声明性。在提交 PR 之前，删除“create”命令引入的所有样板注释。
+
+### 端口不得依赖于路径
+
+端口不得根据已安装的端口来更改其行为，从而改变端口安装的内容。例如，给定：
+
+```console
+> kmpkg install a
+> kmpkg install b
+> kmpkg remove a
+```
+
+and
+
+```console
+> kmpkg install b
+```
+
+无论先前安装的`a`的影响如何，`b`安装的文件必须相同。这意味着端口在采取某些操作之前不得尝试检测另一个端口是否在已安装的树中提供了某些内容。下面的“定义功能时，显式控制依赖关系”中描述了这种“路径依赖”行为的具体且常见的原因。
+
+### 唯一端口属性规则
+
+在整个 kmpkg 系统中，用户预计同时使用的两个端口不可能提供相同的文件。如果端口尝试安装另一个文件已提供的文件，安装将失败。例如，如果端口想要对标头使用极其常见的名称，则应该将这些标头放置在子目录中而不是`include`中。
+
+通过持续集成运行定期检查此属性，该运行尝试在注册表中安装所有端口，如果两个端口提供相同的文件，则会因`FILE_CONFLICTS`而失败。
+
+### 在非官方命名空间中添加 CMake 导出
+
+kmpkg 的核心设计理念是不要为用户造成“锁定”。 在构建系统中，根据系统中的库和 kmpkg 中的库，不应有区别。 为此，我们避免将 CMake 导出或目标添加到具有“明显名称”的现有库，以允许上游添加自己的官方 CMake 导出，而不会与 kmpkg 冲突。
+
+为此，端口导出的任何 CMake 配置（不在上游库中）都应将 `unofficial-` 作为前缀。 任何其他目标都应位于 `unofficial::<port>::` 命名空间中。
+
+这意味着用户应看到：
+
+- `find_package(unofficial-<port> CONFIG)` 作为获取 `unique-to-kmpkg` 包的途径
+- `unofficial::<port>::<target>` 作为从该端口导出的目标。
+
+示例：
+
+- [`brotli`](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/brotli/install.patch) 创建 `unofficial-brotli` 包，生成目标 `unofficial::brotli::brotli`。
+
+### 安装版权文件 {#install-copyright-file}
+
+每个端口必须在文件夹`${CURRENT_PACKAGES_DIR}/share/${PORT}`中提供名为`copyright`的文件。如果包的许可证内容在其源文件中可用，
+则应通过调用 [`kmpkg_install_copyright()`](../maintainers/functions/kmpkg_install_copyright.mdx) 创建此文件。如果需要，`kmpkg_install_copyright` 还会捆绑多个版权文件。
+
+```cmake
+kmpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE")
+```
+
+手动创建此文件的较旧方法是使用 CMake 内置的`file`命令。在新端口中不鼓励这样做，有利于`kmpkg_install_copyright`，但仍然允许。
+
+```cmake
+file(INSTALL "${SOURCE_PATH}/LICENSE" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)
+```
+
+如果上游源文件中的许可证内容不是文本形式（例如 PDF 文件），
+则“版权”应包含用户如何找到许可证要求的说明。如果可能的话，它还应该包含指向原始源文件的链接来表明这一点，以便用户可以检查它是否是最新的。
+
+```cmake
+file(WRITE "${CURRENT_PACKAGES_DIR}/share/${PORT}/copyright" [[As of 2023-07-25, according to
+https://github.com/GPUOpen-LibrariesAndSDKs/display-library/blob/master/Public-Documents/README.md#end-user-license-agreement
+this software is bound by the "SOFTWARE DEVELOPMENT KIT LICENSE AGREEMENT" PDF located at
+https://github.com/GPUOpen-LibrariesAndSDKs/display-library/blob/master/Public-Documents/ADL%20SDK%20EULA.pdf
+]])
+```
+
+### 端口中的版本限制
+
+通常应该避免端口内的版本限制，因为它们会阻碍项目的独立发展。仅当有充分记录的理由时才允许添加此类约束，例如已证明与特定早期版本不兼容。这些限制不应仅仅用于维持与独立项目的平等。
+
+## 功能
+
+### 请勿使用功能实现备选方案
+
+功能必须被视为附加功能。如果安装了`port[featureA]`并且安装了`port[featureB]`，则必须安装`port[featureA,featureB]`。
+此外，如果第二个端口依赖于`[featureA]`而第三个端口依赖于`[featureB]`，则安装第二个和第三个端口应该满足它们的依赖关系。
+
+在这种情况下，库必须选择可用选项之一（以 kmpkg 表示），并且想要不同设置的用户此时必须使用覆盖端口。
+
+为了向后兼容，我们今天不接受保留的现有示例：
+
+- `libgit2`、`libzip`、`open62541` 都具有选择 TLS 或加密后端的功能。 `curl` 有不同的加密后端选项，但允许在运行时在它们之间进行选择，这意味着上述原则得以维持。
+- `darknet` 具有 `opencv2`、`opencv3` 功能来控制其依赖项使用哪个版本的 opencv。
+
+### 某个功能可能涉及预览版或测试版功能
+
+尽管有上述规定，如果存在预览分支或类似分支，其中预览功能很可能不会破坏非预览功能（例如，没有 API 删除），则可以接受一个功能来对此设置进行建模。
+
+示例：
+- Azure SDK（形式为“azure-Xxx”）具有“公共预览”功能。
+-“imgui”具有“实验对接”功能，该功能参与其预览对接分支，该分支使用附加到每个公共编号版本的合并提交。
+
+### 默认功能应该启用行为，而不是 API
+
+如果消费者直接依赖于库，他们可以轻松列出任何所需的功能（`library[feature1，feature2]`）。但是，如果消费者_不知道_他们正在使用库，
+他们就无法列出这些功能。如果该隐藏库类似于`libarchive`，其中功能向现有通用接口添加额外的压缩算法（以及行为），
+则默认功能提供了一种方法来确保构建合理功能的传递库，即使最终使用者没有命名直接它。
+
+如果该功能添加了额外的 API（或可执行文件或库二进制文件）并且不修改现有 API 的行为，则默认情况下应将其保留。这是因为任何可能想要使用这些 API 的消费者都可以通过直接引用轻松地要求它。
+
+如有疑问，请勿将某个功能标记为默认功能。
+
+### 不要使用功能来控制已发布接口中的替代方案
+
+如果端口的使用者仅依赖于该端口的核心功能，那么打开该功能很可能不会破坏它们。当替代方案不是由消费者直接控制，而是由编译器设置（如`/std:c++17”/“-std=c++17`）控制时，这一点甚至更为重要。
+
+为了向后兼容，我们今天不接受保留的现有示例：
+
+- `redis-plus-plus[cxx17]` 控制一个polyfill，但不会将设置烘焙到已安装的树中。
+- `ace[wchar]` 更改所有 API 以接受 `const wchar_t*` 而不是 `const char*`。
+
+### 某个功能可以用别名替换 polyfill，前提是替换已烘焙到已安装的树中
+
+尽管有上述规定，端口可以删除带有某个功能的 Polyfill，只要：
+
+1.打开该功能会将polyfill更改为polyfill实体的别名
+2. Polyfill 的状态被烘焙到已安装的标头中，这样就不太可能出现 ABI 不匹配“不可能”的运行时错误
+3. 端口的使用者可以编写在两种模式下工作的代码，例如通过使用 polyfilled 或非 polyfilled 的 typedef
+
+例子：
+
+- `abseil[cxx17]` 将 `absl::string_view`
+更改为替换或 `std::string_view`； [补丁](https://gitee.com/kumo-pub/kmpkg/blob/981e65ce0ac1f6c86e5a5ded7824db8780173c76/ports/abseil/fix-cxx-standard.patch)实现了烘焙要求。
+
+### 推荐解决方案
+
+如果公开底层替代方案至关重要，我们建议在构建时提供消息来指导用户如何将端口复制到私有覆盖中：
+
+```cmake
+set(USING_DOG 0)
+message(STATUS "This version of LibContoso uses the Kittens backend. To use the Dog backend instead, create an overlay port of this with USING_DOG set to 1 and the `kittens` dependency replaced with `dog`.")
+message(STATUS "This recipe is at ${CMAKE_CURRENT_LIST_DIR}")
+message(STATUS "See the overlay ports documentation at https://gitee.com/kumo-pub/kmpkg/blob/master/docs/specifications/ports-overlay.md")
+```
+
+## 构建技术
+
+### 不要使用供应商的依赖项
+
+不要使用库的嵌入副本。
+所有依赖项都应分开并单独打包，以便可以更新和维护。
+
+### 首选使用 CMake
+
+当有多个构建系统可用时，首选使用 CMake。
+此外，在适当的情况下，使用“file(GLOB)”指令将替代构建系统重写到 CMake 中会更容易且更易于维护。
+
+示例：[abseil](https://gitee.com/kumo-pub/kmpkg/tree/master/ports/abseil/portfile.cmake)
+
+### 选择静态或共享二进制文件 {#only-static-or-shared}
+
+构建 CMake 库时，[`kmpkg_cmake_configure()`](../maintainers/functions/kmpkg_cmake_configure.mdx) 将根据用户请求的变体传入 `BUILD_SHARED_LIBS` 的正确值。
+
+您可以使用`string(COMPARE EQUAL "${KMPKG_LIBRARY_LINKAGE}" ...)`计算替代配置参数。
+
+```cmake
+# portfile.cmake
+
+string(COMPARE EQUAL "${KMPKG_LIBRARY_LINKAGE}" "static" KEYSTONE_BUILD_STATIC)
+string(COMPARE EQUAL "${KMPKG_LIBRARY_LINKAGE}" "dynamic" KEYSTONE_BUILD_SHARED)
+
+kmpkg_cmake_configure(
+    SOURCE_PATH ${SOURCE_PATH}
+    OPTIONS
+        -DKEYSTONE_BUILD_STATIC=${KEYSTONE_BUILD_STATIC}
+        -DKEYSTONE_BUILD_SHARED=${KEYSTONE_BUILD_SHARED}
+)
+```
+
+如果库不提供配置选项来选择构建变体，则必须对构建进行修补。当修补构建时，您应该始终尝试最大化端口的未来可维护性。通常，这意味着最大限度地减少解决当前问题所需的行数。
+
+#### 示例：修补 CMake 库以避免构建不需要的变体
+
+例如，在修补基于 CMake 的库时，将 [`EXCLUDE_FROM_ALL`](https://cmake.org/cmake/help/latest/prop_tgt/EXCLUDE_FROM_ALL.html) 添加到不需要的目标并包装` install(TARGETS ...)` 在 `if(BUILD_SHARED_LIBS)` 中调用。这比换行或删除提到不需要的变体的每一行要短。
+
+对于包含以下内容的项目`CMakeLists.txt`：
+
+```cmake
+add_library(contoso SHARED contoso.c)
+add_library(contoso_static STATIC contoso.c)
+
+install(TARGETS contoso contoso_static EXPORT ContosoTargets)
+
+install(EXPORT ContosoTargets
+  FILE ContosoTargets
+  NAMESPACE contoso::
+  DESTINATION share/contoso)
+```
+
+仅需要修补“install(TARGETS)”行。
+```cmake
+add_library(contoso SHARED contoso.c)
+add_library(contoso_static STATIC contoso.c)
+
+if(BUILD_SHARED_LIBS)
+  set_target_properties(contoso_static PROPERTIES EXCLUDE_FROM_ALL 1)
+  install(TARGETS contoso EXPORT ContosoTargets)
+else()
+  set_target_properties(contoso PROPERTIES EXCLUDE_FROM_ALL 1)
+  install(TARGETS contoso_static EXPORT ContosoTargets)
+endif()
+
+install(EXPORT ContosoTargets
+  FILE ContosoTargets
+  NAMESPACE contoso::
+  DESTINATION share/contoso)
+```
+
+### 定义功能时，显式控制依赖关系
+
+在定义捕获可选依赖项的功能时，请确保在未显式启用该功能时不会意外使用该依赖项。
+
+```cmake
+set(CMAKE_DISABLE_FIND_PACKAGE_ZLIB ON)
+set(CMAKE_REQUIRE_FIND_PACKAGE_ZLIB OFF)
+if ("zlib" IN_LIST FEATURES)
+  set(CMAKE_DISABLE_FIND_PACKAGE_ZLIB OFF)
+  set(CMAKE_REQUIRE_FIND_PACKAGE_ZLIB ON)
+endif()
+
+kmpkg_cmake_configure(
+  SOURCE_PATH ${SOURCE_PATH}
+  OPTIONS
+    -DCMAKE_DISABLE_FIND_PACKAGE_ZLIB=${CMAKE_DISABLE_FIND_PACKAGE_ZLIB}
+    -DCMAKE_REQUIRE_FIND_PACKAGE_ZLIB=${CMAKE_REQUIRE_FIND_PACKAGE_ZLIB}
+)
+```
+
+下面使用 [`kmpkg_check_features()`](../maintainers/functions/kmpkg_check_features.mdx) 的代码片段是等效的。
+
+```cmake
+kmpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+  FEATURES
+    "zlib"    CMAKE_REQUIRE_FIND_PACKAGE_ZLIB
+  INVERTED_FEATURES
+    "zlib"    CMAKE_DISABLE_FIND_PACKAGE_ZLIB
+)
+
+kmpkg_cmake_configure(
+    SOURCE_PATH ${SOURCE_PATH}
+    OPTIONS
+      ${FEATURE_OPTIONS}
+)
+```
+
+代码片段中的“ZLIB”区分大小写。欲了解更多信息，请参阅
+[`CMAKE_DISABLE_FIND_PACKAGE_<PackageName>`](https://cmake.org/cmake/help/v3.22/variable/CMAKE_DISABLE_FIND_PACKAGE_PackageName.html)
+和 [`CMAKE_REQUIRE_FIND_PACKAGE_<PackageName>`](https://cmake.org/cmake/help/v3.22/variable/CMAKE_REQUIRE_FIND_PACKAGE_PackageName.html) 文档。
+
+### 将冲突的库放在`manual-link`目录中
+
+如果库执行以下任何操作，则视为冲突：
+
+- Define `main`
+- Define malloc
+- Define symbols that are also declared in other libraries
+
+冲突的库通常是设计使然，不被视为缺陷。  由于某些构建系统链接 lib 目录中的所有内容，因此应将它们移动到名为`manual-link`的子目录中。
+
+## 版本控制 {#versioning}
+
+### 遵循 `"version"` 字段的通用约定
+
+创建新端口时，请遵循包作者使用的版本控制约定。更新端口时，继续使用相同的约定，除非上游另有说明。有关我们约定的完整说明，请参阅我们的[版本控制文档](../users/versioning.mdx#version-schemes)。
+
+如果上游一段时间没有发布版本，请勿将端口的版本控制方案更改为`“version-date”`以获得最新更改。这些提交可能包括尚未准备好生产的更改。相反，要求上游存储库发布新版本。
+
+### 更新任何修改端口清单文件中的 `"port-version"` 字段
+
+kmpkg 使用此字段来确定给定端口是否已过时，并且在端口行为发生变化时应进行更改。
+
+我们的约定是使用`“port-version”`字段来更改端口而不更改上游版本，并在上游版本更新时将`“port-version”`重置为零制成。
+
+例如：
+
+- Zlib 的软件包版本当前为 `1.2.1`，没有显式的 `"port-version"`（相当于 `"port-version"` 为 `0`）。
+- 您发现部署了错误的版权文件，并在端口文件中修复了该问题。
+- 您应该将清单文件中的`"port-version"`字段更新为`"1"`。
+
+有关更多信息，请参阅[版本控制文档](../users/versioning.mdx#port-version)。
+
+### 更新任何修改端口的 `versions/` 中的版本文件
+
+kmpkg 使用一组元数据文件来支持其版本控制功能。
+这些文件位于以下位置：
+
+- `${KMPKG_ROOT}/versions/baseline.json`，（此文件对于所有端口都是通用的）和
+- `${KMPKG_ROOT}/versions/${first-letter-of-portname}-/${portname}.json`（每个端口一个）。
+
+例如，对于`zlib`，相关文件是：
+
+- `${KMPKG_ROOT}/versions/baseline.json`
+- `${KMPKG_ROOT}/versions/z-/zlib.json`
+
+我们希望您每次更新端口时，也会更新其版本文件。
+
+**更新这些文件的推荐方法是运行 `x-add-version` 命令，例如：**
+
+```console
+kmpkg x-add-version zlib
+```
+
+如果您要同时更新多个端口，则可以运行：
+
+```console
+kmpkg x-add-version --all
+```
+
+立即更新所有已修改端口的文件。
+
+:::info NOTE
+这些命令要求在运行之前已将更改提交到端口。 原因是这些版本文件中需要端口目录的 Git SHA。 但不必担心，如果本地更改尚未提交，`x-add-version` 命令将发出警告
+:::
+
+有关更多信息，请参阅 [版本控制参考](../users/versioning.mdx) 和 [创建注册表](../maintainers/registries.mdx)。
+
+## 修补 {#patching}
+
+kmpkg 是一个打包解决方案，而不是我们部署的组件的最终所有者。在某些情况下，我们确实需要应用补丁来提高组件与平台的兼容性，或者组件之间的兼容性。
+
+* 我们希望避免出现以下情况的补丁：
+    * 上游不同意
+    * 导致漏洞或崩溃
+    * 我们无法维护跨上游版本的更新
+    * 足够大，足以导致与 kmpkg 存储库本身的许可证纠缠
+
+### 通知上游所有者上游相关修补程序
+
+如果修补程序可能对上游有用，则必须通知上游该修补程序的内容。 （应用与上游无关的 kmpkg 特定行为的修补程序，例如开发依赖项，不需要通知。）
+
+为了避免上游与修补程序不一致的情况，我们将等待至少 30 天来应用此类修补程序。
+
+如果我们对更改正确充满信心，我们将跳过此等待期。 高置信度修补程序示例包括，但不限于：
+
+- 上游接受作为修补程序（例如，从上游的拉取请求向后移植特定更改已合并）。
+- 添加缺失的 `#include`。
+- 小而明显的产品代码修复（例如，初始化未初始化的变量）。
+- 禁用构建的 `irrelevant-in-kmpkg` 组件，例如测试或示例。
+
+### 首选选项优先于修补
+
+最好在调用`kmpkg_configure_xyz()`时设置选项，而不是直接修补设置。
+
+允许您避免修补的常见选项：
+
+- [MSBUILD] 项目文件中的`<PropertyGroup>`设置可以通过`/p:`参数覆盖
+- [CMAKE] 可以通过 [`-DCMAKE_DISABLE_FIND_PACKAGE_XYz=ON`](https://cmake.org/cmake/help/v3.15/variable/CMAKE_DISABLE_FIND_PACKAGE_PackageName.html) 禁用对 CMake 脚本中的 `find_package(XYz)` 的调用
+- [CMAKE] 缓存变量（声明为 `set(VAR "value" CACHE STRING "Documentation")` 或 `option(VAR "Documentation" "Default Value")`）只需在命令行中传递即可覆盖它们如 `-DVAR:STRING=Foo`。一个值得注意的例外是“FORCE”参数是否传递给`set()`。有关更多信息，请参阅 [CMake `set` 文档](https://cmake.org/cmake/help/v3.15/command/set.html)
+
+### 优先选择修补而不是覆盖`MPKG_<VARIABLE>`值
+
+某些以`KMPKG_<VARIABLE>`为前缀的变量具有等效的`CMAKE_<VARIABLE>`。
+但是，并非所有这些都传递到内部包构建[（请参阅实现：Windows 工具链）](https://gitee.com/kumo-pub/kmpkg/tree/master/scripts/toolchains/windows.cmake)。
+
+考虑以下示例：
+
+```cmake
+set(KMPKG_C_FLAGS "-O2 ${KMPKG_C_FLAGS}")
+set(KMPKG_CXX_FLAGS "-O2 ${KMPKG_CXX_FLAGS}")
+```
+
+使用 `kmpkg` 的内置工具链，这是可行的，因为 `KMPKG_<LANG>_FLAGS` 的值被转发到适当的 `CMAKE_LANG_FLAGS` 变量。但是，不知道 `kmpkg` 变量的自定义工具链将不会转发它们。
+
+因此，最好在设置 `CMAKE_<LANG>_FLAGS` 时直接修补构建系统。
+
+### 减少补丁 {#minimize-patches}
+
+对库进行更改时，请努力最小化最终差异。这意味着您在进行影响区域的更改时不应重新格式化上游源代码。禁用条件时，最好在条件中添加`AND FALSE`或`&& 0`，
+而不是删除条件的每一行。如果需要禁用较大区域，则在该区域周围添加`if(0)`或`#if 0`比删除补丁中的每一行更短。
+
+如果端口已过时，请勿添加补丁，将端口更新到较新的发布版本可以解决相同的问题。 kmpkg 更喜欢更新端口而不是修补过时的版本。
+
+这有助于缩小 kmpkg 存储库的大小，并提高补丁应用于未来代码版本的可能性。
+
+
+### 请勿在修补程序中实现功能
+
+在 kmpkg 中修补的目的是实现与编译器、库和平台的兼容性。 其并非要实现新功能取代以下适当的开放源代码过程（提交问题/PR/等）。
+
+### 默认情况下不要构建测试/文档/示例
+
+提交新端口时，请检查`BUILD_TESTS`或`WITH_TESTS`或`POCO_ENABLE_SAMPLES`等任何选项，并确保禁用其他二进制文件。这可以最大限度地减少普通用户的构建时间和依赖性。
+
+或者，您可以添加一个 `test` 功能来构建测试，但这不应该出现在 `Default-Features` 列表中。
+
+## 使库的现有用户能够切换到 kmpkg
+
+### 不要添加 `CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS` {#do-not-add-cmake_windows_export_all_symbols}
+
+除非库的作者已经在使用，否则我们不应使用此 CMake 功能，因为它与 C++ 模板交互不佳，并破坏了某些编译器功能。
+不提供 .def 文件且不使用 __declspec() 声明的库根本不支持 Windows 的共享版本，应使用 `kmpkg_check_linkage(ONLY_STATIC_LIBRARY)` 进行标记。
+
+### 不要在上游给定的名称之外重命名二进制文件
+
+这意味着如果上游库在发布和调试中具有不同的名称（libx 与 libxd），则调试库不应重命名为“libx”。反之亦然，如果上游库在发布和调试中具有相同的名称，我们不应该引入新名称。
+
+重要警告：
+
+- 静态和共享变体通常应重命名为通用方案。这使得消费者能够使用通用名称而无需了解下游链接。这是安全的，因为我们一次只提供一个。
+
+如果库生成 CMake 集成文件（`foo-config.cmake`），则必须通过修补 CMake 构建本身来完成重命名，而不是简单地在输出档案/LIB 上调用`file(RENAME)`。
+
+最后，Windows 上的 DLL 文件永远不应该在构建后重命名，因为它会破坏生成的 LIB。
+
+### 清单
+
+我们要求清单文件被格式化。使用以下命令格式化所有清单文件：
+
+```shell
+kmpkg format-manifest --all
+```
+
+## 三元组
+
+我们目前不接受添加非社区三胞胎的请求。从社区升级到完整三元组状态主要基于测试此类三元组的硬件预算，并将由 kmpkg 提交的指标驱动，以最大限度地提高人们实际使用的内容得到充分测试的可能性。
+
+如果出现以下情况，我们将添加社区三元组：
+
+* 事实证明，人们实际上会使用该社区三元组；和，
+* 我们不知道这样的三元组是否被破坏。
+
+## 实用的实现说明
+
+### 端口文件在脚本模式下运行
+
+虽然`portfile.cmake`和`CMakeLists.txt`共享通用语法和核心 CMake 语言结构（又名`脚本命令`），但 portfiles 在`脚本模式`下运
+行，而`CMakeLists.txt`文件在`脚本模式`下运行`项目模式`。这两种模式最重要的区别是“脚本模式”没有“工具链”、“语言”和“目标”的概念。依
+赖于这些构造（例如`CMAKE_CXX_COMPILER`、`CMAKE_EXECUTABLE_SUFFIX`、`CMAKE_SYSTEM_NAME`）的任何行为（包括脚本命令）都将不正确。
+
+端口文件可以直接访问三元组文件中设置的变量，但`CMakeLists.txt`则不能（尽管经常会发生转换——“KMPKG_LIBRARY_LINKAGE”与“BUILD_SHARED_LIBS”）。
+
+端口文件和端口文件调用的项目构建在不同的进程中运行。从概念上讲：
+
+```
++----------------------------+       +------------------------------------+
+| CMake.exe                  |       | CMake.exe                          |
++----------------------------+       +------------------------------------+
+| Triplet file               | ====> | Toolchain file                     |
+| (x64-windows.cmake)        |       | (scripts/buildsystems/kmpkg.cmake) |
++----------------------------+       +------------------------------------+
+| Portfile                   | ====> | CMakeLists.txt                     |
+| (ports/foo/portfile.cmake) |       | (buildtrees/../CMakeLists.txt)     |
++----------------------------+       +------------------------------------+
+```
+
+要确定端口文件中的主机，标准 CMake 变量就可以了（`CMAKE_HOST_WIN32`）。
+
+要确定端口文件中的目标，应使用 kmpkg 三元组变量（`KMPKG_CMAKE_SYSTEM_NAME`）。
+
+另请参阅我们的 [三元组文档](../users/triplets.mdx) 以获取可能设置的完整枚举。

@@ -1,0 +1,86 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_list
+
+CMake `list()` 函数的替代函数，可改进对包含内部分号（如其他列表）的元素的处理。
+
+## 使用情况
+
+```cmake
+kmpkg_list(SET <out-var> [<element>...])
+kmpkg_list(<COMMAND> <list-var> [<other-arguments>...])
+```
+
+## 说明
+
+每当需要正确处理列表的列表时，请使用 `kmpkg_list()` 而非 `list()`。
+
+See the [CMake documentation for `list()`](https://cmake.org/cmake/help/latest/command/list.html) for more information.
+`kmpkg_list()` 支持内置 `list()` 函数的所有子命令，但存在以下限制：
+
+- `GET`、`REMOVE_ITEM` 和 `REMOVE_AT` 仅支持一个索引值
+- `POP_BACK` 和 `POP_FRONT` 不支持将值放入另一个移出变量。 使用 `C++` 样式 `GET`，然后 `POP_(BACK|FRONT)`。
+- 不支持 `FILTER` 和 `TRANSFORM`。
+
+### Remarks on Zero-Element lists
+
+最奇怪的是，由于 `""` 将双重任务拉取为“零元素列表”，以及“一个元素的空列表”。 `kmpkg_list` 始终使用以前的理解。 
+这会导致出现奇怪的行为，例如：
+
+```cmake
+set(lst "")
+kmpkg_list(APPEND lst "" "")
+# lst = ";"
+```
+
+这是因为你向空列表追加两个元素。 由此会出现一个非常奇怪的行为：
+
+```cmake
+set(lst "")
+kmpkg_list(APPEND lst "")
+# lst = ""
+```
+
+由于 `""` 是空列表，我们将追加空元素，最终包含一个元素的列表，该列表为空。 非空列表不会出现这种情况，例如：
+
+```cmake
+set(lst "a")
+kmpkg_list(APPEND lst "")
+# lst = "a;"
+```
+
+只有空列表才会出现这种奇怪的行为。
+
+## 示例
+
+### 创建列表
+
+```cmake
+kmpkg_list(SET foo_param)
+if(DEFINED arg_FOO)
+    kmpkg_list(SET foo_param FOO "${arg_FOO}")
+endif()
+```
+
+### 追加到列表
+
+```cmake
+set(OPTIONS -DFOO=BAR)
+if(KMPKG_TARGET_IS_WINDOWS)
+    kmpkg_list(APPEND OPTIONS "-DOS=WINDOWS;FOO")
+endif()
+```
+
+### 弹出列表的结尾
+
+```cmake
+if(NOT list STREQUAL "")
+    kmpkg_list(GET list end -1)
+    kmpkg_list(POP_BACK list)
+endif()
+```
+
+## Source
+
+[scripts/cmake/kmpkg\_list.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_list.cmake)

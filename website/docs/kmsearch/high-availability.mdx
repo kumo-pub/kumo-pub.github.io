@@ -1,0 +1,231 @@
+# 高可用集群
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+kumosearch 提供高可用性集群支持，使用 Raft 共识算法管理集群和恢复节点故障。
+
+在集群模式下，kumosearch 会自动在所有节点间复制整个数据集。所有读写 API 调用都可以发送到集群中的任何节点。读请求由接收节点处理，而写请求则自动转发给集群的领导者。
+
+为了保证高可用性，您至少需要**3 个节点**来容忍 1 个节点的故障。对于 5 节点集群，最多可以容忍 2 个节点故障，但代价是增加写入延迟。
+
+[[toc]]
+
+## 高可用性 kumosearch
+
+### 配置 kumosearch 集群
+
+要配置 kumosearch 集群，需在每个节点上使用以下格式创建一个新文件，并使用 [--nodes 服务器集群配置](../api/kmsearch/server-configuration.mdx#cluster) 指向该文件。
+
+每个节点定义应该遵循以下格式，字段之间用逗号分隔：
+`<peering_address>:<peering_port>:<api_port>`
+
+`peering_address`, `peering_port` 和 `api_port` 是[服务器网络配置参数](../api/kmsearch/server-configuration.mdx#network)，在每个节点上启动 kumosearch 进程时使用。
+
+出于安全目的，集群中的所有节点都应具有相同的引导`--api-key`。
+
+#### 节点文件示例
+
+以下是 3 节点集群的 `--nodes` 文件示例：
+
+<Tabs>
+      <TabItem value="nodes" label="nodes" default>
+
+```text
+192.168.12.1:8107:8868,192.168.12.2:8107:8868,192.168.12.3:8107:8868
+```
+
+          </TabItem>
+</Tabs>
+
+在上面的例子中：
+- `peering_address` (用于集群操作的IP地址)是 `192.168.12.x`
+- `peering_port` (用于集群操作的端口)是 `8107`
+- `api_port` (客户端连接的实际端口)是 `8868`
+
+以下是在每个节点上启动 kumosearch 进程的相应命令：
+
+<Tabs>
+      <TabItem value="Node-1" label="Node-1" default>
+
+```shell
+# Create nodes file
+#   This file is identical on all nodes
+echo '192.168.12.1:8107:8868,192.168.12.2:8107:8868,192.168.12.3:8107:8868' | sudo tee /etc/kumosearch/nodes
+
+# Start kumosearch Process
+#   * Notice `peering-address` *
+          kumosearch-server \
+  --data-dir /var/lib/kumosearch \
+  --api-key=kkumosearch \
+  --api-address 0.0.0.0 \
+  --api-port 8868 \
+  --peering-address 192.168.12.1 \
+  --peering-port 8107 \
+  --nodes=/etc/kumosearch/nodes
+```
+          </TabItem>
+          <TabItem value="Node-2" label="Node-2" default>
+
+
+```shell
+# Create nodes file
+#   This file is identical on all nodes
+echo '192.168.12.1:8107:8868,192.168.12.2:8107:8868,192.168.12.3:8107:8868' | sudo tee /etc/kumosearch/nodes
+
+# Start kumosearch Process
+#   ** Notice `peering-address` **
+              kumosearch-server \
+  --data-dir /var/lib/kumosearch \
+  --api-key=kkumosearch \
+  --api-address 0.0.0.0 \
+  --api-port 8868 \
+  --peering-address 192.168.12.2 \
+  --peering-port 8107 \
+  --nodes=/etc/kumosearch/nodes
+```
+
+          </TabItem>
+    <TabItem value="Node-3" label="Node-3" default>
+
+```shell
+# Create nodes file
+#   This file is identical on all nodes
+echo '192.168.12.1:8107:8868,192.168.12.2:8107:8868,192.168.12.3:8107:8868' | sudo tee /etc/kumosearch/nodes
+
+# Start kumosearch Process
+#   *** Notice `peering-address` ***
+        kumosearch-server \
+  --data-dir /var/lib/kumosearch \
+  --api-key=kkumosearch \
+  --api-address 0.0.0.0 \
+  --api-port 8868 \
+  --peering-address 192.168.12.3 \
+  --peering-port 8107 \
+  --nodes=/etc/kumosearch/nodes
+```
+
+    </TabItem>
+</Tabs>
+
+::: warning 重要提示
+
+- `--peering-address` 应该使用 **私有 IP 地址**，因为它仅用于内部集群操作，并且包含节点之间交换的未加密的 Raft 数据。
+
+- `--api-address` 可以是公共或私有 IP 地址。这是您的用户/客户端连接 kumosearch API 的地址。
+
+- 我们强烈建议在生产设置中将`--api-port`设置为 443 (HTTPS)，并使用`--ssl-certificate`和`--ssl-certificate-key`服务器参数配置 SSL 证书。
+
+:::
+
+:::tip
+如果您使用 Docker，请确保您已配置 Docker 网络，以便 Docker 容器内的 kumosearch 进程可以使用其 IP 地址与其他 kumosearch 进程相互通信。
+阅读有关 [Docker 网络](https://docs.docker.com/network/) 以了解更多信息。
+:::
+
+### 验证集群
+
+集群配置完成后，您可以向每个节点的 `/debug` 端点发送 GET 请求来验证它们是否已成功形成集群。
+
+```shell
+curl "http://${KUMOSEARCH_HOST}/debug/" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+在其中一个节点上，应看到以下响应：
+
+```json
+{
+  "state": 1,
+  "version": "x.x.x"
+}
+```
+
+其中`state: 1`表示这是被选为领导者的节点。
+
+所有其他节点应返回以下响应：
+
+```json
+{
+  "state": 4,
+  "version": "x.x.x"
+}
+```
+
+其中`state: 4`表示该节点是跟随者。
+
+如果多个节点返回`state: 1`，表明集群未正确形成。请检查 kumosearch 日志（通常位于 `/var/log/kumosearch/kumosearch.log` 中）以获取更多诊断信息。
+
+如果返回`state: 4`或`state: 1`以外的值，表明存在错误。请检查 kumosearch 日志（通常位于 `/var/log/kumosearch/kumosearch.log` 中）以获取更多诊断信息。
+
+### 恢复集群
+
+kumosearch 集群最多可以容忍`(N-1)/2`个节点的故障。例如：
+
+- 3 节点集群可以容忍 1 个节点故障
+- 5 节点集群可以容忍 2 个节点故障
+
+如果故障节点数超过`(N-1)/2`，集群将失去法定人数、变得不稳定，且其余节点无法安全地就哪个节点是领导者达成共识。为了避免潜在的脑裂问题，kumosearch 将停止接受写入和读取，直到完成一些手动验证和干预，使问题得到解决。
+
+要恢复处于此状态的集群：
+
+1. 强制一个节点成为单节点集群，通过编辑其节点文件，只保留自身的 IP 地址。无需重启 kumosearch 进程，配置更改会在 30 秒内生效。
+2. 一旦该节点在调用`/health`时返回 ok 状态，您可以编辑节点文件，将另一个节点重新添加到集群中，并等待其与新的领导者同步。
+3. 对每个节点重复上述步骤，直到集群恢复正常。 
+
+## 客户端配置
+
+kumosearch 客户端允许在客户端初始化期间指定一个或多个节点。因此，您可以在实例化客户端库时指定集群中的各个主机名。客户端将自动在所有节点上平衡读写负载，并通过内置的重试机制努力从瞬时故障中恢复。
+
+以下是 3 节点的客户端配置示例：
+
+<Tabs>
+          <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+/*
+ *  Our JavaScript client library works on both the server and the browser.
+ *  When using the library on the browser, please be sure to use the
+ *  search-only API Key rather than the admin API key since the latter
+ *  has write access to kumosearch and you don't want to expose that.
+ */
+
+const kumosearch = require('kumosearch')
+
+let client = new kumosearch.Client({
+  'nodes': [
+    { 'host': 'kumosearch-1.example.net', 'port': 443, 'protocol': 'https' },
+    { 'host': 'kumosearch-2.example.net', 'port': 443, 'protocol': 'https' },
+    { 'host': 'kumosearch-3.example.net', 'port': 443, 'protocol': 'https' },
+  ],
+  'apiKey': '<API_KEY>',
+  'connectionTimeoutSeconds': 2
+})
+```
+      </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+import kumosearch
+
+client = kumosearch.Client({
+  'nodes': [
+    {'host': 'kumosearch-1.example.net', 'port': '443', 'protocol': 'https'},
+    {'host': 'kumosearch-2.example.net', 'port': '443', 'protocol': 'https'},
+    {'host': 'kumosearch-3.example.net', 'port': '443', 'protocol': 'https'}
+  ],
+  'api_key': '<API_KEY>',
+  'connection_timeout_seconds': 2
+})
+```
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        export KUMOSEARCH_API_KEY='<API_KEY>'
+        export KUMOSEARCH_HOST='https://kumosearch.example.net'
+        ```
+    </TabItem>
+</Tabs>
+

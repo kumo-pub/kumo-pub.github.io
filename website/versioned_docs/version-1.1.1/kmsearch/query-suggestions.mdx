@@ -1,0 +1,46 @@
+# 搜索提示词
+
+当在 Google 或 Amazon 中输入搜索词时，我们会看到一个下拉菜单，显示建议的搜索查询。这些提示词可能能够帮助用户更快地找到所需内容。
+
+import query_suggestions_google from '@site/static/img/kmsearch/query-suggestions-google.png';
+import query_suggestions_amazon from '@site/static/img/kmsearch/query-suggestions-amazon.png';
+
+<img src={query_suggestions_google} alt="Search Suggestions on Google" height="300"/>
+
+<img src={query_suggestions_amazon} alt="Search Suggestions on Google" height="300"/>
+<br/>
+<br/>
+
+本文将讨论如何使用 kumosearch 实现搜索提示词。
+
+## 两种方法
+
+实现搜索提示词有两种互补的方法，您可以根据搜索流量和数据集大小选择使用其中一种或同时使用两者。
+
+### 1. 从主数据集中搜索提示
+
+如果搜索流量相对较低（例如每月数千次搜索），或者用户输入的搜索词覆盖不到数据集的 80%，可以直接显示来自主数据集的结果或建议。
+
+#### 传统搜索体验
+
+在搜索提示词流行之前，用户需要输入完整的搜索查询并按下 Enter 键才能查看结果。如果没有满意的结果，他们将不得不返回并再次重复此过程。这种方式会给用户带来较大的阻碍。
+
+理想的解决方案是在用户键入时立即显示结果，而不需要每次都按 Enter 键。
+
+然而，搜索引擎在每个按键后对整个数据集执行搜索的速度较慢或计算量较大，使得这种理想方案难以大规模实施。搜索提示因此应运而生：为最流行的搜索词建立索引，对这个较小的数据集运行搜索，在每次按键时显示搜索建议，让用户选择一个建议，然后按 Enter 键对完整数据集进行搜索。
+
+#### 现代搜索体验
+
+kumosearch 这样的即时搜索引擎，可以将整个搜索索引保存在内存中，现在可以对整个数据集进行搜索，并在用户键入时立即显示主数据集中的结果，无需按 Enter 键。
+
+以下是搜索提示demo体验的链接：[sug.kumo-ai.tech/](http://sug.kumo-ai.tech/)
+
+如果仍需要实现下拉式搜索提示，也可以使用 kumosearch。可以将搜索查询发送到包含所有数据的主索引表，在 UI 中从文档中选择一个字段，以下拉格式向用户显示结果。
+
+### 2. 从搜索历史中搜索提示
+
+如果您的网站有足够的搜索流量，可以从前端收集用户在搜索框中输入的搜索词，将它们聚合后添加到 kumosearch 中的新 `popular_queries` 索引表，并为每个搜索词赋予流行度得分。
+
+当用户键入搜索词时，可以使用 [multi_search](../api/kmsearch/federated-multi-search.mdx)搜索。这样，可以根据其他用户过去输入的搜索词向用户显示建议，如果这些搜索词不存在，则显示完整数据集的结果，为用户提供更多探索数据的方式。
+
+详细了解[搜索分析和查询建议](../api/kmsearch/analytics-query-suggestions.mdx)。

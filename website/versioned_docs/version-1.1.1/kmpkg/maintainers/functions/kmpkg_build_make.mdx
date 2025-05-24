@@ -1,0 +1,68 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_build_make
+
+构建一个 Makefile 项目。
+
+## 使用情况
+
+```cmake
+kmpkg_build_make([BUILD_TARGET <target>]
+                 [INSTALL_TARGET <target>]
+                 [ADD_BIN_TO_PATH]
+                 [ENABLE_INSTALL]
+                 [MAKEFILE <makefileName>]
+                 [LOGFILE_ROOT <logfileroot>]
+                 [DISABLE_PARALLEL]
+                 [SUBPATH <path>])
+```
+
+### BUILD_TARGET
+传递给 make 构建命令的目标 (`./make <target>`)。 如果未指定，将传递“所有”目标。
+
+
+### INSTALL_TARGET
+
+使用 ENABLE_INSTALL 时传递给 make 构建命令的目标 (`./make <target>`)。 默认为“安装”。
+
+### ADD_BIN_TO_PATH
+
+在构建过程中，将相应的发布和调试 bin\ 目录添加到该路径，以便可执行文件可以针对树内 DLL 运行。
+
+### ENABLE_INSTALL
+
+如果端口支持安装目标，请使用 kmpkg_install_make() 而不是 kmpkg_build_make()
+
+### MAKEFILE
+
+将 Makefile 指定为传递给 `kmpkg_configure_make()` 的源根目录的相对路径
+
+### LOGFILE_ROOT
+
+指定日志文件前缀。
+
+### DISABLE_PARALLEL
+
+将指示底层构建系统不要并行化
+
+### SUBPATH
+
+要在其中调用 make 的其他子目录。 应仅生成端口的一部分时非常有用。
+
+## 说明
+
+执行此命令前应调用 [`kmpkg_configure_make()`](kmpkg_configure_make.mdx)。
+
+如果 makefile 支持“安装”目标，则可以使用别名 [`kmpkg_install_make()`](kmpkg_install_make.mdx) 函数。
+
+## 示例
+
+- [x264](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/x264/portfile.cmake)
+- [tcl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/tcl/portfile.cmake)
+- [freexl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/freexl/portfile.cmake)
+- [libosip2](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/libosip2/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_build\_make.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_build_make.cmake)

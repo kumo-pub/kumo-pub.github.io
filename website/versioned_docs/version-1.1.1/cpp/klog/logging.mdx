@@ -1,0 +1,289 @@
+# 日志
+
+turbo Logging 库提供了编写短文本消息的工具关于`stderr`、`磁盘文件`或`其他接收器`的程序状态（通过
+扩展 API）。
+
+## API 概述 {#API}
+
+`LOG()` 和 `CHECK()` 宏系列是 API 的核心。每个形成
+可以选择将附加数据流入的语句的开头
+就像`std::cout`一样。
+
+流入单个宏的所有数据将被连接并写入日志文件作为一条消息，带有由元数据形成的 [前缀](#prefix)
+（时间、文件/行等）。特别是，与“std::cout”不同，该库在每条消息的末尾提供一个换行符，因此您通常不应该结束
+使用 `\n` 或 `std::endl` 记录语句。任何*正在*流入的换行符
+将显示在日志文件中。
+
+有关更详细的信息，请参阅头文件。
+
+### `LOG()` 宏 {#LOG}
+
+`LOG()` 将严重性级别作为参数，它定义了粒度和
+要记录的日志记录信息的类型。四个基本严重性级别是`INFO`，
+“警告”、“错误”和“致命”。 `FATAL` 并不是随意命名的；它导致
+日志库在记录流消息后终止进程。
+请参阅下文，了解有关[日志级别](#severity) 的更多信息，包括最佳实践
+用于挑选一个。
+
+```c++
+LOG(INFO) << "Kumo 你好！";
+```
+
+这将在日志中生成一条消息，如下所示：
+
+```text
+I0926 09:00:00.000000 12345 foo.cc:10] Kumo 你好！
+```
+
+元数据的格式记录在[下面](#prefix)。
+
+### `CHECK()` 宏 {#CHECK}
+
+`CHECK()` 是一个断言。它的严重性始终是`FATAL`，因此它是唯一的参数
+是一个`应该`为真的条件。如果不是，`CHECK()` 写入日志并终止该进程。它在**所有构建模式**中都处于活动状态（与 C 不同）
+`assert()` 宏）并将失败记录到应用程序日志中，方式与`LOG()` 但包含有关失败原因和失败位置的附加信息。
+
+与`FATAL`一样，应谨慎使用“CHECK()”断言（尤其是在服务器代码）并且仅在最好实际终止的情况下
+处理而不是尝试恢复：例如无法恢复，或者记忆腐败可能会损坏用户数据。请注意，您还应该知道在哪里
+您的代码可能正在运行；命令行实用程序或批处理中的`CHECK()`处理作业比面向用户的服务中的“CHECK()”需要更少的谨慎。如果
+您不确定代码将在哪里运行（如果您正在编写实用程序库，例如），保守一点并假设它将用于面向生产的
+服务，并应尽可能避免`CHECK()`。
+
+```c++
+CHECK(!filenames_sorted.empty()) << "no files matched";
+ProcessFile(filenames_sorted.front());
+```
+这将在日志中生成一条消息，如下所示：
+
+```
+F0926 09:00:01.000000   12345 foo.cc:100] Check failed: !filenames_sorted.empty() no files matched
+E0926 09:00:01.150000   12345 process_state.cc:1133] *** SIGABRT received by PID 12345 (TID 12345) on cpu 0 from PID 12345; stack trace: ***
+E0926 09:00:01.250000   12345 process_state.cc:1136] PC: @     0xdeadbeef  (unknown)  raise
+    @     0xdeadbeef       1920  FailureSignalHandler()
+    @     0xdeadc0w5    2377680  (unknown)
+(more stack frames follow)
+```
+
+请注意，此日志条目使用前缀`F`表示日志级别 `FATAL`。条件本身的文本记录在流式操作数之前。
+此外，堆栈跟踪记录的严重性为`ERROR`（在前缀为`ERROR`的行上）
+在`FATAL`消息之后但在进程终止之前使用`E`）。
+
+特殊的二参数形式拼写为`CHECK_EQ()`、`CHECK_GT()`、`CHECK_STREQ()`
+（对于`char*`字符串）等可用于对比较进行断言
+在可流式传输、可比较的类型之间。除了论证的文本之外，
+这些形式记录参数的实际值。
+
+```c++
+int x = 3, y = 5;
+CHECK_EQ(2 * x, y) << "oops!";
+```
+这将在日志中生成一条消息，如下所示：
+
+```
+F0926 09:00:02.000000   12345 foo.cc:20] Check failed: 2 * x == y (6 vs. 5) oops!
+```
+### 日志级别 {#severity}
+
+`turbo::LogSeverity` 类型表示严重性级别。 `LOG()` 的参数是实际上不是这种类型，或者*任何*类型。一些宏技巧是
+用于使`LOG(ERROR)`工作，而不使用名为的宏或全局符号`错误`。这是必要的，因为`ERROR`是由一些流行的定义的
+第三方软件包（例如 Microsoft Windows）并且无法重新定义。
+
+#### 有四个适当的日志级别
+
+##### `INFO` {#severity-info}
+
+对应于`turbo::LogSeverity::kInfo`。它描述了*预期*事件对于理解*程序*的状态很重要，但哪些不是
+表明有问题。库，尤其是低级公共库，应谨慎使用此级别，以免他们向每个程序的日志发送垃圾邮件
+使用它们。
+
+##### `WARNING` {#severity-warning}
+
+对应于`turbo::LogSeverity::kWarning`。它描述了*可能*发生的意外事件
+
+##### `ERROR` {#severity-error}
+
+对应于`turbo::LogSeverity::kError`。它描述了意外的问题事件该程序能够从中恢复。 `ERROR`消息应该是可操作的，
+这意味着他们应该描述软件或其内容的实际问题配置（而不是例如用户输入）和组合
+消息、文件名和行号以及周围的消息应该是至少足以理解所报告的事件。
+
+##### `FATAL` {#severity-fatal}
+
+对应于`turbo::LogSeverity::kFatal` 是 `CHECK` 的隐式严重性级别
+失败。它描述了不可恢复的问题。在此级别记录终止该进程。应谨慎使用“FATAL”日志记录级别
+认真对待服务，特别是面向用户的服务，以及图书馆此类服务中可能包含的代码。每个致命日志都是一个潜在的
+如果很大一部分服务工作同时发生，就会发生中断。<br />
+致命日志记录通常更适合开发人员工具，某些批处理作业以及作业启动时的失败。也就是说，进程终止和
+中断总是比未定义的行为（可能包括用户数据损坏和/或安全或隐私事件），因此`FATAL`是有时甚至在服务器和库代码中也适用作为最后的手段
+对无法以任何其他方式处理的意外行为的响应。
+
+#### 还有两个伪级别
+
+##### `DFATAL` {#severity-dfatal}
+（`"debug fatal"`）对应到 `turbo::kLogDebugFatal`。在优化构建中它的值是`ERROR`（例如在生产）和其他版本（例如测试）中的`FATAL`。它可以用于
+确保意外事件导致测试失败（通过终止过程），但不损害生产。由于生产工作将继续发生`DFATAL`故障后，请确保恢复优雅地。
+
+##### `QFATAL` {#severity-qfatal}
+（`"quiet fatal"`）没有相应的 `turbo::LogSeverity` 值。它的行为类似于`FATAL`，除了
+没有记录堆栈跟踪并且不运行`atexit()`处理程序。这是通常是启动时发生错误的最佳选择（例如标志
+验证），其中控制流无趣且不必要诊断。
+
+### 动态日志级别
+如果您想使用 C++ 表达式指定严重性级别，例如使得
+使用的级别在运行时会有所不同，您也可以这样做：
+
+```c++
+LOG(LEVEL(MoonPhase() == kFullMoon ? turbo::LogSeverity::kFatal
+                                   : turbo::LogSeverity::kError))
+      << "Spooky error!";
+```
+
+### `VLOG()` 宏 {#VLOG}
+
+`VLOG()`（“详细日志”）用于运行时可配置的调试日志记录。这宏采用非负整数详细级别作为参数 - `INFO`
+暗示了严重性。详细级别值是任意的，但是较低的值对应于更容易看到的消息。非零详细级别是默认情况下禁用，
+并且禁用`VLOG()`的性能成本非常小，因此，在 Kumo 的大部分部分中，自由使用“VLOG()”是可以接受的，没有风险
+严重的性能下降。
+
+```c++
+Foo::Foo(int num_bars) {
+  VLOG(4) << "Constructing a new Foo with " << num_bars << " Bars";
+  for (int i = 0; i < num_bars; i++) bars_.push_back(MakeBar(this));
+}
+```
+设置“--verbosity”标志将打开位于或低于该位置的所有`VLOG()`消息指定级别。这可能会使您的日志难以阅读和/或填写
+你的磁盘。 `--vmodule` 标志允许为不同的模块设置不同的级别源文件；它需要一个以逗号分隔的`key=value`对列表，其中每个
+键是与文件名匹配的全局变量，每个值都是详细级别这应该对匹配文件有效。详细日志记录级别也可以
+在运行时使用 `turbo::set_vlog_level` 和 `turbo::set_global_vlog_level` 进行更改：
+
+```c++
+class FooTest : public testing::Test {
+ protected:
+  FooTest() {
+    // Crank up the `VLOG()` level for `Foo` since it does not log much otherwise:
+    turbo::set_vlog_level("foo_impl", 4);
+  }
+};
+```
+
+### 其他宏变体 {#mutators}
+
+日志记录 API 包含许多用于特殊情况的附加宏。
+
+-  `QCHECK()` 的工作方式与 `CHECK()` 类似，但与 `QFATAL` 和 QFATAL 具有相同的变体。
+   `FATAL`：它不会记录堆栈跟踪或运行 `atexit()` 处理程序
+   失败。
+
+   ```c++
+    int main (int argc, char**argv) {
+      turbo::ParseCommandLine(argc, argv);
+      QCHECK(!turbo::get_flag(FLAGS_path).empty()) << "--path is required";
+      ...
+   ```
+-    `PLOG()` 和 `PCHECK()` 自动将描述 `errno` 的字符串附加到
+     记录的消息。它们对于设置的系统库调用很有用失败时的`errno`指示失败的性质。他们的名字是
+     旨在与`perror`库函数保持一致。
+     ```c++
+
+        const int fd = open(path.c_str(), O_RDONLY);
+        PCHECK(fd != -1) << "Failed to open " << path;
+
+        const ssize_t bytes_read = read(fd, buf, sizeof(buf));
+        PCHECK(bytes_read != -1) << "Failed to read from " << path;
+
+        const int close_ret = close(fd);
+        if (close_ret == -1) PLOG(WARNING) << "Failed to close " << path;
+     ```
+
+-    `DLOG()`（“调试日志”）和`DCHECK()`从二进制文件中完全消失在优化的构建中。请注意，`DLOG(FATAL)` 和 `DCHECK()` 有很大的差异。
+     与`LOG(DFATAL)`不同的语义。<br />
+     调试日志记录有助于提供调试测试时有用的信息但在生产中收集（例如获取竞争锁）成本高昂：
+    ```c++
+    DLOG(INFO) << server.State();
+    ```
+    小心`DCHECK()`；如果值得在测试中检查它可能是也值得在生产中检查：
+    ```c++
+    DCHECK(ptr != nullptr);
+    ptr->Method();
+    ```
+    `DCHECK`有时对于检查非常热的不变量很有用代码路径，其中必须假设测试中的检查来验证中的行为生产。<br />
+    就像 `assert()` 一样，确保不要依赖于副作用的评估在`DCHECK`和`DLOG`语句中：
+    ```c++ {.bad}
+    DCHECK(server.Start());
+    // In an optimized build, no attempt will have been made to start the
+    // server!
+    ```
+-   * `LOG_IF()` 添加了一个条件参数，相当于 `if`陈述。与`if`和三元运算符一样，条件将是
+    根据上下文转换为`bool`。还有`PLOG_IF()`和`DLOG_IF()`变体存在。
+    ```c++
+    LOG_IF(INFO, turbo::get_flag(FLAGS_dry_run))
+        << "--dry_run set; no changes will be made";
+    ```
+-   `LOG_EVERY_N()`、`LOG_FIRST_N()`、`LOG_EVERY_N_SEC()` 和`LOG_EVERY_POW_2()` 添加了更复杂的条件，这些条件不容易实现
+     用一个简单的`if`语句复制。其中每一个都维护一个静态存储中的每条语句状态对象，用于确定是否到了重新登录的时间。它们是线程安全的。<br />
+     令牌`COUNTER`可以流式传输到这些中；它将被替换为单调递增执行次数通过这个声明，包括记录发生的时间和没有的时候。具有附加条件的宏变体（例如
+     `LOG_IF_EVERY_N()`) 也存在，与 `VLOG()` 的许多组合也是如此，`PLOG()`和`DLOG()`。
+     ```c++
+    LOG_EVERY_N(WARNING, 1000) << "Got a packet with a bad CRC (" << COUNTER
+                               << " total)";
+    ```
+
+### 变异方法
+
+`LOG()` 和 `CHECK()` 宏支持一些可以改变它们的可链接方法行为。
+
+* `.AtLocation(std::string_view 文件，int 行)`<br />
+覆盖从调用站点推断的位置。指向的字符串`file` 在语句结束之前必须有效。
+* `.NoPrefix()`<br />
+省略此行中的 [前缀](#prefix)。前缀包含元数据关于记录的数据，例如源代码位置和时间戳。
+* `.WithVerbosity(int verbose_level)`<br />
+设置记录消息的详细程度字段，就像它是由`VLOG（详细级别）`。与“VLOG()”不同，此方法不影响是否
+当指定的`"verbose_level”`被禁用时，语句将被评估。唯一的影响是使用“LogSink”实现
+`turbo::LogSink::verbosity()` 值。价值
+可以指定`turbo::LogEntry::kNoVerbosityLevel`来标记消息不
+
+* `.WithTimestamp(turbo::Time timestamp)`<br />
+使用指定的时间戳而不是当时收集的时间戳
+执行。
+* `.WithThreadID(turbo::LogEntry::tid_t tid)`<br />
+使用指定的线程 ID，而不是在执行时收集的线程 ID
+执行。
+
+* `.WithMetadataFrom(const turbo::LogEntry &entry)`<br />
+从指定的 `turbo::LogEntry` 复制所有元数据（但不复制数据）。<br />
+这可用于更改消息的严重性，但它有一些
+限制：
+  * `TURBO_MIN_LOG_LEVEL` 根据传递到 `LOG` 的严重性进行评估
+（或“CHECK”的隐式“FATAL”级别）。
+  * `LOG(FATAL)` 和 `CHECK` 无条件终止进程，即使
+严重程度稍后会更改。
+
+* `.WithPerror()`<br />
+在记录的消息中附加冒号、空格、文本描述
+`errno` 的当前值（如 `strerror(3)`），以及
+`错误`。结果与`PLOG()`和`PCHECK()`相当。
+* `.ToSinkAlso(turbo::LogSink* sink)`<br />
+将此消息发送到`*sink`以及它会发送的任何其他接收器
+否则已发送至。 `sink` 不能为空。
+* `.ToSinkOnly(turbo::LogSink* sink)`<br />
+将此消息发送到`*sink`，而不发送到其他消息。 `sink` 不能为空。
+
+## 日志消息输出 {#output}
+
+### 日志前缀 {#prefix}
+
+每条消息均使用以下形式的元数据进行记录：
+
+```
+I0926 09:00:00.000000   12345 foo.cc:10] Hello world!
+```
+
+前缀以`I`开头，代表`INFO`日志级别，组合日期为`0926`。时间以微秒为单位，在机器本地
+时区。 `12345` 是线程 ID 号。 `foo.cc:10` 是源代码`LOG()`语句出现的位置，括号和空格是
+消息本身之前的固定分隔符。
+
+可以使用`FLAGS_log_with_prefix`标志全局抑制前缀，或者使用单个消息`.NoPrefix()`[mutator 方法](#mutators)。
+
+### `stderr` 输出 {#stderr}
+
+默认情况下，包含并注册了写入`stderr`的`LogSink`。globals.h 声明了一些旋钮来控制该接收器的严重性级别
+写入 stderr 并丢弃。

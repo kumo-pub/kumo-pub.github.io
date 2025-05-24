@@ -1,0 +1,172 @@
+---
+date: 7/22/2024
+---
+# 清单模式
+
+本文介绍了 kmpkg 的清单模式概念。
+
+##什么是清单模式？
+
+kmpkg有两种运行模式：[经典模式](classic-mode.mdx)和manifest
+模式。对于大多数用户，我们建议使用清单模式。
+
+清单模式使用声明性 JSON 文件来描述有关您的元数据
+项目或包。清单文件需要具有
+[`kmpkg.json`](../reference/kmpkg-json.mdx) 名称。
+
+通过运行“kmpkg install”命令来启用清单模式
+工作目录中的清单文件（`kmpkg.json`）。继续阅读有关详细信息
+如何[以清单模式安装软件包](#install-manifest-mode)。
+
+还需要清单模式才能使用高级功能，例如
+[版本控制](../users/versioning.mdx) 和
+[自定义注册表](../concepts/registries.mdx)。
+
+## 端口中的清单文件
+
+所有 kmpkg 端口必须包含一个“kmpkg.json”文件，该文件描述有关以下内容的元数据：
+他们安装的软件包。
+
+kmpkg 将包清单中的元数据用于各种目的，例如，
+计算依赖树，按名称或描述搜索包，
+解决特征等
+
+### 包清单示例
+
+```json
+{
+  "name": "fmt",
+  "version": "10.1.1",
+  "description": "Formatting library for C++. It can be used as a safe alternative to printf or as a fast alternative to IOStreams.",
+  "homepage": "https://github.com/fmtlib/fmt",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "kmpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "kmpkg-cmake-config",
+      "host": true
+    }
+  ]
+}
+```
+
+## 项目中的清单文件
+
+在项目中使用清单文件的主要目的是声明您的
+依赖关系。使用项目清单时，您可以指定版本
+约束和覆盖以锁定依赖项的特定版本。这
+该功能在经典模式下不可用。
+
+### 项目清单示例
+
+```json
+{
+  "dependencies": [ "fmt", "zlib" ],
+  "builtin-baseline": "3426db05b996481ca31e95fff3734cf23e0f51bc",
+  "overrides": [
+    { "name": "zlib", "version": "1.2.8" }
+  ]
+}
+```
+
+## 配置文件
+
+kmpkg 可以通过 `kmpkg-configuration.json` 文件进行配置以添加更多
+[包注册表](../concepts/registries.mdx) 或
+[覆盖端口和三元组](../concepts/overlay-ports.mdx) 位置。
+
+### 配置文件示例
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "7476f0d4e77d3333fbb249657df8251c28c4faae",
+    "repository": "https://gitee.com/kumo-pub/kmpkg"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://gitee.com/kumo-pub/kmpkg-docs",
+      "reference": "kmpkg-registry",
+      "baseline": "768f6a3ad9f9b6c4c2ff390137690cf26e3c3453",
+      "packages": [ "beicode", "beison" ]
+    }
+  ],
+  "overlay-ports": [
+    "C:\\dev\\my_kmpkg_ports"
+  ]
+}
+```
+
+## 以清单模式安装包 {#install-manifest-mode}
+
+要使用清单文件安装软件包，您可以使用[`kmpkg install`](../commands/install.mdx) 命令，不带任何包参数。
+该命令必须从包含清单的目录执行([`kmpkg.json`](../reference/kmpkg-json.mdx)) 文件，或清单的路径
+使用`--x-manifest-root=<path>`选项提供的文件。
+
+以清单模式安装的软件包不会安装在全局中
+[`installed`](../reference/installation-tree-layout.mdx) 目录，如下所示
+经典模式。相反，每个清单都有自己的安装目录，名为
+`kmpkg_installed`; `kmpkg_installed` 目录是在同一个目录中创建的
+包含清单文件的目录。
+
+每个清单都有独立的安装树，可以将不同项目之间的依赖关系。这规避了一个关键的限制
+经典模式，仅允许安装每个端口的一个版本。清单模式将每个项目的端口版本分开。
+
+## 使用项目清单中的功能
+
+清单文件可以定义附加的功能、行为和
+通过使用依赖
+[`features`](../reference/kmpkg-json.mdx#features)。
+
+在您的项目中，您可以定义功能来启用或禁用依赖项适用于您项目的某些部分。例如，如果您的项目包含多个
+组件，您可能希望在“依赖项”中保留常见的依赖项列出但将其他一些限制为其各自的组件。
+
+要启用项目的功能，您可以使用以下方法之一：
+
+- 将 [`--x-feature`](../commands/install.mdx#feature) 选项传递给您的 `kmpkg
+安装`命令。
+- 在 CMake 上，设置
+[`KMPKG_MANIFEST_FEATURES`](../users/buildsystems/cmake-integration.mdx) 之前
+第一次调用“project()”。
+
+### 示例：项目清单中的功能
+
+```json
+{
+  "name": "my-game",
+  "dependencies": [ "grpc" ],
+  "features": {
+    "client": {
+      "description": "client game executable",
+      "dependencies": [ "sdl2", "bullet3" ]
+    },
+    "server": {
+      "description": "multiplayer server executable",
+      "dependencies": [ "proxygen" ]
+    },
+    "tests": {
+      "description": "development tests",
+      "dependencies": [ "gtest" ]
+    }
+  }
+}
+```
+
+要仅构建“客户端”组件的依赖项，请运行：
+
+```Console
+kmpkg install --x-feature=client
+```
+
+## 后续步骤
+
+以下是接下来要尝试的一些任务：
+
+- 完成[清单模式教程](../consume/manifest-mode.mdx)
+- 阅读 [`kmpkg.json`](../reference/kmpkg-json.mdx) 并参考文章[`kmpkg-configuration.json`](../reference/kmpkg-configuration-json.mdx)。
+- 使用以下命令锁定您的版本以进行可重复构建[版本控制](../users/versioning.concepts.mdx)

@@ -1,0 +1,27 @@
+---
+date: 7/16/2024
+---
+
+# 教程： 生成安装包
+
+该页面内容为`kmcmake`如何生成安装包。
+
+## 安装包
+
+`kmcmake`默认实现了`deb`以及`rpm`安装包。项目编译完成后，可使用`make package`命令生成安装包。
+
+:::info
+通常，有二进制可执行程序的包考虑生成包的模式，在kmpkg体系统，库文件我们推荐使用kmpkg集成，而不是生成二进制安装包。
+:::
+
+## 配置生成包
+
+生成安装包的配置文件在`project-dir/cmake/${project-name}_cpack_config.cmake`中。
+
+重要的配置项：
+
+- KMCMAKE_PACKAGING_INSTALL_PREFIX 安装目录
+- KMCMAKE_PACKAGE_DESCRIPTION 项目描述
+- KMCMAKE_PACKAGE_MAINTAINER 项目维护人
+- KMCMAKE_PACKAGE_CONTACT 项目维护人邮箱
+- KMCMAKE_PACKAGE_HOMEPAGE_URL 项目主页

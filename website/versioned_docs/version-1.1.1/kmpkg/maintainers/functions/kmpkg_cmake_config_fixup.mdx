@@ -1,0 +1,61 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_cmake_config_fixup
+
+合并并更正发布和调试 CMake 目标和配置以支持多配置生成器。
+
+## 使用情况
+
+```cmake
+kmpkg_cmake_config_fixup(
+    [PACKAGE_NAME <name>]
+    [CONFIG_PATH <config-directory>]
+    [TOOLS_PATH <tools/${PORT}>]
+    [DO_NOT_DELETE_PARENT_CONFIG_PATH]
+    [NO_PREFIX_CORRECTION]
+)
+```
+
+要使用此函数，必须依赖于帮助程序端口  `kmpkg-cmake-config`：
+
+```json
+"dependencies": [
+  {
+    "name": "kmpkg-cmake-config",
+    "host": true
+  }
+]
+```
+此外，更正目标常见问题，例如绝对路径和错误放置的二进制文件。
+
+对于许多端口，`kmpkg_cmake_config_fixup()` 本身应正常工作，因为 `PACKAGE_NAME` 默认为 `${PORT}` 且 `CONFIG_PATH`
+默认为 `share/${PACKAGE_NAME}`。 对于传递给 `find_package` 的包名称与端口名不同的端口，`PACKAGE_NAME` 应改为更改
+为该名称。 对于无法设置   `*config.cmake` 文件目录的端口，请使用 `CONFIG_PATH` 更改文件所在的目录。
+
+默认情况下，如果 `CONFIG_PATH` 的父目录名为 `cmake`，将移除该目录。 传递 `DO_NOT_DELETE_PARENT_CONFIG_PATH` 选项
+会禁用此类行为，因为这对于安装多个 CMake 包配置文件的端口很方便。
+
+`NO_PREFIX_CORRECTION` 选项会禁用 `kmpkg` 由于移动配置文件而进行的 `_IMPORT_PREFIX` 更正。 目前，更正不考虑文件
+移动方式，而是应用相当简单的更正，这在某些情况下会产生错误的结果。
+
+## 工作原理
+
+1. 将 `/debug/<CONFIG_PATH>/*targets-debug.cmake` 移动到 `/share/${PACKAGE_NAME}`。
+2. 在 Windows 上将所有与 `/bin/*.exe` 匹配的引用转换为 `/${TOOLS_PATH}/*.exe`。
+3. 在其他平台上将所有与 `/bin/*` 匹配的引用转换为 `/${TOOLS_PATH}/*`。
+4. 在自动生成的目标中修复 `${_IMPORT_PREFIX}`。
+5. 在配置中将 `${CURRENT_INSTALLED_DIR}` 替换为 `${_IMPORT_PREFIX}`。
+6. 合并发布和调试配置的 `INTERFACE_LINK_LIBRARIES`。
+7. 在目标中将 `${CURRENT_INSTALLED_DIR}` 替换为 `${KMPKG_IMPORT_PREFIX}`。
+8. 删除 `/debug/<CONFIG_PATH>/*config.cmake`。
+
+## 示例
+
+- [concurrentqueue](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/concurrentqueue/portfile.cmake)
+- [curl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/curl/portfile.cmake)
+- [nlohmann-json](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/nlohmann-json/portfile.cmake)
+
+## Source
+
+[ports/kmpkg-cmake-config/kmpkg\_cmake\_config\_fixup.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-cmake-config/kmpkg_cmake_config_fixup.cmake)

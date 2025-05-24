@@ -1,0 +1,66 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_acquire_msys
+
+使用 kmpkg_acquire_msys 下载并准备 MSYS2 实例。
+
+## 使用情况
+
+```cmake
+kmpkg_acquire_msys(<MSYS_ROOT_VAR>
+    PACKAGES <package>...
+    [NO_DEFAULT_PACKAGES]
+    [DIRECT_PACKAGES <URL> <SHA512> <URL> <SHA512> ...]
+)
+```
+
+## 参数
+
+### MSYS_ROOT_VAR
+
+将设置为 MSYS2 路径的输出变量。
+
+### PACKAGES
+
+要在 msys 中获取的包列表。
+
+确保包可用：`kmpkg_acquire_msys(MSYS_ROOT PACKAGES make automake1.16)`
+
+### NO_DEFAULT_PACKAGES
+
+排除常规基础包。
+
+基础包列表包括：bash、coreutils、sed、grep、gawk、gzip、diffutils、make 和 pkg-config
+
+### DIRECT_PACKAGES
+
+要在 msys 中获取的 URL/SHA512 对列表。
+
+端口可以使用此参数私下扩展要获取的 msys 包列表。 这些 URL 可以在 [msys2 网站](https://packages.msys2.org/search)上找到，并且应为直接存档链接：
+
+`https://repo.msys2.org/mingw/i686/mingw-w64-i686-gettext-0.19.8.1-9-any.pkg.tar.zst`
+
+## 说明
+调用 `kmpkg_acquire_msys` 后通常会调用 `bash.exe`：
+
+```cmake
+kmpkg_acquire_msys(MSYS_ROOT)
+set(BASH ${MSYS_ROOT}/usr/bin/bash.exe)
+
+kmpkg_execute_required_process(
+    COMMAND "${BASH}" --noprofile --norc "${CMAKE_CURRENT_LIST_DIR}\\build.sh"
+    WORKING_DIRECTORY "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel"
+    LOGNAME "build-${TARGET_TRIPLET}-rel"
+)
+```
+
+## 示例
+
+- [ffmpeg](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/ffmpeg/portfile.cmake)
+- [icu](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/icu/portfile.cmake)
+- [libvpx](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/libvpx/portfile.cmake)
+
+## Source
+
+[`scripts/cmake/kmpkg_acquire_msys.cmake`](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_acquire_msys.cmake)

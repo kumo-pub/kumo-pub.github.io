@@ -1,0 +1,41 @@
+---
+date: 07/16/2024
+---
+
+# 命令： kmpkg format-manifest
+
+kmpkg format-manifest 命令的参考。格式化 kmpkg.json 文件并将 CONTROL 文件转换为 kmpkg.json 格式。
+
+## 摘要
+
+```console
+kmpkg format-manifest [--all] [--convert-control] [<path>...]
+```
+
+## 说明
+
+[设置清单(`kmpkg.json`)](../reference/kmpkg-json.mdx) 文件的格式并将控制 (`CONTROL`) 文件转换为清单格式。 如果 `CONTROL` 和 `kmpkg.json` 文件位于同一目录中，该命令将退出并显示错误。
+
+## 示例
+
+设置特定清单或控制文件的格式：
+
+```console
+kmpkg format-manifest /path/to/kmpkg.json
+```
+若要为 `${KMPKG_ROOT}/ports` 目录中的所有清单文件设置格式，请执行以下操作：
+```console
+kmpkg format-manifest --all
+```
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--all`
+
+为 `${KMPKG_ROOT}/ports` 目录中的所有清单文件设置格式。
+
+### `--convert-control`
+
+如果 ports 目录中找到 `CONTROL` 文件，将其转换为 `kmpkg.json` 格式。

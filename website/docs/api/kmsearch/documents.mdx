@@ -1,0 +1,865 @@
+---
+sidebarDepth: 2
+sitemap:
+priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 文档
+
+在 kumosearch 中，您索引的每条记录称为 `文档`。
+
+## 索引文档 {#index-documents}
+
+要在给定索引表中建立索引的文档必须符合 [索引表 的 schema](./collections.mdx#create-a-collection)。
+
+如果文档包含 `string` 类型的 `id` 字段，kumosearch 将使用该字段作为文档的标识符。否则，kumosearch 将为文档分配一个自动生成的标识符。由于 `id` 字短是一个特殊字段，它不需在索引表 `schema` 中定义。
+
+
+:::warning 注意
+`id` 不应包含空格或其他需要 [url 编码](https://www.w3schools.com/tags/ref_urlencode.asp) 的字符。
+:::
+
+### 索引单个文档 {#index-a-single-document}
+
+如果需要为文档建立索引以响应用户操作，可以使用单文档创建端点。
+
+如果需要一次性索引多个文档，建议使用 [批量导入文档](#index-multiple-documents) 端点，该端点针对批量导入进行了优化。例如：如果有 100 个文档，使用导入端点一次性索引它们的性能会优于逐个索引。
+
+让我们看看如何将新文档添加到索引表中。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        let document = {
+        'id': '124',
+        'company_name': 'Stark Industries',
+        'num_employees': 5215,
+        'country': 'USA'
+    }
+
+        client.collections('companies').documents().create(document)
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+        ```py
+        document = {
+        'id': '124',
+        'company_name': 'Stark Industries',
+        'num_employees': 5215,
+        'country': 'USA'
+    }
+
+        client.collections['companies'].documents.create(document)
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/collections/companies/documents" -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+        "id": "124",
+        "company_name": "Stark Industries",
+        "num_employees": 5215,
+        "country": "USA"
+    }'
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 更新插入单个文档 {#upsert-a-single-document}
+
+如果文档已存在，可以替换具有相同 `id` 的文档，或者如果不存在具有相同 `id` 的文档，则创建一个新文档。
+
+如果需要一次性更新插入多个文档，建议使用带有 `action=upsert` 的 [批量导入文档](#index-multiple-documents) 端点，该端点针对批量更新插入进行了优化。例如：如果有 100 个文档，使用导入端点一次性更新插入的性能优于逐个更新插入。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        let document = {
+        'id': '124',
+        'company_name': 'Stark Industries',
+        'num_employees': 5215,
+        'country': 'USA'
+    }
+
+        client.collections('companies').documents().upsert(document)
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        document = {
+        'id': '124',
+        'company_name': 'Stark Industries',
+        'num_employees': 5215,
+        'country': 'USA'
+    }
+
+        client.collections['companies'].documents.upsert(document)
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/collections/companies/documents?action=upsert" -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+        "id": "124",
+        "company_name": "Stark Industries",
+        "num_employees": 5215,
+        "country": "USA"
+    }'
+        ```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "id": "124",
+            "company_name": "Stark Industries",
+            "num_employees": 5215,
+            "country": "USA"
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`POST ${KUMOSEARCH_HOST}/collections/:collection/documents`
+
+### 索引多个文档 {#index-multiple-documents}
+
+可以使用导入 API 批量索引多个文档。当索引多个文档时，此端点的性能要远高于多次调用 [单个文档创建端点](#index-a-single-document)。
+
+要导入的文档需要格式化为换行符分隔的 JSON 字符串，也称为 [JSONLines](https://jsonlines.org/) 格式。这本质上是每行一个 JSON 对象，文档之间没有逗号。例如，以下是一组以 JSONL 格式表示的 3 个文档。
+
+```json lines
+{"id": "124", "company_name": "Stark Industries", "num_employees": 5215, "country": "US"}
+{"id": "125", "company_name": "Future Technology", "num_employees": 1232, "country": "UK"}
+{"id": "126", "company_name": "Random Corp.", "num_employees": 531, "country": "AU"}
+```
+
+如果使用我们的客户端库，它可以自动将一组文档转换为 JSONL 格式。
+
+在导入到 kumosearch 之前，您还可以 [将 CSV 转换为 JSONL](#导入-csv-文件) ，或将 [JSON 转换为 JSONL](#导入-json-文件)。
+
+#### 操作 (create, upsert, update & emplace) {#create-upsert-update-emplace}
+
+除了批量创建文档之外，您还可以使用 `action` 操作查询参数来更新文档的 `id`字段。
+|操作   | 說明 |
+|:----------------------------|:----------------------------|
+|create (default)   | 创建一个新文档。如果相同 `id` 的文档已存在，则操作失败。|
+| upsert | 创建新文档或更新现有文档（如果相同 `id` 的文档已存在），需要发送整个文档。对于更新部分文档，请使用下面的 `update` 操作。|
+|update | 更新现有文档。如果给定 `id` 的文档不存在，则操作失败。可以发送仅包含要更新的字段的部分文档。|
+| emplace | 创建新文档或更新现有文档（如果相同 `id` 的文档已存在）。可以发送整个文档或部分文档进行更新。|
+
+让我们看看如何使用 `create` 创建一些文档。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        let documents = [{
+        'id': '124',
+        'company_name': 'Stark Industries',
+        'num_employees': 5215,
+        'country': 'USA'
+    }]
+
+        // IMPORTANT: Be sure to increase connectionTimeoutSeconds to at least 5 minutes or more for imports,
+        // when instantiating the client
+
+        client.collections('companies').documents().import(documents, {action: 'create'})
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        documents = [{
+        'id': '124',
+        'company_name': 'Stark Industries',
+        'num_employees': 5215,
+        'country': 'USA'
+    }]
+
+        # IMPORTANT: Be sure to increase connection_timeout_seconds to at least 5 minutes or more for imports,
+        # when instantiating the client
+
+        client.collections['companies'].documents.import_(documents, {'action': 'create'})
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/collections/companies/documents/import?action=create" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -H "Content-Type: text/plain" \
+        -X POST \
+        -d '{"id": "124","company_name": "Stark Industries","num_employees": 5215,"country": "USA"}
+        {"id": "125","company_name": "Acme Corp","num_employees": 2133,"country": "CA"}'
+        ```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`POST ${KUMOSEARCH_HOST}/collections/:collection/documents/import`
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="JSONLines" label="JSONLines" default>
+
+
+        ```json lines
+        {"success": true}
+        {"success": true}
+        ```
+
+    </TabItem>
+</Tabs>
+
+响应的每一行指示请求正文中每个文档的结果（以相同的顺序）。如果单个文档导入失败，不会影响其他文档。
+
+如果出现故障，响应行将包含相应的错误消息以及实际的文档内容。例如，第二个文档导入失败，响应如下：
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json lines
+        {"success": true}
+        {"success": false, "error": "Bad JSON.", "document": "[bad doc]"}
+        ```
+
+    </TabItem>
+</Tabs>
+
+:::warning NOTE
+
+无论单个文档的导入结果如何，导入端点始终会返回 HTTP 200 OK 状态码。这是因为在部分情况下，可能有些文档导入成功，而另一些文档导入失败。为了避免在这些部分成功的场景中返回 HTTP 错误码，我们统一返回 HTTP 200 状态码。
+
+因此，请务必检查 API 响应中是否有任何 `“{success: false, ...}”` 记录，以查看是否存在导入失败的文档。
+:::
+
+:::tip
+了解更多[将数据导入 kumosearch 时的技巧](../../kmsearch/syncing-data-into-kumosearch.mdx#tips-when-importing-data)。
+:::
+
+#### 返回导入文档的 `id` {#return-with-import-doc-id}
+
+如果您希望导入响应中返回所导入文档的 `id`，可以使用 `return_id` 参数。
+
+```shell
+# Makes the import response return the `id` field of imported documents in the response
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X POST --data-binary @documents.jsonl \
+'http://localhost:8868/collections/companies/documents/import?return_id=true'
+{"success": true, "id": "0"}
+{"success": true, "id": "1"}
+...
+```
+
+同样，使用 `return_doc` 参数将返回整个文档作为响应。
+
+#### 配置批量大小 {#configure-bulk-size}
+
+默认情况下，kumosearch 一次将 40 个文档导入。每导入 40 个文档后，kumosearch 就会为搜索请求队列提供服务，然后再切换回导入。要增加此值，请使用 `batch_size` 参数。
+
+请注意，此参数控制在单个导入 API 调用中发送的文档的服务器端批处理。增加此值可能会影响搜索性能，因此建议您不要更改默认值，除非确实需要。您还可以通过多个导入 API 调用（可能并行）发送文档来进行客户端批处理。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        const documentsInJsonl = await fs.readFile("documents.jsonl");
+        client.collections('companies').documents().import(documentsInJsonl, {batch_size: 100});
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        with open('documents.jsonl') as jsonl_file:
+        client.collections['companies'].documents.import_(jsonl_file.read().encode('utf-8'), {'batch_size': 100})
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X POST --data-binary @documents.jsonl \
+        "http://localhost:8868/collections/companies/documents/import?batch_size=100"
+        ```
+
+    </TabItem>
+</Tabs>
+
+**注意**：较大的批量大小将在导入过程中消耗较大的瞬时内存。
+
+### 处理脏数据
+
+`dirty_values` 参数决定了当字段的类型与先前[自动推断](./collections.mdx#auto-detect-schema)的类型或索引表`schema`中的[预定义](./collections.mdx#with-pre-defined-schema)类型不匹配时的处理方式。
+
+此参数可以与任意文档写入 API 端点一起发送，适用于单个文档和多个文档。
+
+| 值                  | 操作                                               |
+|:-------------------|:-------------------------------------------------|
+| `coerce_or_reject` | 尝试将字段的值强制转换为先前推断的类型。如果强制失败，则直接拒绝写入并显示错误消息。       |
+| `coerce_or_drop`   | 尝试将字段的值强制转换为先前推断的类型。如果强制失败，则删除特定字段并为文档的其余部分建立索引。 |
+| `drop`             | 删除特定字段并对文档的其余部分建立索引。                             |
+| `reject`           | 彻底拒绝该文档。                                         |
+
+**默认行为**
+
+如果 `schema` 中定义了通配符 (`.*`) 字段或者`schema` 中包含任何带有正则表达式名称的字段（例如名为 `.*_name` 的字段），默认行为是 `coerce_or_reject`。否则，默认行为是  `reject`。
+
+#### 用 `dirty` 数据索引文档
+
+例如，我们可以使用 `coerce_or_reject` 行为将包含整数的 `title` 字段索引到之前被推断为 `string` 类型的文档中：
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        let document = {
+        'title': 1984,
+        'points': 100
+    }
+
+        client.collections('titles').documents().create(document, {
+        "dirty_values": "coerce_or_reject"
+    })
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        document = {'title': 1984, 'points': 100}
+        client.collections['titles'].documents.create(document, {
+        'dirty_values': 'coerce_or_reject'
+    })
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/collections/titles/documents?dirty_values=coerce_or_reject" -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+        "title": 1984,
+        "points": 100
+    }'
+        ```
+
+    </TabItem>
+</Tabs>
+
+同样，我们可以将 `dirty_values` 参数用于 [更新](#update-a-single-document)、[插入](#upsert-a-single-document) 和 [导入](#index-multiple-documents) 操作。
+
+### 将所有值索引为字符串
+
+kumosearch 提供了一种通过使用 `string*` 字段类型将所有字段存储为字符串的便捷方法。将类型定义为 `string*` 允许 kumosearch 接受单值和多值/数组值。
+
+例如，我们想要从多个设备获取数据，但希望将它们存储为字符串，这是由于每个设备都可以对同一字段名称使用不同的数据类型（例如，一个设备可以发送 `record_id` 作为整数，而另一个设备可以发送 `record_id` 作为字符串）。
+
+为此，我们可以定义一个 `schema`，如下所示：
+
+```json
+{
+  "name": "device_data",
+  "fields": [
+    {"name": ".*", "type": "string*" }
+  ]
+}
+``` 
+
+现在，kumosearch 会自动将任何单值/多值数据转换为相应的字符串。并在使用 `dirty_values："coerce_or_reject"` 模式对数据进行索引时自动处理。
+
+您可以在下面看到它们是如何转换的：
+
+<Tabs>
+    <TabItem value="Input" label="Input" default>
+
+        ```json
+        {
+            "record_id": 141414,
+            "values": [76.24, 88, 100.67]
+        }
+        ```
+
+    </TabItem>
+
+    <TabItem value="Output" label="Output" default>
+
+        ```json
+        {
+            "record_id": "141414",
+            "values": ["76.24", "88", "100.67"]
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+### 导入 JSONL 文件
+
+您可以导入 JSONL 文件，也可以将 kumosearch [导出操作](#export-documents) 的输出直接导入到 [导入端点](#index-multiple-documents)，因为两者都使用 JSONL。
+
+这是一个示例文件：
+
+<Tabs>
+    <TabItem value="json-lines" label="json lines" default>
+
+        ```json lines
+        {"id": "1", "company_name": "Stark Industries", "num_employees": 5215, "country": "USA"}
+        {"id": "2", "company_name": "Orbit Inc.", "num_employees": 256, "country": "UK"}
+        ```
+
+    </TabItem>
+</Tabs>
+
+您可以按照上述说明导入 `documents.jsonl` 文件。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        const documentsInJsonl = await fs.readFile("documents.jsonl");
+        client.collections('companies').documents().import(documentsInJsonl, {action: 'create'});
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        with open('documents.jsonl') as jsonl_file:
+        client.collections['companies'].documents.import_(jsonl_file.read().encode('utf-8'), {'action': 'create'})
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -X POST \
+        -T documents.jsonl \
+        "http://localhost:8868/collections/companies/documents/import?action=create"
+
+        # If you have a large JSONL file,
+        # you can split the file and
+        # parallelize the import using this one liner:
+        parallel --block -5 -a documents.jsonl --tmpdir /tmp --pipepart --cat 'curl -H "X-KUMOSEARCH-API-KEY:
+        ${KUMOSEARCH_API_KEY}" -X POST -T {} http://localhost:8868/collections/companies/documents/import?action=create'
+        ```
+
+    </TabItem>
+</Tabs>
+
+### 导入 JSON 文件
+
+如果您有 JSON 格式的文件，可以使用 [`jq`](https://github.com/stedolan/jq) 将其转换为 JSONL 格式：
+
+```shell
+jq -c '.[]' documents.json > documents.jsonl
+```
+
+获得 JSONL 文件后，您可以按照[上述说明](#导入-jsonl-文件) 导入文件。
+
+### 导入 CSV 文件
+
+如果您有带有列标题的 CSV 文件，可以使用 [`mlr`](https://github.com/johnkerl/miller) 将其转换为 JSONL 格式：
+
+```shell
+mlr --icsv --ojsonl cat documents.csv > documents.jsonl
+```
+
+获得 JSONL 文件后，您可以按照[上述说明](#导入-jsonl-文件) 导入文件。
+
+### 导入其他文件类型
+
+kumosearch 主要存储 JSON 文档并针对快速搜索进行了优化。如果您可以从其他文件类型中提取数据并将其转换为结构化 JSON，则可以将其导入 kumosearch 进行搜索。
+
+例如，您可以使用以下库[将 DOCX 文件转换为 JSON](https://github.com/microsoft/Simplify-Docx)。[Apache Tika](https://tika.apache.org/) 是一个从 PDF、PPT、XLS 和 1000 多种不同文件格式中提取文本和元数据的库。
+
+提取 JSON 后，您可以在 kumosearch 中对它们进行索引。
+
+## 检索文档
+
+使用 `id` 从索引表中获取单个文档。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        client.collections('companies').documents('124').retrieve()
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        client.collections['companies'].documents['124'].retrieve()
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        $ curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X GET \
+        "http://localhost:8868/collections/companies/documents/124"
+        ```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "id": "124",
+            "company_name": "Stark Industries",
+            "num_employees": 5215,
+            "country": "USA"
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`GET ${KUMOSEARCH_HOST}/collections/:collection/documents/:id`
+
+## 更新文档 {#update-documents}
+
+kumosearch 允许您更新单个文档、多个文档或通过 `filter_by` 查询匹配的文档。
+
+### 更新单个文档 {#update-a-single-document}
+
+我们可以使用 `id` 从索引表中更新单个文档。更新可以是部分的，如下所示：
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        let document = {
+        'company_name': 'Stark Industries',
+        'num_employees': 5500
+    }
+
+        client.collections('companies').documents('124').update(document)
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        document = {
+        'company_name': 'Stark Industries',
+        'num_employees': 5500
+    }
+
+        client.collections['companies'].documents['124'].update(document)
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/collections/companies/documents/124" -X PATCH \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+        "company_name": "Stark Industries",
+        "num_employees": 5500
+    }'
+        ```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "company_name": "Stark Industries",
+            "num_employees": 5500
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`PATCH ${KUMOSEARCH_HOST}/collections/:collection/documents/:id`
+
+### 更新多个文档 {#update-multiple-documents}
+
+要更新多个文档，请使用带有 [`action=update`](#create-upsert-update-emplace)、
+[`action=upsert`](#create-upsert-update-emplace) 或 [`action=emplace`](#create-upsert-update-emplace)的批量导入端点。
+
+### 通过查询更新 {#update-by-query}
+
+要更新与给定 `filter_by` 查询匹配的所有文档：
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        let document = {
+        'tag': 'large'
+    }
+
+        client.collections('companies').documents().update(document, {"filter_by": "num_employees:>1000"})
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        document = {
+        'tag': 'large'
+    }
+
+        client.collections['companies'].documents.update(document, {'filter_by': 'num_employees:>1000'})
+        ```
+
+    </TabItem>
+
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/collections/companies/documents?filter_by=num_employees:>1000" -X PATCH \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{"tag": "large"}'
+        ```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "tag": "large"
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`PATCH ${KUMOSEARCH_HOST}/collections/:collection/documents`
+
+## 删除文档 {#delete-documents}
+
+### 删除单个文档 {#delete-a-single-document}
+
+使用 `id` 从索引表中删除单个文档。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        client.collections('companies').documents('124').delete()
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        client.collections['companies'].documents['124'].delete()
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X DELETE \
+        "http://localhost:8868/collections/companies/documents/124"
+        ```
+
+    </TabItem>
+</Tabs>
+
+**注意：** 当给定 `id` 的文档不存在时，将返回错误。若要忽略此错误并将删除操作视为成功，可以发送 `ignore_not_found=true` 参数。
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "id": "124",
+            "company_name": "Stark Industries",
+            "num_employees": 5215,
+            "country": "USA"
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`DELETE ${KUMOSEARCH_HOST}/collections/:collection/documents/:id`
+
+### 通过查询删除 {#delete-by-query}
+
+您还可以删除一组匹配特定 [`filter_by`](search_api.mdx#筛选结果) 条件的文档：
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        client.collections('companies').documents().delete({'filter_by': 'num_employees:>100'})
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        client.collections['companies'].documents.delete({'filter_by': 'num_employees:>100'})
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X DELETE \
+        "http://localhost:8868/collections/companies/documents?filter_by=num_employees:>=100&batch_size=100"
+
+        ```
+
+    </TabItem>
+</Tabs>
+
+使用 `batch_size` 参数控制一次应删除的文档数量。较大的值将加快删除速度，但会影响服务器上运行的其他操作的性能。
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "num_deleted": 24
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`DELETE ${KUMOSEARCH_HOST}/collections/:collection/documents?filter_by=X&batch_size=N`
+
+:::tip
+要按ID删除多个文档，可以使用 `filter_by=id: [id1, id2, id3]`。
+
+要删除索引表中的所有文档，可以使用与索引表中的所有文档匹配的过滤器。
+例如，如果您的文档中有一个名为 `popularity` 的 `int32` 字段，可以使用 `filter_by=popularity:>0` 删除所有文档。
+或者，如果您的文档中有一个名为 `in_stock` 的 `bool` 字段，可以使用 `filter_by=in_stock:[true,false]` 删除所有文档。
+:::
+
+## 导出文档 {#export-documents}
+
+以 JSONL 格式导出索引表中的文档。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        client.collections('companies').documents().export()
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        client.collections['companies'].documents.export()
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X GET \
+        "http://localhost:8868/collections/companies/documents/export"
+        ```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json-lines" label="json lines" default>
+
+        ```json lines
+        {"id": "124", "company_name": "Stark Industries", "num_employees": 5215, "country": "US"}
+        {"id": "125", "company_name": "Future Technology", "num_employees": 1232, "country": "UK"}
+        {"id": "126", "company_name": "Random Corp.", "num_employees": 531, "country": "AU"}
+        ```
+
+    </TabItem>
+</Tabs>
+
+导出时，可以使用以下参数来控制导出的结果：
+
+| 参数     | 描述                                                                                 |
+|:---------------|:-----------------------------------------------------------------------------------|
+| `filter_by`      | 将导出限制为满足 [filter by 查询](search_api.mdx#筛选结果) 的文档。                      |
+| `include_fields` | 导出文档中应出现的字段列表。                                                      |
+| `exclude_fields` | 导出文档中不应出现的字段列表。                                                  |
+
+**定义**
+
+`GET ${KUMOSEARCH_HOST}/collections/:collection/documents/export`
+

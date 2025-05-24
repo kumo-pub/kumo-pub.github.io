@@ -1,0 +1,84 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_download_distfile
+
+下载并缓存此端口所需的文件。
+
+应始终使用此帮助程序，而不是 CMake 的内置 file(DOWNLOAD) 命令，因为该程序启用了[资产缓存](../../users/assetcaching.mdx)等功能。
+
+如果可能，应使用其中一个 `kmpkg_from_` 函数，而不是直接调用此函数，例如以下函数所示：
+
+* [`kmpkg_from_bitbucket`](kmpkg_from_bitbucket.mdx)
+* [`kmpkg_from_git`](kmpkg_from_git.mdx)
+* [`kmpkg_from_github`](kmpkg_from_github.mdx)
+* [`kmpkg_from_gitlab`](kmpkg_from_gitlab.mdx)
+* [`kmpkg_from_sourceforge`](kmpkg_from_sourceforge.mdx)
+
+## 使用情况
+
+```cmake
+kmpkg_download_distfile(
+    <OUT_VARIABLE>
+    URLS <http://mainUrl> <http://mirror1>...
+    FILENAME <output.zip>
+    SHA512 <5981de...>
+    [ALWAYS_REDOWNLOAD]
+)
+```
+
+## 参数
+
+### OUT_VARIABLE
+
+
+此变量将设置为下载文件的完整路径。 然后，可立即将此项传递给 [`kmpkg_extract_source_archive`](kmpkg_extract_source_archive.mdx) 以获取源。
+### URLS
+
+要查阅的 URL 列表。 将按顺序进行尝试，直到下载文件之一成功匹配给定的 SHA512。
+
+### FILENAME
+
+文件的本地名称。 文件在端口之间共享，因此可能需要重命名该文件，使其明确归属此端口和避免冲突。
+
+### SHA512
+
+预期的文件哈希。
+
+如果此项与下载的版本不匹配，则构建将终止，并显示描述不匹配的消息。
+
+### QUIET
+
+抑制缓存命中时的输出
+
+### SKIP_SHA512
+
+跳过文件的 SHA512 哈希检查。
+
+仅当构建含有 `--head` 命令行标志时，此开关才有效。
+
+### ALWAYS_REDOWNLOAD
+
+避免缓存；这是 `REST` 调用，否则不稳定。
+
+需要 `SKIP_SHA512`。
+
+### HEADERS
+
+要附加到下载请求的标头列表。 此项可用于在下载期间进行身份验证。
+
+标头应指定为 `"<header-name>: <header-value>"`。
+
+## 说明
+
+帮助程序  [`kmpkg_from_github`](kmpkg_from_github.mdx) 应用于从 GitHub 项目下载。
+
+## 示例
+
+- [apr](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/apr/portfile.cmake)
+- [fontconfig](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/fontconfig/portfile.cmake)
+- [freetype](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/freetype/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_download\_distfile.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_download_distfile.cmake)

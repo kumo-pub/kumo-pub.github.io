@@ -1,0 +1,71 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_from_bitbucket
+
+从 Bitbucket 下载并提取项目。
+
+## 使用情况
+
+```cmake
+kmpkg_from_bitbucket(
+    OUT_SOURCE_PATH <SOURCE_PATH>
+    REPO <blaze-lib/blaze>
+    [REF <v3.8.1>]
+    [SHA512 <45d0d7f8cc350...>]
+    [HEAD_REF <master>]
+    [PATCHES <patch1.patch> <patch2.patch>...]
+)
+```
+
+## 参数
+
+### OUT_SOURCE_PATH
+
+指定将包含提取位置的输出变量。
+
+此项应按约定设置为 `SOURCE_PATH`。
+
+### REPO
+
+Bitbucket 上的组织或用户和存储库。
+
+### REF
+
+不会更改内容的稳定 `git commit-ish`（理想情况下为标记）。 此项不应为分支。
+
+对于没有官方版本的存储库，此项可以设置为当前最新主版本的完整提交 ID。 `kmpkg_from_bitbucket()` 将在 `https://bitbucket.com/<REPO>/get/<REF>.tar.gz` 下载稳定的提交快照，不包含任何历史记录信息。
+
+如果指定了 `REF`，则也必须指定 `SHA512`。
+
+### SHA512
+
+源存档的 SHA512 哈希。
+
+这是最简单的确定方法，即先将其设置为 0，然后尝试构建该端口。 错误消息将包含可以复制回端口文件的完整哈希。
+
+### HEAD_REF
+
+用于拉取 `--head` 构建的不稳定 `git commit-ish`（理想情况下为分支）。
+
+对于大多数项目，此项应为 `master`。 所选分支应为预期在所有支持的平台上始终可构建的分支。
+
+### PATCHES
+
+要应用于提取的源代码的修补程序列表。
+
+相对路径基于端口目录。
+
+## 说明
+
+必须至少指定 `RE`F 和 `HEAD_REF` 之一，但最好两者同时存在。
+
+这会在头部构建期间导出 `KMPKG_HEAD_VERSION` 变量。
+
+## 示例
+
+- [blaze](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/blaze/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_from\_bitbucket.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_from_bitbucket.cmake)

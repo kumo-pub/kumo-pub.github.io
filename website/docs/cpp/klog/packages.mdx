@@ -1,0 +1,17 @@
+# 使用包管理器安装
+
+## kmpkg
+
+`turbo/log` 可以使用 `kmpkg` 安装, 参阅[`kmpkg`安装](../../kmpkg/get_started/setup-kmpkg.mdx)。
+
+``` bash
+kmpkg install turbo
+```
+安装后,在项目目录中，可以使用：
+
+```shell
+mkdir build
+cd build
+cmake -DCMAKE_TOOLCHAIN_FILE=$KMPKG_CMAKE ..
+```
+`kmpkg`更多的集成方式请参阅[`kmpkg`文档](../../kmpkg/get_started/setup-kmpkg.mdx)

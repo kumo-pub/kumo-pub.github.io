@@ -1,0 +1,275 @@
+---
+date: 01/10/2024
+---
+# CMake 项目中的 kmpkg
+
+使用终端、Visual Studio、Visual Studio Code 或其他 IDE 将 kmpkg 集成到 CMake 项目中。
+
+kmpkg 提供与 CMake 的无缝集成，使已安装的软件包自动在您的项目中可用。 kmpkg 集成的机制是提供 CMake 工具链文件。
+
+CMake 第一次配置项目时，它会运行内部搜索例程来查找可行的项目
+[工具链](https://cmake.org/cmake/help/latest/manual/cmake-toolchains.7.html#id9)（编译器，
+链接器等）。此搜索发生在
+[`project()`](https://cmake.org/cmake/help/latest/command/project.html#command:project) 中的函数
+你的`CMakeLists.txt`。
+
+为了自定义工具链选择过程，CMake 支持使用自定义 CMake 语言脚本，称为工具链文件。通过设置“CMAKE_TOOLCHAIN_FILE”指定工具链文件
+多变的。 CMake 评估提供的工具链脚本的内容并设置变量定义、路径相应的所需的构建工具和其他构建参数，例如交叉编译标志。
+
+当您设置“CMAKE_TOOLCHAIN_FILE”以使用 kmpkg 工具链时(`<kmpkg-root>/scripts/buildsystems/kmpkg.cmake`)，kmpkg 利用工具链文件
+注入代码以与内置 CMake 函数透明地集成的机制。
+
+您仍然可以使用工具链文件来配置您自己的工具集[`KMPKG_CHAINLOAD_TOOLCHAIN_FILE`](../../users/triplets.mdx#kmpkg_chainload_toolchain_file) 三元组变量。
+
+kmpkg 集成的工作方式有所不同，具体取决于您使用的操作模式：
+
+在[经典模式](../../concepts/classic-mode.mdx)中，kmpkg设置CMake搜索路径
+适当地通过“find_package()”使已安装的软件包可用，`find_library()` 和 `find_path()` 函数。
+
+在[清单模式](../../concepts/manifest-mode.mdx)中，除了上述之外，工具链检测清单文件（“kmpkg.json”文件）并运行`kmpkg install`以自动获取项目的依赖项。
+
+因为工具链文件是在`project()`调用期间评估的，所以所有 CMake 级别的变量
+修改 kmpkg 设置必须在第一次调用`project()`之前设置。可能还需要如果您修改任何导致 [ABI哈希](../../reference/binarycaching.mdx#abi-hash) 更改。
+
+有关使用 CMake 的完整示例，请参阅[安装和使用包示例：sqlite](../../examples/installing-and-using-packages.mdx)。
+
+## `CMAKE_TOOLCHAIN_FILE`
+
+:::info NOTE
+如果在 `CMakeList.txt` 文件中设置 `CMAKE_TOOLCHAIN_FILE`，请确保在调用 `project()` 之前设置变量。
+:::
+
+配置为使用 kmpkg 工具链文件（通过 CMake 设置`CMAKE_TOOLCHAIN_FILE`）的项目可以使用标准 CMake 函数`find_package()`、`find_path()`和`find_library()`从 kmpkg 查找库。
+
+我们建议使用 [CMake Presets] 来指定您的工具链文件。例如，如果您定义了环境变量`KMPKG_ROOT`，则可以使用以下`CMakePresets.json`并在配置行上传递`--preset debug`：
+
+```json
+{
+  "version": 2,
+
+  "configurePresets": [
+    {
+      "name": "debug",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{KMPKG_ROOT}/scripts/buildsystems/kmpkg.cmake"
+      }
+    }
+  ]
+}
+```
+
+```sh
+cmake -B build -S /my/project --preset debug
+```
+
+如果您需要使用特定于当前计算机的 kmpkg 的绝对路径，您可以使用`CMakeUserPresets.json`并将其添加到`.gitignore`文件中。
+
+```json
+{
+  "version": 2,
+
+  "configurePresets": [
+    {
+      "name": "debug",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{KMPKG_ROOT}/scripts/buildsystems/kmpkg.cmake"
+      }
+    }
+  ]
+}
+```
+
+
+早于 3.19 的 CMake 版本必须在配置命令行上传递工具链文件：
+
+```console
+cmake ../my/project -DCMAKE_TOOLCHAIN_FILE=<kmpkg-root>/scripts/buildsystems/kmpkg.cmake
+```
+
+## 使用库
+
+kmpkg 支持 CMake 查找库的本机机制：`find_package()`、`find_library()`和`find_path()`。安装具有特定 CMake 支持的库时，kmpkg 将显示有关如何使用该库的使用信息：
+```
+The package zlib is compatible with built-in CMake targets:
+
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(main PRIVATE ZLIB::ZLIB)
+
+```
+
+kmpkg 不会自动将任何包含或链接路径添加到您的项目中。要使用仅标头库，您可以使用`find_path()`，它将在所有平台上正确工作：
+
+```cmake
+# To find and use catch2
+find_path(CATCH_INCLUDE_DIR NAMES catch.hpp PATH_SUFFIXES catch2)
+target_include_directories(main PRIVATE ${CATCH_INCLUDE_DIR})
+```
+
+## IDE集成
+
+### Visual Studio / Visual Studio Code
+
+我们建议在 Visual Studio 和 Visual Studio Code 中使用 [CMake Presets]。
+
+### CLion
+
+打开工具链设置（Windows 和 Linux 上的 `File > Settings`，macOS 上的 `CLion > Preferences`），然后转到 CMake 设置 (`Build, Execution, Deployment > CMake`)。 在 CMake options 中，添加以下行：
+```cmake
+-DCMAKE_TOOLCHAIN_FILE=<kmpkg-root>/scripts/buildsystems/kmpkg.cmake
+```
+
+必须单独将此行添加到每个配置文件。
+
+## 使用多个工具链文件
+
+若要将 kmpkg 的工具链文件与其他工具链文件合并，可以设置 CMake 缓存变量 `KMPKG_CHAINLOAD_TOOLCHAIN_FILE`:
+
+```console
+cmake ../my/project \
+   -DCMAKE_TOOLCHAIN_FILE=C:/kmpkg/scripts/buildsystems/kmpkg.cmake \
+   -DKMPKG_CHAINLOAD_TOOLCHAIN_FILE=../my/project/toolchain.cmake
+```
+
+或者，可以在主工具链文件的末尾包含 kmpkg 工具链：
+
+```cmake
+# MyToolchain.cmake
+set(CMAKE_CXX_COMPILER ...)
+set(KMPKG_TARGET_TRIPLET x64-my-custom-windows-triplet)
+include(/path/to/kmpkg/scripts/buildsystems/kmpkg.cmake)
+```
+:::warning
+kmpkg 在构建库时不会自动应用工具链的设置，例如编译器或编译标志。要更改 kmpkg 的库设置，您必须创建一个[自定义三元组文件](../triplets.mdx)（可以[共享您的工具链](../triplets.mdx#kmpkg_chainload_toolchain_file)）**
+:::
+
+## 引用参考：
+
+所有影响 kmpkg 的变量必须在第一个 `project()` 指令之前定义，
+例如在 `CMakePresets.json` 的 [`"cacheVariables"`](https://cmake.org/cmake/help/latest/Manual/cmake-presets.7.html#configure-preset) 通过命令行或 `set()` 语句进行映射。
+
+### `KMPKG_TARGET_TRIPLET`
+
+此设置控制 [triplet](../triplets.mdx) kmpkg 将安装和使用其中的库。
+
+如果未设置，kmpkg 将根据当前编译器设置自动检测适当的默认三元组。如果更改此 CMake 变量，则必须删除缓存并重新配置。
+
+### `KMPKG_HOST_TRIPLET`
+
+此变量控制将安装哪个 [triplet](../triplets.mdx) 主机依赖项。
+
+如果未设置，kmpkg 将自动检测适当的本机三元组（x64-windows、x64-osx、x64-linux）。另请参阅[主机依赖项](../host-dependencies.mdx)。
+
+### `KMPKG_INSTALLED_DIR`
+
+此变量设置安装和使用库的位置。
+
+在清单模式下，默认为`${CMAKE_BINARY_DIR}/kmpkg_installed`。
+
+在经典模式下，默认值为`${KMPKG_ROOT}/installed`。
+
+### `KMPKG_MANIFEST_MODE`
+
+此变量强制 kmpkg 在清单模式或经典模式下运行。
+
+当`KMPKG_MANIFEST_DIR`非空或`${CMAKE_SOURCE_DIR}/kmpkg.json`存在时，默认为`ON`。
+
+要在检测到`kmpkg.json`时禁用清单模式，请将其设置为`OFF`。
+
+### `KMPKG_MANIFEST_DIR`
+
+此变量指定包含`kmpkg.json`清单的备用文件夹。
+
+如果`${CMAKE_SOURCE_DIR}/kmpkg.json`存在，则默认为`${CMAKE_SOURCE_DIR}`。
+
+### `KMPKG_MANIFEST_INSTALL`
+
+此变量控制在配置步骤期间是否自动运行 kmpkg 来安装依赖项。如果`KMPKG_MANIFEST_MODE`为`ON`，则默认为`ON`。
+
+### `KMPKG_BOOTSTRAP_OPTIONS`
+
+可以将此变量设置为附加命令参数以传递给“./bootstrap-kmpkg”。
+
+在清单模式下，如果可执行文件不存在，kmpkg 将自动引导。
+
+### `KMPKG_OVERLAY_TRIPLETS`
+
+该变量可以设置为要在命令行上传递的路径列表，如“--overlay-triplets=...”
+
+### `KMPKG_OVERLAY_PORTS`
+
+该变量可以设置为要在命令行上传递的路径列表，如“--overlay-ports=...”
+
+### `KMPKG_MANIFEST_FEATURES`
+
+可以将此变量设置为从清单安装时要激活的功能列表。
+
+例如，项目可以使用功能来控制具有附加依赖项的构建，以启用测试或示例：
+
+```json
+{
+  "name": "mylibrary",
+  "version": "1.0",
+  "dependencies": [ "curl" ],
+  "features": {
+    "samples": {
+      "description": "Build Samples",
+      "dependencies": [ "fltk" ]
+    },
+    "tests": {
+      "description": "Build Tests",
+      "dependencies": [ "gtest" ]
+    }
+  }
+}
+```
+
+此设置可以通过 [CMake Presets] 使用 `"cacheVariables"` 直接控制，或者基于其他设置间接控制：
+
+```cmake
+# CMakeLists.txt
+
+option(BUILD_TESTING "Build tests" OFF)
+if(BUILD_TESTING)
+  list(APPEND KMPKG_MANIFEST_FEATURES "tests")
+endif()
+
+option(BUILD_SAMPLES "Build samples" OFF)
+if(BUILD_SAMPLES)
+  list(APPEND KMPKG_MANIFEST_FEATURES "samples")
+endif()
+
+project(myapp)
+
+# ...
+```
+
+### `KMPKG_MANIFEST_NO_DEFAULT_FEATURES`
+
+除了`KMPKG_MANIFEST_FEATURES`中列出的功能之外，此变量还控制默认功能的激活。如果设置为`ON`，默认功能将不会自动激活。
+
+默认为 `OFF`。
+
+### `KMPKG_INSTALL_OPTIONS`
+
+可以将此变量设置为附加命令行参数列表，以在自动安装期间传递给 kmpkg 工具。
+
+### `KMPKG_PREFER_SYSTEM_LIBS`
+
+
+:::warning 重要
+此功能已被弃用。请改用空的覆盖端口。
+:::
+
+该变量控制 kmpkg 是否将其路径附加而不是添加到`CMAKE_PREFIX_PATH`、`CMAKE_LIBRARY_PATH` 和 `CMAKE_FIND_ROOT_PATH`，以便在工具链/系统库/包之后找到 kmpkg 库/包。
+
+默认为 `OFF`。
+
+### `KMPKG_FEATURE_FLAGS`
+
+可以将此变量设置为功能标志列表，以在自动安装期间传递给 kmpkg 工具，以选择加入实验行为。有关详细信息，请参阅 [`--feature-flags=`](../../commands/common-options.mdx#) 命令行选项。
+
+### `KMPKG_TRACE_FIND_PACKAGE`
+
+当设置为`ON`时，打印对`find_package`的每次调用。嵌套调用（例如通过`find_dependency`）根据嵌套深度缩进。
+
+[CMake Presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html

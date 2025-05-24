@@ -1,0 +1,114 @@
+# 个性化搜索
+
+在搜索体验的构建中，个性化指的是根据用户的独特特征对搜索结果进行不同的排序。这种机制主要有两种类型：
+
+1. **组级个性化**：根据用户组的聚合特征（例如订阅计划、用户角色、高客户终身价值等）或共同的历史行为，对每个用户组的搜索结果进行独特排序。
+2. **用户级个性化**：根据每个特定用户的具体历史行为（如过去的搜索、购买、点击等），对搜索结果进行独特排序。
+
+## 组级个性化
+
+首先，我们来看看如何使用 kumosearch 的 [基于受欢迎度的排名](./ranking-and-relevance.mdx#rank-by-rel-and-ctr) 功能来实现 **组级个性化**。这种方法比需要使用机器学习的用户级个性化更简单且易于实现。
+
+以一家硬件工具电商为例，用户可以选择加入三种付费订阅计划之一：
+1. 爱好者计划
+2. 高级计划
+3. 专业计划
+
+假设我们希望根据用户所订阅的计划，在他们搜索时展示不同的产品。例如，如果 `爱好者计划` 的用户搜索 `螺丝刀`，我们希望向他们展示适合爱好者的小型螺丝刀套装。而如果 `专业计划` 的用户搜索相同的术语，我们希望向他们展示适合专业人士的重型专业级电动螺丝刀套装。
+
+以下演示如何使用 kumosearch 实现这一目标。
+
+假设我们有以下两条产品记录：
+
+```json
+[
+  {
+    "name": "3-piece Screwdriver Set",
+    "price": 10.0,
+    "category": "Tools"
+  },
+  {
+    "name": "120-piece Power Screwdriver Set",
+    "price": 250.0,
+    "category": "Tools"
+  }
+]
+```
+
+我们可以根据启发式规则或已知的组别特征，为每个记录添加特定的受欢迎度分数，如下所示：
+
+```json{6-8,14-16}
+[
+  {
+    "name": "3-piece Screwdriver Set",
+    "price": 10.0,
+    "category": "Tools",
+    "hobbyist_plan_popularity_score": 100,
+    "advanced_plan_popularity_score": 50,
+    "professional_plan_popularity_score": 10
+  },
+  {
+    "name": "120-piece Power Screwdriver Set",
+    "price": 250.0,
+    "category": "Tools",
+    "hobbyist_plan_popularity_score": 10,
+    "advanced_plan_popularity_score": 50,
+    "professional_plan_popularity_score": 100    
+  }
+]
+```
+
+可以使用任何现有的业务逻辑或使用 ML 模型来计算这些受欢迎度分数。
+
+现在，如果`爱好者计划`的用户登录，为了显示个性化的搜索结果，我们将在查询中添加以下 `sort_by` 参数：
+
+```
+sort_by=_text_match(buckets: 10):desc,hobbyist_plan_popularity_score:desc
+```
+
+这将使 kumosearch [将文本相关性与受欢迎度分数结合](./ranking-and-relevance.mdx#rank-by-rel-and-ctr) ，优先显示 `三件套螺丝刀`。
+
+同样地，如果 `专业计划` 的用户登录，我们将此 `sort_by `参数添加到搜索查询中：
+
+```
+sort_by=_text_match(buckets: 10):desc,professional_plan_popularity_score:desc
+```
+
+这将使 kumosearch [将文本相关性与受欢迎度分数结合](./ranking-and-relevance.mdx#rank-by-rel-and-ctr) ，优先显示 `120件电动螺丝刀套装`。
+
+### 使用案例
+
+还可以根据以下内容向不同用户显示个性化结果：
+
+- 客户价值（例如，高、中、低消费者）
+- 用户年限（例如，超过 5 年的用户、2 年的用户和新用户）
+- 年龄
+- 性别
+- 地理位置（例如，为亚洲和欧洲客户展示不同的产品排名）
+
+## 用户级个性化
+
+kumosearch 的向量搜索[重排序功能](../api/kmsearch/vector-search.mdx#re-rank)允许从 ML 模型引入[嵌入](../api/kmsearch/vector-search.mdx#what-is-embedding)
+（将用户过去的行为作为输入），在 kumosearch 中对其进行索引，并根据每个用户的历史行为对搜索结果进行重新排序。
+
+例如，您可以按照 [推荐](./recommendations.mdx) 开发手册中的步骤构建模型，在 [最后一步](./recommendations.mdx#step-6-生成推荐) 中，无需将新行为生成
+的嵌入发送到 `vector_query` 参数（用于生成推荐），而是发送到 `sort_by` 参数，以个性化方式重新排序结果：
+
+```bash{11}
+curl "${KUMOSEARCH_URL}/multi_search" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+          "searches": [
+            {
+              "collection": "products",
+              "q": "shoes",
+              "query_by": "title,brand,category",
+              "sort_by": "_text_match:desc,_vector_query(embedding:(['${embedding%?}'])):asc"
+            }
+          ]
+        }' | jq '.results[0].hits[]'
+```
+
+kumosearch 将首先对 `鞋子` 进行关键字搜索，然后利用机器学习模型生成的嵌入向量，根据该用户历史行为对搜索结果进行重新排序，使最符合用户偏好的记录排名更高。

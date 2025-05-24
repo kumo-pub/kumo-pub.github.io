@@ -1,0 +1,57 @@
+---
+description: 后端开发基础环境安装
+---
+
+# 后端开发环境
+
+```mdx-code-block
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+```
+
+## 概述
+
+Kumo在设计时，尽最大的可能的减轻使用者的负担，系统需求尽量缩减到最低，尽最大的可能减少系统的依赖。但是部分系统的依赖依然必不可少。
+
+开发过程中的依赖，我们使用Kumo的轻量级 `CI` 工具完成集成。
+
+## 系统要求 {#系统要求}
+
+- gcc/g++ >= 9.3
+- AppleClang/AppleClang++ >= 14
+- cmake >=3.24.3
+- git
+- make
+- flex
+- bison
+
+## ubuntu安装
+
+* ubuntu系统的版本要求 >= 20.04
+
+```bash
+sudo apt -y update
+sudo apt install -y git g++ make flex bison
+```
+
+## centos安装
+
+* centos版本 >= 7
+
+centos的`GCC`版本比较低，我们使用scl安装高版本的`GCC`
+
+```bash
+sudo yum install epel-release
+sudo yum install git gcc-c++ make flex bison
+sudo yum install -y centos-release-scl
+sudo yum install -y devtoolset-9
+scl enable devtoolset-9 bash
+```
+
+## apple安装
+
+```bash
+brew install git
+brew install flex
+brew install bison
+```

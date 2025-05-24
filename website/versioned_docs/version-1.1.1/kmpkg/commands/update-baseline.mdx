@@ -1,0 +1,40 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg x-update-baseline
+
+kmpkg x-update-baseline 命令的命令行参考。更新所有配置的注册表的基线。
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+## 摘要
+
+```console
+kmpkg x-update-baseline [options] [--add-initial-baseline] [--dry-run]
+```
+
+## 说明
+
+更新所有已配置[注册表](../reference/kmpkg-configuration-json.mdx#registries)的基线。
+
+在[清单模式](../concepts/manifest-mode.mdx)下，此命令对 [`kmpkg.json`](../reference/kmpkg-json.mdx) 和 [`kmpkg-configuration.json`](../reference/kmpkg-configuration-json.mdx) 中的所有注册表运行。 在经典模式下，此命令对 kmpkg 实例 (`$KMPKG_ROOT`) 中的 `kmpkg-configuration.json` 运行。
+
+有关基线的详细信息，请参阅[版本控制文档](../users/versioning.mdx#baselines)。
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--dry-run`
+
+打印计划的基线升级，但不修改磁盘中的文件。
+
+### `--add-initial-baseline` {#add-initial-baseline}
+
+- **仅限清单模式**
+
+如果 `kmpkg.json` 中还没有 [`"builtin-baseline"`](../reference/kmpkg-json.mdx#builtin-baseline) 字段，请添加该字段。
+
+如果没有此标志，对未配置任何[注册表](../reference/kmpkg-configuration-json.mdx#registries)的清单运行此命令会出错。

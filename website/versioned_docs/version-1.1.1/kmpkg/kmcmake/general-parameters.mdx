@@ -1,0 +1,85 @@
+---
+date: 7/16/2024
+---
+
+# 教程： 通用参数
+
+
+## 通用参数 {#general-parameter}
+
+### PUBLIC {#general-parameter-public}
+
+类型： bool
+可选，标记为 `PUBLIC` 的库意义为导出库，即安装时会安装并且导出对象。否则
+视为内部库，不会安装和导出对象
+
+### NAMESPACE {#general-parameter-namespace}
+
+类型： 字符串
+必填： 通常为项目的名称
+
+### NAME {#general-parameter-name}
+
+类型： 字符串
+必填： 库或者二进制名称，库会导出`NAMESPACE::NAME_shared` 和 `NAMESPACE::NAME_static`
+两个库。调用者可以根据自己的需要，选择调用动态库或者静态库
+
+### HEADERS {#general-parameter-headers}
+
+类型： 字符串列表
+可选： 头文件列表
+
+### COPTS {#general-parameter-copts}
+
+类型： 字符串列表
+可选： C语言编译选项
+
+### CXXOPTS {#general-parameter-cxxopts}
+
+类型： 字符串列表
+可选： C++语言编译选项
+
+### CXXOPTS {#general-parameter-cuopts}
+
+类型： 字符串列表
+可选： cuda语言编译选项
+
+### DEFINES {#general-parameter-defines}
+
+类型： kv对列表
+可选： 编译时宏定义
+
+### SOURCES {#general-parameter-sources}
+
+类型： 字符串列表
+可选： 源文件列表
+
+### OBJECTS {#general-parameter-object}
+
+类型： 字符串列表
+可选： 对象列表
+
+### DEPS {#general-parameter-deps}
+
+类型： 字符串列表
+可选： 依赖的对象
+
+### INCLUDES {#general-parameter-includes}
+
+类型： 字符串列表
+可选： `include`路径列表
+
+### LINKS {#general-parameter-links}
+
+类型： 字符串列表
+可选： 依赖库列表
+
+### PLINKS {#general-parameter-plinks}
+
+类型： 字符串列表
+可选： 依赖库列表,私有依赖
+
+### WLINKS {#general-parameter-wlinks}
+
+类型： 字符串列表
+可选： 依赖库列表,只对动态库对象有效，表示将依赖库的符号全部导入到动态库中。

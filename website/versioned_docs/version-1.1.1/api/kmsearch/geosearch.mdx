@@ -1,0 +1,245 @@
+---
+sidebarDepth: 2
+sitemap:
+priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 地理搜索
+
+kumosearch 支持对包含纬度和经度值的字段进行地理搜索，这些字段应指定为 `geopoint` 或 `geopoint[]` [字段类型](./collections.mdx#field-type)。
+
+让我们创建一个名为 `places` 的索引表，其中包含一个名为 `location`、类型为 `geopoint` 的字段。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+        ```js
+        let schema = {
+        'name': 'places',
+        'fields': [
+    {
+        'name': 'title',
+        'type': 'string'
+    },
+    {
+        'name': 'points',
+        'type': 'int32'
+    },
+    {
+        'name': 'location',
+        'type': 'geopoint'
+    }
+        ],
+        'default_sorting_field': 'points'
+    }
+
+        client.collections().create(schema)
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+        ```py
+        schema = {
+        'name': 'places',
+        'fields': [
+    {
+        'name'  :  'title',
+        'type'  :  'string'
+    },
+    {
+        'name'  :  'points',
+        'type'  :  'int32'
+    },
+    {
+        'name'  :  'location',
+        'type'  :  'geopoint'
+    }
+        ],
+        'default_sorting_field': 'points'
+    }
+
+        client.collections.create(schema)
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -k "http://localhost:8868/collections" -X POST
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+        "name": "places",
+        "fields": [
+    {"name": "title", "type": "string"},
+    {"name": "points", "type": "int32"},
+    {"name": "location", "type": "geopoint"}
+        ],
+        "default_sorting_field": "points"
+    }'
+        ```
+
+    </TabItem>
+</Tabs>
+
+现在让我们索引一个文档。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        let document = {
+        'title': 'Louvre Museuem',
+        'points': 1,
+        'location': [48.86093481609114, 2.33698396872901]
+    }
+
+        client.collections('places').documents().create(document)
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+        ```py
+        document = {
+        'title': 'Louvre Museuem',
+        'points': 1,
+        'location': [48.86093481609114, 2.33698396872901]
+    }
+
+        client.collections['places'].documents.create(document)
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/collections/places/documents" -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{"points":1,"title":"Louvre Museuem", "location": [48.86093481609114, 2.33698396872901]}'
+        ```
+
+    </TabItem>
+</Tabs>
+
+:::warning NOTE
+确保以正确的顺序设置坐标：`[Latitude, Longitude]`。
+
+请注意，GeoJSON 经常使用 `[Longitude, Latitude]`，这种顺序在这里是无效的！
+:::
+
+## 在半径内搜索
+
+我们现在可以使用 `filter_by` 搜索参数，在给定经纬度和半径内搜索地点（使用 `mi` 表示英里，使用 `km` 表示公里）。
+
+此外，我们还可以对最接近给定位置的记录进行排序（该位置可以与用于过滤的经纬度相同或不同）。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+        ```js
+        let searchParameters = {
+        'q'         : '*',
+        'query_by'  : 'title',
+        'filter_by' : 'location:(48.90615915923891, 2.3435897727061175, 5.1 km)',
+        'sort_by'   : 'location(48.853, 2.344):asc'
+    }
+
+        client.collections('companies').documents().search(searchParameters)
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        search_parameters = {
+        'q'         : '*',
+        'query_by'  : 'title',
+        'filter_by' : 'location:(48.90615915923891, 2.3435897727061175, 5.1 km)',
+        'sort_by'   : 'location(48.853, 2.344):asc'
+    }
+
+        client.collections['companies'].documents.search(search_parameters)
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+        ```bash
+        curl -G -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        --data-urlencode 'q=*' \
+        --data-urlencode 'query_by=title' \
+        --data-urlencode 'filter_by=location:(48.853,2.344,5.1 km)' \
+        --data-urlencode 'sort_by=location(48.853, 2.344):asc' \
+        'http://localhost:8868/collections/places/documents/search'
+        ```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "facet_counts": [],
+            "found": 1,
+            "hits": [
+        {
+            "document": {
+            "id": 0,
+            "location": [48.86093481609114, 2.33698396872901],
+            "points": 1,
+            "title": "Louvre Museuem"
+        },
+            "geo_distance_meters": {"location": 1020},
+            "highlights": [],
+            "text_match": 16737280
+        }
+            ],
+            "out_of": 1,
+            "page": 1,
+            "request_params": {"collection_name": "places", "per_page": 10, "q": "*"},
+            "search_time_ms": 0
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+上面的示例使用 `5.1 km` 作为半径，但您也可以使用英里，例如 `location:(48.90615915923891, 2.3435897727061175, 2 mi)`.
+
+## 在地理多边形内搜索
+
+您还可以过滤位于任意形状的多边形内的文档。
+
+例如，将多边形的地理点指定为纬度、经度对：
+
+```shell
+'filter_by' : 'location:(48.8662, 2.3255, 48.8581, 2.3209, 48.8561, 2.3448, 48.8641, 2.3469)'
+```
+
+## 按半径内的附加属性排序
+
+### 排除半径
+
+有时根据受欢迎度 `popularity` 等属性对半径内的附近位置进行排序，然后再按该半径之外的距离进行排序是很有价值的。您可以使用 `exclude_radius` 选项来实现这一点。
+
+```shell
+'sort_by' : 'location(48.853, 2.344, exclude_radius: 2mi):asc, popularity:desc'
+```
+
+这使得 2 英里半径内的所有文档都有相同的距离值。为了解决相同排序，这些记录再按列表中的下一个字段`popularity:desc`进行排序。而 2 英里半径之外的记录首先按距离排序，然后按 `popularity:desc` 排序。
+
+### 精度
+
+同样，您可以使用 `precision` 参数将所有地理点分组，这样组内都将具有相同的地理距离分数。
+
+```shell
+'sort_by' : 'location(48.853, 2.344, precision: 2mi):asc, popularity:desc'
+```
+
+例如，设置 `precision` 为 2 英里，会将结果按 2 英里分组，并且每个组内具有相同的地理距离分数，然后在每个组内再使用受欢迎度 `popularity` 指标解决组内相同排序。

@@ -1,0 +1,41 @@
+---
+date: 01/10/2023
+---
+# 命令： kmpkg update
+
+kmpkg update 命令的命令行参考。
+
+## 摘要
+
+```console
+kmpkg update [options]
+```
+
+## 说明
+
+将一组[经典模式][Classic mode]的已安装包与当前可用版本进行比较。
+
+要移除过时的版本而不安装替代版本，请使用 [`kmpkg remove --outdated`](remove.mdx)。 要移除并安装较新的版本，请使用 [`kmpkg upgrade`](upgrade.mdx)。
+
+## 示例
+
+```console
+$ kmpkg update
+Using local portfile versions. To update the local portfiles, use `git pull`.
+The following packages differ from their port versions:
+        corrade:x64-windows              2020.06#4 -> 2020.06#5
+        magnum:x64-windows               2020.06#11 -> 2020.06#12
+        openal-soft:x64-windows          1.22.2#5 -> 1.23.0
+        ragel:x64-windows                6.10#4 -> 6.10#5
+        sdl2:x64-windows                 2.26.3#1 -> 2.26.4
+To update these packages and all dependencies, run
+.\kmpkg upgrade'
+To only remove outdated packages, run
+.\kmpkg remove --outdated
+```
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+[Classic mode]: ../concepts/classic-mode.mdx

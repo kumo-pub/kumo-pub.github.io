@@ -1,0 +1,109 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程： 测试模块
+
+该页面为如何使用测试模块快捷构建测试。
+
+## 编译测试
+
+函数： kmcmake_cc_test
+
+参数：
+- NAME 测试名 必选
+- MODULE 测试模块名 必选
+- DISABLED 禁止测试
+- [SOURCES](general-parameters.mdx#general-parameter-sources) 参见上文
+- [CXXOPTS](general-parameters.mdx#general-parameter-cxxopts) 参见上文
+- [DEPS](general-parameters.mdx#general-parameter-deps) 参见上文
+- [HEADERS](general-parameters.mdx#general-parameter-headers) 参见上文
+- [INCLUDES](general-parameters.mdx#general-parameter-includes) 参见上文
+- [DEFINES](general-parameters.mdx#general-parameter-defines) 参见上文
+- [LINKS](general-parameters.mdx#general-parameter-links) 参见上文
+
+对部分测试，在某些情况下，需要禁止，使用`DISABLED`参数。
+
+示例：
+<Tabs>
+    <TabItem value="kmcmake_cc_test" label="编译测试">
+        ```cmake
+        kmcmake_cc_test(
+            NAME raw_test
+            MODULE base
+            SOURCES raw_test.cc
+        )
+        ```
+    </TabItem>
+    <TabItem value="kmcmake_cc_test_disable" label="禁止测试">
+        ```cmake
+        kmcmake_cc_test(
+            NAME raw_test
+            MODULE base
+            SOURCES raw_test.cc
+            DISABLED
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+## 批量禁止测试
+
+在调试过程中，每个测试禁用，需要大量的操作，km提供了批量禁用测试的方法，在`${PROJECT_DIR}/cmake/${project_name}_test.cmake`文件中
+`list(APPEND ${PROJECT_NAME}_SKIP_TEST "norun")`将您的测试模块名加入`${PROJECT_NAME}_SKIP_TEST`中。测试模块名也就是上文中的
+`MODULE`参数的值。如，禁止`container`模块下所有测试,在`list(APPEND ${PROJECT_NAME}_SKIP_TEST "norun")`下加入一行,修改后如下：
+```cmake
+list(APPEND ${PROJECT_NAME}_SKIP_TEST "norun")
+list(APPEND ${PROJECT_NAME}_SKIP_TEST "container")
+```
+
+## 测试扩展
+
+上面提到测试在运行测试时无需输入命令行参数。如果需要输入命令行参数的测试请参考这部分的方法：
+1. 使用`kmcmake_cc_test`，并增加EXT参数,意义为仅编译测试程序，但不注册测试。
+
+<Tabs>
+    <TabItem value="kmcmake_cc_test_ext" label="编译测试">
+        ```cmake
+        kmcmake_cc_test(
+            NAME pass_test
+            MODULE base
+            SOURCES pass_test.cc
+            EXT
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+2 使用 `kmcmake_cc_test_ext`注册测试。
+
+示例：
+<Tabs>
+    <TabItem value="kmcmake_cc_test_ext" label="扩展测试">
+        ```cmake
+        kmcmake_cc_test_ext(
+            NAME args_test
+            MODULE base
+            ALIAS skip
+            ARGS "SKIP"
+            PASS_EXP "pass;Passed"
+            FAIL_EXP "[^a-z]Error;ERROR;Failed"
+            SKIP_EXP "[^a-z]Skip" "SKIP" "Skipped"
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+参数：
+
+- ALIAS 在原测试名的基础上追加的结尾，用以区别测试名
+- MODULE 与`kmcmake_cc_test`中保持一致
+- NAME 与`kmcmake_cc_test`中保持一致
+- ARGS 运行的命令行参数
+- PASS_EXP 测试通过的正则匹配
+- FAIL_EXP 测试失败的正则匹配
+- SKIP_EXP 跳过测试的正则匹配

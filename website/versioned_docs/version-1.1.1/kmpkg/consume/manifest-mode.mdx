@@ -1,0 +1,250 @@
+---
+date: 01/10/2024
+---
+# 教程：从清单文件安装依赖项
+
+kmpkg 有两种运行模式：经典模式和清单模式。本文描述如何使用清单模式安装软件包，推荐使用清单模式大多数用户的工作流程。
+
+在清单模式下，您可以在名为的清单文件中声明项目的直接依赖项[`kmpkg.json`](../reference/kmpkg-json.mdx)。
+
+清单文件有自己的“kmpkg_installed”目录，用于安装依赖项，与经典模式不同，经典模式中所有软件包都安装在公共“$KMPKG_ROOT/installed”中
+目录。因此，每个项目都可以有自己的清单和自己的一组依赖项，这些依赖项不会与其他项目的依赖项发生冲突。
+
+使用高级功能还需要清单模式
+[版本控制](../users/versioning.mdx) 和[自定义注册表](../concepts/registries.mdx)。
+
+在本教程中，您将学习如何：
+<div>
+* [使用清单创建项目](#create-a-project-with-a-manifest)
+* [将 kmpkg 与您的构建系统集成](#integrate-kmpkg-with-your-build-system)
+* [安装依赖项](#install-dependencies)
+* [构建项目](#build-the-project)
+</div>
+
+## 先决条件
+
+* kmpkg
+* A terminal
+* A code editor
+* A C++ compiler
+* CMake
+
+## 1 - 使用清单创建项目 {#create-a-project-with-a-manifest}
+
+在新文件夹中，创建一个名为“main.cc”的源文件，其中包含以下内容：
+
+```cpp main.cc
+#include <cxxopts.hpp>
+#include <fmt/format.h>
+#include <range/v3/view.hpp>
+
+namespace view = ranges::views;
+
+int fib(int x)
+{
+  int a = 0, b = 1;
+
+  for (int it : view::repeat(0) | view::take(x))
+  {
+    (void)it;
+    int tmp = a;
+    a += b;
+    b = tmp;
+  }
+
+  return a;
+}
+
+int main(int argc, char **argv)
+{
+  cxxopts::Options options("fibo", "Print the fibonacci sequence up to a value 'n'");
+  options.add_options()("n,value", "The value to print to", cxxopts::value<int>()->default_value("10"));
+
+  auto result = options.parse(argc, argv);
+  auto n = result["value"].as<int>();
+
+  for (int x : view::iota(1) | view::take(n))
+  {
+    fmt::print("fib({}) = {}\n", x, fib(x));
+  }
+}
+```
+
+该代码引用了开源库：“cxxopts”、“fmt”和“range-v3”；都是可在 [kmpkg](https://gitee.com/kumo-pub/kmpkg) 的 kmpkg 公共注册表中获取。
+
+要声明这些依赖项，请在项目所在的同一目录中创建一个名为`kmpkg.json`的文件：
+
+`kmpkg.json`:
+
+```json
+{
+  "dependencies": [
+    "cxxopts",
+    "fmt",
+    "range-v3"
+  ]
+}
+```
+
+您只需在“依赖项”列表中指定直接依赖项。运行时，kmpkg 解决并安装任何所需的传递依赖项。
+
+## 2 - 将 kmpkg 与您的构建系统集成 {#integrate-kmpkg-with-your-build-system}
+
+在此步骤中，我们将向您展示如何将 kmpkg 与 CMake 或 MSBuild 集成，以便在构建项目时自动安装或恢复项目依赖项。
+
+如果您使用不同的构建系统，请跳至下一步：[安装依赖项](#install-dependencies)。
+
+### CMake
+
+:::info
+[了解有关从 CMake 使用 kmpkg 的更多信息](../users/buildsystems/cmake-integration.mdx)
+:::
+
+要在 CMake 项目中使用 [kmpkg](../users/buildsystems/cmake-integration.mdx)，您需要设置
+`CMAKE_TOOLCHAIN_FILE` 变量使用 kmpkg 的 CMake 工具链文件。 kmpkg 工具链位于
+`$KMPKG_ROOT/scripts/buildsystems/kmpkg.cmake`，其中 `$KMPKG_ROOT` 是您的 kmpkg 安装路径。
+
+使用以下任一方法设置工具链文件：
+
+* 在 CMakePresets.json 文件中设置“CMAKE_TOOLCHAIN_FILE”。
+* 将 `-DCMAKE_TOOLCHAIN_FILE=<path/to/kmpkg>/scripts/buildsystems/kmpkg.cmake` 作为参数传递到您的
+CMake 配置调用。
+* 在第一次调用“project()”之前设置“CMAKE_TOOLCHAIN_FILE”CMake 变量
+`CMakeLists.txt` 文件。
+
+
+## 3 - 安装依赖项 {#install-dependencies}
+
+如果您使用 CMake 或 MSBuild 并按照上一步操作，则可以跳到下一步：[构建项目](#build-the-project)。
+
+如果您使用不同的构建系统或想要手动安装依赖项，您需要做的就是在包含清单文件的目录中运行“kmpkg install”。
+
+```Console
+PS D:\projects\manifest-example> kmpkg install
+Detecting compiler hash for triplet x64-windows...
+The following packages will be built and installed:
+    cxxopts:x64-windows -> 3.1.1
+    fmt:x64-windows -> 10.0.0
+    range-v3:x64-windows -> 0.12.0#1
+  * kmpkg-cmake:x64-windows -> 2023-05-04
+  * kmpkg-cmake-config:x64-windows -> 2022-02-06#1
+Additional packages (*) will be modified to complete this operation.
+Installing 1/5 kmpkg-cmake-config:x64-windows...
+Installing 2/5 kmpkg-cmake:x64-windows...
+Installing 3/5 cxxopts:x64-windows...
+Installing 4/5 fmt:x64-windows...
+Installing 5/5 range-v3:x64-windows...
+Total install time: 48 s
+cxxopts provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(cxxopts CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE cxxopts::cxxopts)
+
+The package fmt provides CMake targets:
+
+    find_package(fmt CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE fmt::fmt)
+
+    # Or use the header-only version
+    find_package(fmt CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE fmt::fmt-header-only)
+
+range-v3 provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(range-v3 CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
+```
+
+命令完成后，所有构建的包将出现在`kmpkg_installed`目录中。该目录的具体位置取决于您的构建系统；通常，在构建系统的默认输出文件夹内，或在`kmpkg.json`文件旁边。
+
+## 4 - 构建项目 {#build-the-project}
+
+### CMake
+
+#### 1 - 创建 CMakeLists.txt 文件
+
+Add the following `CMakeLists.txt` file in the project folder:
+
+`CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.15)
+
+project(fibonacci CXX)
+
+find_package(fmt REQUIRED)
+find_package(range-v3 REQUIRED)
+find_package(cxxopts REQUIRED)
+
+set(CMAKE_CXX_STANDARD 17)
+
+add_executable(fibo main.cc)
+
+target_link_libraries(fibo
+  PRIVATE
+    fmt::fmt
+    range-v3::range-v3
+    cxxopts::cxxopts)
+```
+
+#### 2 - 配置您的 CMake 项目
+
+运行以下命令：`cmake -B build -S 。 -DCMAKE_TOOLCHAIN_FILE=$KMPKG_ROOT/scripts/buildsystems/kmpkg.cmake`，但是
+将 `$KMPKG_ROOT` 替换为您的 kmpkg 安装路径。
+
+请注意在配置项目时如何自动安装项目的依赖项。
+
+```Console
+PS D:\projects\manifest-example> cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=D:\kmpkg\scripts\buildsystems\kmpkg.cmake
+-- Running kmpkg install
+Detecting compiler hash for triplet x64-windows...
+The following packages will be built and installed:
+    cxxopts:x64-windows -> 3.1.1
+    fmt:x64-windows -> 10.0.0
+    range-v3:x64-windows -> 0.12.0#1
+  * kmpkg-cmake:x64-windows -> 2023-05-04
+  * kmpkg-cmake-config:x64-windows -> 2022-02-06#1
+<omitted output>
+-- Running kmpkg install - done
+-- Selecting Windows SDK version 10.0.18362.0 to target Windows 10.0.19041.
+-- The CXX compiler identification is MSVC 19.27.29111.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Tools/MSVC/14.27.29110/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done
+-- Generating done
+-- Build files have been written to: D:/projects/manifest-example/build
+```
+
+#### 3 - 构建 CMake 项目
+
+Run the following command to build the project: `cmake --build build`:
+
+```Console
+PS D:\projects\manifest-example> cmake --build build
+Microsoft (R) Build Engine version 16.7.0+b89cb5fde for .NET Framework
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+  Checking Build System
+  Building Custom Rule D:\projects\manifest-example\CMakeLists.txt
+  main.cc
+  fibo.vcxproj -> D:\projects\manifest-example\build\Debug\fibo.exe
+  Building Custom Rule D:\projects\manifest-example\CMakeLists.txt
+```
+
+---
+
+## 后续步骤
+
+在本指南中，您使用清单文件安装了一个简单项目的依赖项。
+
+以下是接下来要尝试的一些其他任务：
+
+* 使用 [triplets](../users/triplets.mdx) 为自定义平台、编译器或构建架构安装软件包
+* 使用 [versioning](../users/versioning.concepts.mdx) 锁定可重复构建的版本
+* 使用 [二进制缓存](../users/binarycaching.mdx) 在本地或持续集成运行中重用二进制文件
+* 使用自定义[注册表](../maintainers/registries.mdx) 管理您的私有库

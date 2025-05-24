@@ -1,0 +1,86 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程： 导出项配置
+
+该页面内容为`kmcmake`导出`cmake` target 对象。
+默认情况，这个文件不需要配置，kmcmake已经提供了默认的配置。
+
+在kumo体系中，为了调用这更加方便，通常会导出该项目的依赖
+设置为`${PROJECT_NAME}_DEPS_LIBRARIES`以及 `${PROJECT_NAME}_LINK_LIBRARIES`以及
+为方便上层应用直接调用，而不必再为本项目进行依赖校验。
+
+:::warning
+**如果您并不关注这项优化，可以忽略本页面内容。**
+:::
+
+## 导出 target
+
+导出对象的配置文件为`cmake/${project-name}_config.cmake.in`。
+
+原始为：
+```cmake
+
+@PACKAGE_INIT@
+
+include ("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@Targets.cmake")
+
+set(@PROJECT_NAME@_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+set(@PROJECT_NAME@_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+set(@PROJECT_NAME@_VERSION_PATCH @PROJECT_VERSION_PATCH@)
+set(@PROJECT_NAME@_VERSION @PROJECT_VERSION@)
+set(@PROJECT_NAME@_INCLUDE_DIR ${PACKAGE_PREFIX_DIR}/include)
+```
+
+### 添加依赖项
+
+已本项目依赖`turbo`为例。假设本项目名为`hero`,生成的库为`herolib`
+
+<Tabs>
+    <TabItem value="target" label="导出对象">
+        ```cmake
+
+        @PACKAGE_INIT@
+
+        include ("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@Targets.cmake")
+
+        set(@PROJECT_NAME@_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+        set(@PROJECT_NAME@_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+        set(@PROJECT_NAME@_VERSION_PATCH @PROJECT_VERSION_PATCH@)
+        set(@PROJECT_NAME@_VERSION @PROJECT_VERSION@)
+        set(@PROJECT_NAME@_INCLUDE_DIR ${PACKAGE_PREFIX_DIR}/include)
+
+        find_pacakge(turbo REQUIRED)
+        set(@PROJECT_NAME@_DEPS_LIBRARIES turbo::turbo_static)
+        set(@PROJECT_NAME@_LINK_LIBRARIES turbo::turbo_static @PROJECT_NAME@::herolib_static)
+        ```
+    </TabItem>
+    <TabItem value="using" label="调用者 deps.cmake">
+        ```cmake
+        ...
+        find_package(Threads REQUIRED)
+        find_package(hero REQUIRED)
+        ############################################################
+        #
+        # add you libs to the KMCMAKE_DEPS_LINK variable eg as turbo
+        # so you can and system pthread and rt, dl already add to
+        # KMCMAKE_SYSTEM_DYLINK, using it for fun.
+        ##########################################################
+        set(KMCMAKE_DEPS_LINK
+        hero_LINK_LIBRARIES
+        ${KMCMAKE_SYSTEM_DYLINK}
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+调用无需知道`hero`依赖那些库，也就是原则上调用者并不关心`hero`是否依赖`turbo`。
+
+:::warning
+@PROJECT_NAME@_LINK_LIBRARIES 不要包含系统库！
+:::

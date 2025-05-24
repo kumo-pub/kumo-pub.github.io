@@ -1,0 +1,603 @@
+# 断言参考 {#assertions-reference}
+
+本页列出了 KumoTest 提供的用于验证代码的断言宏行为。要使用它们，请包含标头`“ktest/ktest.h”`。
+
+下面列出的大多数宏都与`EXPECT_`变体成对出现和一个`ASSERT_`变体。失败时，`EXPECT_`宏会生成非致命的
+失败并允许当前函数继续运行，而`ASSERT_`宏会产生致命故障并中止当前函数。
+
+所有断言宏都支持将自定义失败消息流式传输到其中`<<` 运算符，例如：
+
+```cpp
+EXPECT_TRUE(my_condition) << "My condition is not true";
+```
+
+任何可以流式传输到`ostream`的内容都可以流式传输到断言
+宏——特别是 C 字符串和字符串对象。如果是宽字符串 (`wchar_t*`,
+Windows 上`UNICODE`模式下的`TCHAR*`或`std::wstring`）被流式传输到
+断言，打印时会被转换为UTF-8。
+
+## 明确的成功和失败 {#success-failure}
+
+本节中的断言直接生成成功或失败，而不是测试值或表达式。当控制流程而不是
+布尔表达式，决定测试的成功或失败，如下所示以下示例：
+
+```c++
+switch(expression) {
+  case 1:
+    ... some checks ...
+  case 2:
+    ... some other checks ...
+  default:
+    FAIL() << "We shouldn't get here.";
+}
+```
+
+### SUCCEED {#SUCCEED}
+
+`SUCCEED()`
+
+生成成功。这*不会*使整体测试成功。一个测试是仅当其断言在执行期间没有失败时才被视为成功。
+
+`SUCCEED`断言纯粹是记录性的，目前不会产生任何用户可见的输出。但是，我们可以将`SUCCEED`消息添加到 KumoTest 输出中
+将来。
+
+### FAIL {#FAIL}
+
+`FAIL()`
+
+生成致命失败，从当前函数返回。
+
+只能在返回`void`的函数中使用。看
+[断言放置](../advanced.mdx#assertion-placement) 了解更多信息。
+
+### ADD_FAILURE {#ADD_FAILURE}
+
+`ADD_FAILURE()`
+
+生成非致命故障，允许当前功能继续运行。
+
+### ADD_FAILURE_AT {#ADD_FAILURE_AT}
+
+`ADD_FAILURE_AT(`*`file_path`*`,`*`line_number`*`)`
+
+在指定的文件和行号处生成非致命故障。
+
+## 广义断言 {#generalized}
+
+以下断言允许使用 [matchers](matchers.mdx) 来验证值。
+
+### EXPECT_THAT {#EXPECT_THAT}
+
+`EXPECT_THAT(`*`value`*`,`*`matcher`*`)` \
+`ASSERT_THAT(`*`value`*`,`*`matcher`*`)`
+
+验证 *`value`* 是否与 [matcher](matchers.mdx) *`matcher`* 匹配。
+
+例如，以下代码验证字符串“value1”是否以
+`"Hello"`，`value2` 匹配正则表达式，`value3` 介于 5 和 10：
+
+```cpp
+#include "kmock/kmock.h"
+
+using ::testing::AllOf;
+using ::testing::Gt;
+using ::testing::Lt;
+using ::testing::MatchesRegex;
+using ::testing::StartsWith;
+
+...
+EXPECT_THAT(value1, StartsWith("Hello"));
+EXPECT_THAT(value2, MatchesRegex("Line \\d+"));
+ASSERT_THAT(value3, AllOf(Gt(5), Lt(10)));
+```
+
+匹配器使这种形式的断言能够像英语一样阅读并生成信息丰富的故障消息。例如，如果上面关于`value1`的断言
+失败，结果消息将类似于以下内容：
+
+```
+Value of: value1
+  Actual: "Hi, world!"
+Expected: starts with "Hello"
+```
+
+KumoTest 提供了一个内置的匹配器库 - 请参阅[匹配器参考](matchers.mdx)。也可以自己写
+匹配器 - 请参阅[快速编写新匹配器](../kmock_cook_book.mdx#NewMatchers)。
+匹配器的使用使“EXPECT_THAT”成为一个强大的、可扩展的断言。
+
+*此断言的想法借鉴自 Joe Walnes 的 Hamcrest 项目，
+它将 `assertThat()` 添加到 JUnit.*
+
+## 布尔条件 {#boolean}
+
+以下断言测试布尔条件。
+
+### EXPECT_TRUE {#EXPECT_TRUE}
+
+`EXPECT_TRUE(`*`condition`*`)` \
+`ASSERT_TRUE(`*`condition`*`)`
+
+验证 *`condition`* 为真。
+
+### EXPECT_FALSE {#EXPECT_FALSE}
+
+`EXPECT_FALSE(`*`condition`*`)` \
+`ASSERT_FALSE(`*`condition`*`)`
+
+验证 *`condition`* 为否。
+
+## 二元比较 {#binary-comparison}
+
+See also the [Floating-Point Comparison](#floating-point) assertions to compare
+floating-point numbers and avoid problems caused by rounding.
+
+以下断言比较两个值。值参数必须是通过断言的比较运算符进行比较，否则编译器错误
+将会产生结果。
+
+如果参数支持 `<<` 运算符，则会调用它来打印当断言失败时的争论。否则，KumoTest 将尝试打印
+他们以最好的方式——看到
+[教 KumoTest 如何打印您的值](../advanced.mdx#teaching-kumotest-how-to-print-your-values)。
+
+参数总是只计算一次，因此参数可以有副作用。但是，参数评估顺序未定义并且
+程序不应依赖于任何特定的参数评估顺序。
+
+这些断言适用于窄字符串对象和宽字符串对象（`string`和`wstring`)。
+
+另请参阅[浮点比较](#floating-point) 断言进行比较
+浮点数并避免舍入引起的问题。
+
+### EXPECT_EQ {#EXPECT_EQ}
+
+`EXPECT_EQ(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_EQ(`*`val1`*`,`*`val2`*`)`
+
+验证 *`val1`*`==`*`val2`*。
+
+指针上的指针相等。如果在两个 C 字符串上使用，它会测试它们是否位于相同的内存位置，如果它们具有相同的值则不会。使用
+[`EXPECT_STREQ`](#EXPECT_STREQ) 比较 C 字符串（例如 `const char*`)的值。
+
+将指针与 NULL 进行比较时，请使用 `EXPECT_EQ(`*`ptr`*`, nullptr)`
+`EXPECT_EQ(`*`ptr`*`, NULL)`。
+
+### EXPECT_NE {#EXPECT_NE}
+
+`EXPECT_NE(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_NE(`*`val1`*`,`*`val2`*`)`
+
+验证 *`val1`*`!=`*`val2`*。
+
+指针上的指针相等。如果在两个 C 字符串上使用，它会测试它们是否
+位于不同的内存位置，如果它们具有不同的值则不会。使用
+[`EXPECT_STRNE`](#EXPECT_STRNE) 比较 C 字符串（例如 `const char*`）
+价值。
+
+将指针与 NULL 进行比较时，请使用 `EXPECT_NE(`*`ptr`*`, nullptr)`
+`EXPECT_NE(`*`ptr`*`, NULL)`。
+
+### EXPECT_LT {#EXPECT_LT}
+
+`EXPECT_LT(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_LT(`*`val1`*`,`*`val2`*`)`
+
+验证 *`val1`*`<`*`val2`*。
+
+### EXPECT_LE {#EXPECT_LE}
+
+`EXPECT_LE(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_LE(`*`val1`*`,`*`val2`*`)`
+
+Verifies that *`val1`*`<=`*`val2`*.
+
+### EXPECT_GT {#EXPECT_GT}
+
+`EXPECT_GT(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_GT(`*`val1`*`,`*`val2`*`)`
+
+验证 *`val1`*`>`*`val2`*.
+
+### EXPECT_GE {#EXPECT_GE}
+
+`EXPECT_GE(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_GE(`*`val1`*`,`*`val2`*`)`
+
+验证 *`val1`*`>=`*`val2`*.
+
+## 字符串比较 {#c-strings}
+
+以下断言比较两个 **C 字符串**。比较两个“字符串”
+对象，请改用 [`EXPECT_EQ`](#EXPECT_EQ) 或 [`EXPECT_NE`](#EXPECT_NE)。
+
+这些断言还接受宽 C 字符串 (`wchar_t*`)。如果比较两个
+宽字符串失败，它们的值将被打印为 UTF-8 窄字符串。
+
+要将 C 字符串与 NULL 进行比较，请使用 `EXPECT_EQ(`*`c_string`*`, nullptr)` 或
+`EXPECT_NE(`*`c_string`*`, nullptr)`。
+
+### EXPECT_STREQ {#EXPECT_STREQ}
+
+`EXPECT_STREQ(`*`str1`*`,`*`str2`*`)` \
+`ASSERT_STREQ(`*`str1`*`,`*`str2`*`)`
+
+验证两个 C 字符串 *`str1`* 和 *`str2`* 是否具有相同的内容。
+
+### EXPECT_STRNE {#EXPECT_STRNE}
+
+`EXPECT_STRNE(`*`str1`*`,`*`str2`*`)` \
+`ASSERT_STRNE(`*`str1`*`,`*`str2`*`)`
+
+验证两个 C 字符串 *`str1`* 和 *`str2`* 是否具有不同的内容。
+
+### EXPECT_STRCASEEQ {#EXPECT_STRCASEEQ}
+
+`EXPECT_STRCASEEQ(`*`str1`*`,`*`str2`*`)` \
+`ASSERT_STRCASEEQ(`*`str1`*`,`*`str2`*`)`
+
+验证两个 C 字符串 *`str1`* 和 *`str2`* 具有相同的内容，
+忽略大小写。
+
+### EXPECT_STRCASENE {#EXPECT_STRCASENE}
+
+`EXPECT_STRCASENE(`*`str1`*`,`*`str2`*`)` \
+`ASSERT_STRCASENE(`*`str1`*`,`*`str2`*`)`
+
+验证两个 C 字符串 *`str1`* 和 *`str2`* 具有不同的内容，
+忽略大小写。
+
+## 浮点比较 {#floating-point}
+
+以下断言比较两个浮点值。
+
+由于舍入误差，两个浮点值不太可能
+完全匹配，所以`EXPECT_EQ`不适合。一般来说，对于浮点
+为了使比较有意义，用户需要仔细选择误差范围。
+
+KumoTest 还提供使用基于默认错误界限的断言
+最后一位的单位 (ULP)。要了解有关 ULP 的更多信息，请参阅文章
+[比较浮点数](https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/)。
+
+### EXPECT_FLOAT_EQ {#EXPECT_FLOAT_EQ}
+
+`EXPECT_FLOAT_EQ(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_FLOAT_EQ(`*`val1`*`,`*`val2`*`)`
+
+验证两个 `float` 值 *`val1`* 和 *`val2`* 是否近似
+相等，彼此之间的距离不超过 4 个 ULP。
+
+### EXPECT_DOUBLE_EQ {#EXPECT_DOUBLE_EQ}
+
+`EXPECT_DOUBLE_EQ(`*`val1`*`,`*`val2`*`)` \
+`ASSERT_DOUBLE_EQ(`*`val1`*`,`*`val2`*`)`
+
+验证两个`double`值 *`val1`* 和 *`val2`* 是否近似
+相等，彼此之间的距离不超过 4 个 ULP。
+
+### EXPECT_NEAR {#EXPECT_NEAR}
+
+`EXPECT_NEAR(`*`val1`*`,`*`val2`*`,`*`abs_error`*`)` \
+`ASSERT_NEAR(`*`val1`*`,`*`val2`*`,`*`abs_error`*`)`
+
+验证 *`val1`* 和 *`val2`* 之间的差异不超过
+绝对误差范围 *`abs_error`*。
+
+## 表达式比较 {#exceptions}
+
+以下断言验证一段代码是否抛出或不抛出，
+一个例外。使用需要在构建环境中启用异常。
+
+请注意，被测试的代码片段可以是复合语句，例如：
+
+```cpp
+EXPECT_NO_THROW({
+  int n = 5;
+  DoSomething(&n);
+});
+```
+
+### EXPECT_THROW {#EXPECT_THROW}
+
+`EXPECT_THROW(`*`statement`*`,`*`exception_type`*`)` \
+`ASSERT_THROW(`*`statement`*`,`*`exception_type`*`)`
+
+验证 *`statement`* 是否抛出 *`exception_type`* 类型的异常。
+
+### EXPECT_ANY_THROW {#EXPECT_ANY_THROW}
+
+`EXPECT_ANY_THROW(`*`statement`*`)` \
+`ASSERT_ANY_THROW(`*`statement`*`)`
+
+验证 *`statement`* 是否抛出任何类型的异常。
+
+### EXPECT_NO_THROW {#EXPECT_NO_THROW}
+
+`EXPECT_NO_THROW(`*`statement`*`)` \
+`ASSERT_NO_THROW(`*`statement`*`)`
+
+验证 *`statement`* 不会引发任何异常。
+
+## Predicate Assertions {#predicates}
+
+以下断言可以验证更复杂的谓词
+与单独使用`EXPECT_TRUE`相比，打印更清晰的失败消息。
+
+### EXPECT_PRED* {#EXPECT_PRED}
+
+`EXPECT_PRED1(`*`pred`*`,`*`val1`*`)` \
+`EXPECT_PRED2(`*`pred`*`,`*`val1`*`,`*`val2`*`)` \
+`EXPECT_PRED3(`*`pred`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`)` \
+`EXPECT_PRED4(`*`pred`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`)` \
+`EXPECT_PRED5(`*`pred`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`,`*`val5`*`)`
+
+`ASSERT_PRED1(`*`pred`*`,`*`val1`*`)` \
+`ASSERT_PRED2(`*`pred`*`,`*`val1`*`,`*`val2`*`)` \
+`ASSERT_PRED3(`*`pred`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`)` \
+`ASSERT_PRED4(`*`pred`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`)` \
+`ASSERT_PRED5(`*`pred`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`,`*`val5`*`)`
+
+验证谓词 *`pred`* 在传递给定值时返回“true”
+作为参数。
+
+参数 *`pred`* 是一个函数或函子，它接受尽可能多的参数
+因为相应的宏接受值。如果 *`pred`* 返回 `true`
+给定参数，断言成功，否则断言失败。
+
+当断言失败时，它会打印每个参数的值。参数是
+总是只评估一次。
+
+作为示例，请参阅以下代码：
+
+```cpp
+// Returns true if m and n have no common divisors except 1.
+bool MutuallyPrime(int m, int n) { ... }
+...
+const int a = 3;
+const int b = 4;
+const int c = 10;
+...
+EXPECT_PRED2(MutuallyPrime, a, b);  // Succeeds
+EXPECT_PRED2(MutuallyPrime, b, c);  // Fails
+```
+
+在上面的示例中，第一个断言成功，第二个断言失败
+以下消息：
+
+```
+MutuallyPrime(b, c) is false, where
+b is 4
+c is 10
+```
+
+请注意，如果给定谓词是重载函数或函数模板时，断言宏可能无法确定要使用哪个版本
+使用，并且可能需要显式指定函数的类型。例如，对于布尔函数`IsPositive()`重载以采用
+单个`int`或`double`参数，则需要编写其中之一
+下列的：
+
+```cpp
+EXPECT_PRED1(static_cast<bool (*)(int)>(IsPositive), 5);
+EXPECT_PRED1(static_cast<bool (*)(double)>(IsPositive), 3.14);
+```
+
+简单地编写`EXPECT_PRED1(IsPositive, 5);`会导致编译器错误。
+同样，要使用模板函数，请指定模板参数：
+
+```cpp
+template <typename T>
+bool IsNegative(T x) {
+  return x < 0;
+}
+...
+EXPECT_PRED1(IsNegative<int>, -5);  // Must specify type for IsNegative
+```
+
+如果模板有多个参数，请将谓词括在括号中，以便宏参数被正确解析：
+
+```cpp
+ASSERT_PRED2((MyPredicate<int, int>), 5, 0);
+```
+
+### EXPECT_PRED_FORMAT* {#EXPECT_PRED_FORMAT}
+
+`EXPECT_PRED_FORMAT1(`*`pred_formatter`*`,`*`val1`*`)` \
+`EXPECT_PRED_FORMAT2(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`)` \
+`EXPECT_PRED_FORMAT3(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`)` \
+`EXPECT_PRED_FORMAT4(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`)`
+\
+`EXPECT_PRED_FORMAT5(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`,`*`val5`*`)`
+
+`ASSERT_PRED_FORMAT1(`*`pred_formatter`*`,`*`val1`*`)` \
+`ASSERT_PRED_FORMAT2(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`)` \
+`ASSERT_PRED_FORMAT3(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`)` \
+`ASSERT_PRED_FORMAT4(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`)`
+\
+`ASSERT_PRED_FORMAT5(`*`pred_formatter`*`,`*`val1`*`,`*`val2`*`,`*`val3`*`,`*`val4`*`,`*`val5`*`)`
+
+验证谓词 *`pred_formatter`* 在传递给定值时是否成功
+值作为参数。
+
+参数 *`pred_formatter`* 是一个 *predicate-formatter*，它是一个函数或带有签名的函子：
+
+```cpp
+testing::AssertionResult PredicateFormatter(const char* expr1,
+                                            const char* expr2,
+                                            ...
+                                            const char* exprn,
+                                            T1 val1,
+                                            T2 val2,
+                                            ...
+                                            Tn valn);
+```
+
+其中 *`val1`*、*`val2`*、...、*`valn`* 是谓词的值
+参数，*`expr1`*、*`expr2`*、...、*`exprn`* 是相应的
+源代码中出现的表达式。类型 `T1`、`T2`、...、`Tn`
+可以是值类型或引用类型；如果参数的类型为`T`，则它
+可以声明为`T`或`const T&`，以合适的为准。了解更多
+关于返回类型 `testing::AssertionResult`，请参见
+[使用返回断言结果的函数](../advanced.mdx#using-a-function-that-returns-an-assertionresult)。
+
+作为示例，请参阅以下代码：
+
+```cpp
+// Returns the smallest prime common divisor of m and n,
+// or 1 when m and n are mutually prime.
+int SmallestPrimeCommonDivisor(int m, int n) { ... }
+
+// Returns true if m and n have no common divisors except 1.
+bool MutuallyPrime(int m, int n) { ... }
+
+// A predicate-formatter for asserting that two integers are mutually prime.
+testing::AssertionResult AssertMutuallyPrime(const char* m_expr,
+                                             const char* n_expr,
+                                             int m,
+                                             int n) {
+  if (MutuallyPrime(m, n)) return testing::AssertionSuccess();
+
+  return testing::AssertionFailure() << m_expr << " and " << n_expr
+      << " (" << m << " and " << n << ") are not mutually prime, "
+      << "as they have a common divisor " << SmallestPrimeCommonDivisor(m, n);
+}
+
+...
+const int a = 3;
+const int b = 4;
+const int c = 10;
+...
+EXPECT_PRED_FORMAT2(AssertMutuallyPrime, a, b);  // Succeeds
+EXPECT_PRED_FORMAT2(AssertMutuallyPrime, b, c);  // Fails
+```
+
+在上面的示例中，最终断言失败并且谓词格式化程序
+产生以下失败消息：
+
+```
+b and c (4 and 10) are not mutually prime, as they have a common divisor 2
+```
+
+## Windows HRESULT 断言 {#HRESULT}
+
+The following assertions test for `HRESULT` success or failure. For example:
+
+```cpp
+CComPtr<IShellDispatch2> shell;
+ASSERT_HRESULT_SUCCEEDED(shell.CoCreateInstance(L"Shell.Application"));
+CComVariant empty;
+ASSERT_HRESULT_SUCCEEDED(shell->ShellExecute(CComBSTR(url), empty, empty, empty, empty));
+```
+
+生成的输出包含与以下内容相关的人类可读的错误消息
+返回的`HRESULT`代码。
+
+### EXPECT_HRESULT_SUCCEEDED {#EXPECT_HRESULT_SUCCEEDED}
+
+`EXPECT_HRESULT_SUCCEEDED(`*`expression`*`)` \
+`ASSERT_HRESULT_SUCCEEDED(`*`expression`*`)`
+
+Verifies that *`expression`* is a success `HRESULT`.
+
+### EXPECT_HRESULT_FAILED {#EXPECT_HRESULT_FAILED}
+
+`EXPECT_HRESULT_FAILED(`*`expression`*`)` \
+`EXPECT_HRESULT_FAILED(`*`expression`*`)`
+
+验证*`表达式`*是失败的`HRESULT`。
+
+## 死亡断言 {#death}
+
+以下断言验证一段代码是否导致进程终止。有关上下文，请参阅[死亡测试](../advanced.mdx#death-tests)。
+
+这些断言产生一个新进程并在其中执行被测试的代码
+过程。如何发生取决于平台和变量
+`::testing::KTEST_FLAG(death_test_style)`，它是从
+命令行标志`--ktest_death_test_style`。
+
+* 在 POSIX 系统上，`fork()`（或 Linux 上的`clone()`）用于生成子进程，之后：
+  * 如果变量的值为`"fast"`，则死亡测试语句为立即执行。
+  * 如果变量的值为`"threadsafe"`，则子进程重新执行单元测试二进制文件就像最初调用的那样，但有一些
+    额外的标志只导致正在考虑的单一死亡测试被运行。
+* 在 Windows 上，子进程是使用 `CreateProcess()` API 生成的，并且重新执行二进制文件以导致单次死亡测试
+  考虑运行 - 很像 POSIX 上的“线程安全”模式。
+
+该变量的其他值是非法的，将导致死亡测试失败。目前，该标志的默认值为
+**`“快”`**。
+
+如果死亡测试语句运行完成而没有死亡，则子进程
+尽管如此，还是会终止，并且断言失败。
+
+请注意，被测试的代码片段可以是复合语句，例如：
+
+```cpp
+EXPECT_DEATH({
+  int n = 5;
+  DoSomething(&n);
+}, "Error on line .* of DoSomething()");
+```
+
+### EXPECT_DEATH {#EXPECT_DEATH}
+
+`EXPECT_DEATH(`*`statement`*`,`*`matcher`*`)` \
+`ASSERT_DEATH(`*`statement`*`,`*`matcher`*`)`
+
+验证*`语句`*导致进程以非零退出终止
+状态并生成与 *`matcher`* 匹配的 `stderr` 输出。
+
+参数 *`matcher`* 是 `const 的 [matcher](matchers.mdx)
+std::string&` 或正则表达式（请参阅
+[正则表达式语法](../advanced.mdx#regular-expression-syntax)) — 一个裸露的
+字符串 *`s`* （没有匹配器）被视为
+[`ContainsRegex(s)`](matchers.mdx#string-matchers)，**not**
+[`Eq(s)`](matchers.mdx#generic-comparison)。
+
+
+例如，以下代码验证调用`DoSomething(42)`会导致
+进程终止并显示包含文本“我的错误”的错误消息：
+
+```cpp
+EXPECT_DEATH(DoSomething(42), "My error");
+```
+
+### EXPECT_DEATH_IF_SUPPORTED {#EXPECT_DEATH_IF_SUPPORTED}
+
+`EXPECT_DEATH_IF_SUPPORTED(`*`statement`*`,`*`matcher`*`)` \
+`ASSERT_DEATH_IF_SUPPORTED(`*`statement`*`,`*`matcher`*`)`
+
+如果支持死亡测试，则行为与[`EXPECT_DEATH`](#EXPECT_DEATH)。否则，不会验证任何内容。
+
+### EXPECT_DEBUG_DEATH {#EXPECT_DEBUG_DEATH}
+
+`EXPECT_DEBUG_DEATH(`*`statement`*`,`*`matcher`*`)` \
+`ASSERT_DEBUG_DEATH(`*`statement`*`,`*`matcher`*`)`
+
+在调试模式下，行为与 [`EXPECT_DEATH`](#EXPECT_DEATH) 相同。不在时
+调试模式（即定义了`NDEBUG`），只执行*`语句`*。
+
+### EXPECT_EXIT {#EXPECT_EXIT}
+
+`EXPECT_EXIT(`*`statement`*`,`*`predicate`*`,`*`matcher`*`)` \
+`ASSERT_EXIT(`*`statement`*`,`*`predicate`*`,`*`matcher`*`)`
+
+验证*`语句`*导致进程以退出状态终止满足 *`predicate`*，并生成匹配的 `stderr` 输出
+*`匹配器`*。
+
+参数 *`predicate`* 是接受 `int` 退出的函数或函子状态并返回一个“bool”。 KumoTest 提供了两个谓词来处理常见的
+案例：
+
+```cpp
+// Returns true if the program exited normally with the given exit status code.
+::testing::ExitedWithCode(exit_code);
+
+// Returns true if the program was killed by the given signal.
+// Not available on Windows.
+::testing::KilledBySignal(signal_number);
+```
+
+参数 *`matcher`* 是 `const 的 [matcher](matchers.mdx) std::string&` 或正则表达式（请参阅
+[正则表达式语法](../advanced.mdx#regular-expression-syntax)) — 一个裸露的
+字符串 *`s`* （没有匹配器）被视为
+[`ContainsRegex(s)`](matchers.mdx#string-matchers)，**不是**
+[`Eq(s)`](matchers.mdx#generic-comparison)。
+
+例如，以下代码验证调用`NormalExit()`会导致
+将包含文本`Success`的消息打印到`stderr`并退出的过程
+退出状态代码为 0：
+
+```cpp
+EXPECT_EXIT(NormalExit(), testing::ExitedWithCode(0), "Success");
+```

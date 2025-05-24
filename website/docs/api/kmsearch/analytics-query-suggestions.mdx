@@ -1,0 +1,511 @@
+---
+sidebarDepth: 2
+sitemap:
+priority: 0.7
+---
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 分析和查询建议
+
+kumosearch 可以聚合搜索查询用于分析和查询建议。
+
+## 启用该功能
+
+### 自托管时
+
+搜索分析功能需要通过 `--enable-search-analytics` 和 `--analytics-dir` 显式启用。此外，为了让查询建议和其他分析功能正常工作，还需要设置 `--analytics-flush-interval` 标志，该标志决定了搜索查询聚合数据写入建议索引表的频率。
+
+```bash
+./kumosearch-server --data-dir=/path/to/data --api-key=abcd \
+  --enable-search-analytics=true \
+  --analytics-dir=/path/to/analytics-data \ 
+  --analytics-flush-interval=60
+```
+
+将此值设置为较小的值（最小值为60秒）可以更频繁地更新建议索引表。默认值为：`3600` 秒（即每小时更新一次）。
+
+## 查询建议
+
+您可以捕获系统中发生的搜索查询，用于跟踪热门查询或提供自动建议。
+
+### 创建查询索引表
+
+首先，我们创建一个新索引表，搜索查询将被聚合并记录到该索引表中。
+
+该索引表与其他 kumosearch 索引表一样，不同之处在于它由 kumosearch 自动填充来自其他索引表的搜索查询。
+
+`q` 和 `count` 字段是必须的。
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let schema = {
+  "name": "product_queries",
+  "fields": [
+    {"name": "q", "type": "string" },
+    {"name": "count", "type": "int32" }
+  ]
+}
+
+client.collections().create(schema)
+```
+
+  </TabItem>
+    <TabItem value="shell" label="shell">
+
+```bash
+curl -k "http://localhost:8868/collections" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+        "name": "product_queries",
+        "fields": [
+          {"name": "q", "type": "string" },
+          {"name": "count", "type": "int32" }
+        ]
+      }'
+```
+
+    </TabItem>
+</Tabs>
+
+### 创建分析规则
+
+我们现在可以创建一个 `popular_queries` 分析规则，用于存储上述索引表中最常出现的搜索查询。通过设置 `limit` 参数，可以将热门查询限制在前 1000 个查询内。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let ruleName =  'product_queries_aggregation'
+let ruleConfiguration = {
+  "type": "popular_queries",
+  "params": {
+    "source": {
+      "collections": ["products"]
+    },
+    "destination": {
+      "collection": "product_queries"
+    },
+    "expand_query": false,
+    "limit": 1000
+  }
+}
+
+client.analytics.rules().upsert(ruleName, ruleConfiguration)
+```
+
+      </TabItem>
+      <TabItem value="Shell" label="Shell">
+
+```bash
+curl -k "http://localhost:8868/analytics/rules" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+        "name": "product_queries_aggregation",
+        "type": "popular_queries",
+        "params": {
+            "source": {
+                "collections": ["products"]
+            },
+            "destination": {
+                "collection": "product_queries"
+            },
+            "limit": 1000
+        }
+      }'
+```
+
+      </TabItem>
+
+</Tabs>
+
+每当在 `products` （源）索引表上进行搜索时，搜索查询都将被聚合并存储在 `product_queries`（目标）索引表中。
+
+查询将根据 `analytics-flush-interval` 配置进行聚合，并发送到**目标索引表**中。
+
+**自动扩展前缀搜索查询：**
+
+在创建分析规则时，您可以设置 `expand_query: true` 以使 kumosearch 聚合扩展版本的搜索查询。例如，如果用户输入 `sho` 并点击了 `shoe`，将此参数设置为 `true` 将使 kumosearch 聚合单词 `shoe` 而不是`sho`。默认情况下，该参数设置为 `false`，即我们将捕获实际的用户查询（包括前缀查询）而不进行任何扩展。
+
+### 查询建议UX设计
+
+设置完上述分析规则后，热门搜索词将开始出现在**目标索引表**中。您可以像其他 kumosearch 索引表一样使用此索引表中的数据，并向其发送搜索查询，以支持查询建议UX设计。
+
+您还可以使用 [multi_search](./federated-multi-search.mdx) 将查询并行发送到主索引，以并行显示查询建议和实际结果。
+
+<Tabs >
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let searchRequests = {
+  'searches': [
+    {
+      'collection': 'product_queries',
+      'q': 'shoe',
+      'query_by': 'q'
+    },
+    {
+      'collection': 'products',
+      'q': 'shoe',
+      'query_by': 'product_name'
+    }
+  ]
+}
+
+client.multiSearch.perform(searchRequests, {})
+```
+
+      </TabItem>
+
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/multi_search" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+          "searches": [
+            {
+              "collection": "product_queries",
+              "q": "shoe",
+              "query_by": "q"
+            },
+            {
+              "collection": "products",
+              "q": "shoe",
+              "query_by": "q"
+            }
+          ]
+        }'
+```
+
+    </TabItem>
+</Tabs>
+
+#### Aggregation聚合键
+
+向**源索引表**发送搜索查询时，您可以选择发送 `x-kumosearch-user-id` 参数或 `X-KUMOSEARCH-USER-ID` 标头，指示发出此特定搜索请求的用户。当未指定时，kumosearch 默认使用客户端IP地址进行聚合。
+
+由于 kumosearch 可用于预输入搜索，因此仅在查询后至少有 **4 秒的暂停**时才会对搜索查询进行聚合。例如，`f -> fo -> foo -> 4 Second Pause` 将记录为 `foo` 查询。
+
+:::tip
+在本地测试时，请注意 4 秒的暂停以及 `analytics-flush-interval`配置。
+
+如果在短时间内向**源索引表**发送大量查询，搜索词可能不会立即出现在**目标索引表**中。
+:::
+
+## 无点击查询
+
+与热门查询一样，您也可以跟踪未产生点击的查询，并利用这些信息识别内容中的潜在不足。
+
+### 创建查询索引表
+
+首先，我们创建一个新索引表，用于聚合并记录未产生命中的搜索查询。
+
+该索引表与其他 kumosearch 索引表一样，不同之处在于它由 kumosearch 自动填充无点击搜索查询。
+
+`q` 和 `count` 字段是必须的。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+```js
+let schema = {
+  "name": "no_hits_queries",
+  "fields": [
+    {"name": "q", "type": "string" },
+    {"name": "count", "type": "int32" }
+  ]
+}
+
+client.collections().create(schema)
+```
+
+      </TabItem>
+
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -k "http://localhost:8868/collections" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+        "name": "no_hits_queries",
+        "fields": [
+          {"name": "q", "type": "string" },
+          {"name": "count", "type": "int32" }
+        ]
+      }'
+```
+
+    </TabItem>
+</Tabs>
+
+### 创建分析规则
+
+我们将跟踪在搜索 `products` 索引表时未产生命中的前1000个查询，并将这些查询聚合在 `no_hits_queries` 索引表中。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let ruleName =  'product_queries_aggregation'
+let ruleConfiguration = {
+  "type": "nohits_queries",
+  "params": {
+    "source": {
+      "collections": ["products"]
+    },
+    "destination": {
+      "collection": "no_hits_queries"
+    },
+    "limit": 1000
+  }
+}
+
+client.analytics.rules().upsert(ruleName, ruleConfiguration)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -k "http://localhost:8868/analytics/rules" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+        "name": "product_no_hits",
+        "type": "nohits_queries",
+        "params": {
+            "source": {
+                "collections": ["products"]
+            },
+            "destination": {
+                "collection": "no_hits_queries"
+            },
+            "limit": 1000
+        }
+      }'
+```
+
+    </TabItem>
+
+</Tabs>
+
+## 计算受欢迎度 {#compute-ctr}
+
+kumosearch 支持跟踪特定文档被点击或购买的频率。然后[根据受欢迎程度对搜索结果进行排名](../../kmsearch/ranking-and-relevance.mdx#rank-by-rel-and-ctr)。
+
+假设有一个带有 `popularity` 字段的索引表，并将其用作计数器：
+
+```json
+{                                        
+  "name": "products",           
+  "fields": [       
+    {"name": "title", "type": "string"},
+    {"name": "popularity", "type": "int32", "optional": true}
+  ]                                    
+}
+```
+
+我们将 `popularity` 字段标记为 `可选`，以便在索引期间跳过该字段，并让 kumosearch 根据用户交互增加该字段的值。
+
+### 创建分析规则
+
+定义一个计数器 `counter` 分析规则，每当发生点击事件时都会增加 `popularity` 字段的值。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let ruleName =  'product_queries_aggregation'
+let ruleConfiguration = {
+    "name": "products_popularity",
+    "type": "counter",
+    "params": {
+        "source": {
+            "collections": ["products"],
+            "events":  [
+              {"type": "click", "weight": 1, "name": "products_click_event"}
+            ]
+        },
+        "destination": {
+            "collection": "products",
+            "counter_field": "popularity"
+        }
+    }
+}
+
+client.analytics.rules().upsert(ruleName, ruleConfiguration)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -k "http://localhost:8868/analytics/rules" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+        "name": "products_popularity",
+        "type": "counter",
+        "params": {
+            "source": {
+                "collections": ["products"],
+                "events":  [
+                    {"type": "click", "weight": 1, "name": "products_click_event"}
+                ]
+            },
+            "destination": {
+                "collection": "products",
+                "counter_field": "popularity"
+            }
+        }
+      }'
+```
+
+    </TabItem>
+
+</Tabs>
+
+计数器 `counter` 规则指定了跟踪哪个索引表以及计数器值存储在何处。事件参数的 `weight` 属性决定增量的大小。在这种情况下，每次向与该文档关联的集群索引表发送 `click` 事件时，`popularity` 字段就会增加 1。
+
+### 发送点击事件
+
+计数器规则就位之后，就可以使用在计数器规则中配置的事件名称（例如 `products_click_event`）发送点击事件：
+
+```bash
+curl "http://localhost:8868/analytics/events" -X POST \
+     -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \ 
+     -d '{
+            "type": "click",
+            "name": "products_click_event",
+            "data": {
+                  "q": "nike shoes",
+                  "doc_id": "1024",
+                  "user_id": "111112"
+            }
+        }'
+```
+
+点击事件被聚合，索引表中的 `popularity` 字段将根据 `--analytics-flush-interval` 选项而递增。
+
+### 聚合多个事件
+
+您可以设置一个计数器规则，为不同的事件赋予不同的权重。
+
+| 事件类型 | 描述                 |
+|:-----------|:-------------|
+| click      | 跟踪搜索响应中返回的文档的点击次数。          |    
+| conversion | 跟踪特定文档的转换（例如购买）。              |    
+| visit      | 跟踪对特定文档的页面访问，很适用于推荐场景。 |   
+
+让我们设置一个聚合 `click` 点击事件和 `conversion` 转换事件的规则。
+
+```json
+{
+  "name": "products_popularity",
+  "type": "counter",
+  "params": {
+    "source": {
+      "collections": [
+        "products"
+      ],
+      "events": [
+        {
+          "type": "click",
+          "weight": 1,
+          "name": "products_click_event"
+        },
+        {
+          "type": "conversion",
+          "weight": 2,
+          "name": "products_purchase_event"
+        }
+      ]
+    },
+    "destination": {
+      "collection": "products",
+      "counter_field": "popularity"
+    }
+  }
+}
+```
+
+您现在可以通过 API 发送 `conversion` 事件。
+
+```bash
+curl "http://localhost:8868/analytics/events" -X POST \
+     -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \ 
+     -d '{
+            "type": "conversion",
+            "name": "products_purchase_event",
+            "data": {
+                  "doc_id": "1022",
+                  "user_id": "111117"
+            }
+        }'
+```
+
+由于我们已将 `conversion` 事件的权重设置为 `2`，因此 `products` 索引表中的 `popularity` 字段每次增加 `2`。
+
+## 列出所有规则
+
+使用列表 API， 您可以列出存储在 kumosearch 集群中的所有分析规则。
+
+<Tabs>
+
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+        kumosearch.analytics.rules().retrieve()
+```
+
+    </TabItem>
+
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -k "http://localhost:8868/analytics/rules" \
+      -X GET \ 
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" 
+```
+
+    </TabItem>
+</Tabs>
+
+## 删除规则
+
+删除分析规则将停止新查询的聚合，但已聚合的查询仍会保留在**目标索引表**中。
+
+<Tabs>
+
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+        kumosearch.analytics.rules('product_queries_aggregation').delete()
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -k "http://localhost:8868/analytics/rules/product_queries_aggregation" 
+      -X DELETE \
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" 
+```
+
+    </TabItem>
+</Tabs>

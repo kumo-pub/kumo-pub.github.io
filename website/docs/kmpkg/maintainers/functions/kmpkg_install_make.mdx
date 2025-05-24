@@ -1,0 +1,31 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_install_make
+
+构建并安装 make 项目。
+
+## 使用情况
+
+```cmake
+kmpkg_install_make(...)
+```
+
+## 参数
+
+请参阅 [`kmpkg_build_make()`](kmpkg_build_make.mdx).
+
+## 说明
+
+此命令以透明方式转发到 [`kmpkg_build_make()`](kmpkg_build_make.mdx)，添加 `ENABLE_INSTALL`
+
+## 示例
+
+- [x264](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/x264/portfile.cmake)
+- [tcl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/tcl/portfile.cmake)
+- [freexl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/freexl/portfile.cmake)
+- [libosip2](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/libosip2/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_install\_make.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_install_make.cmake)

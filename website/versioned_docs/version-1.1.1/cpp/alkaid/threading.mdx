@@ -1,0 +1,46 @@
+
+
+# 线程管理
+
+
+`线程管理 API 参考 <api/thread>`
+
+## 线程池
+
+许多 Alkaid C++ 操作将工作分布在多个线程中，以利用底层硬件并行性。例如，当`读取 Ipc 文件<parquet::alkaid::FileReader::set_use_threads>`时，我们可以
+并行解码每一列。为此，我们将任务提交给某种执行器。在 Alkaid C++ 中，我们使用线程池进行并行调度，并在用户请求串行执行时使用事件循
+环。用户可以提供自己的自定义实现，但这是一个高级概念，本文不作介绍。
+
+### CPU vs. I/O
+
+为了最大限度地减少上下文切换的开销，我们为 CPU 密集型任务设置的默认线程池具有固定大小，默
+认为 [std::thread::hardware\_concurrency](https://en.cppreference.com/w/cpp/thread/thread/hardware_concurrency)。这意味着 CPU
+任务不应该长时间阻塞，因为这会导致 CPU 利用率不足。为了实现这一点，我们有一个单独的线程池，应该用于需要
+阻塞的任务。由于这些任务通常与 I/O 操作相关，我们将其称为 I/O 线程池。此模型通常与异步计算相关。
+
+I/O 线程池的大小目前默认为 8 个线程，应根据 I/O 硬件的并行功能进行调整。例如，如果大多数读写发生在典型的 HDD 上，则默认的 8 个线程可能就足够了。另一
+方面，当大多数读写发生在远程文件系统（如 S3）上时，通常可以从许多并发读取中受益，并且可以通过
+增加 I/O 线程池的大小来提高 I/O 性能。可以使用 `ARROW_IO_THREADS` 环境变量或 `alkaid::io::SetIOThreadPoolCapacity` 函数来管理默认 I/O 线程池的大小。
+
+增加 CPU 线程池的大小不太可能带来任何好处。在某些情况下，减少 CPU 线程池的大小可能是有意义的，以减少 Alkaid C++ 对与其他进程或
+用户线程共享的硬件的影响。可以使用 `OMP_NUM_THREADS`环境变量或 `alkaid::SetCpuThreadPoolCapacity`
+函数来管理默认 CPU 线程池的大小。
+
+### 串行执行
+
+Alkaid C++ 中可能使用线程的操作通常可以通过某种参数配置为串行运行。在这种情况下，我们通常用由调用线程操作的事件循环替
+换 CPU 执行器。但是，许多操作将继续使用 I/O 线程池。这意味着即使请求串行执行，仍可能出现一些并行性。
+
+### Jemalloc Background Threads
+
+使用 `jemalloc allocator<cpp_memory_pool>` 时，jemalloc 将创建少量后台线程来管理池。这些线程的影响应该很小，但
+在运行 Valgrind 等分析工具时可能会显示为内存泄漏。这是无害的，可以安全地抑制，或者可以在没有 jemalloc 的情况下编译 Alkaid C++。
+
+## 异步实用程序
+
+### Future
+
+Alkaid C++ 使用 `alkaid::Future` 在线程之间传递结果。
+通常，当操作需要执行某种长时间运行且会阻塞一段时间的任务时，就会创建 `alkaid::Future`。`alkaid::Future` 对象主要用于内部使用，并且
+任何返回 `alkaid::Future` 的方法通常也具有
+同步变体。

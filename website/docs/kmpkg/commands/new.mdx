@@ -1,0 +1,137 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg new
+
+kmpkg 新命令的命令行参考。在当前目录中创建一个新的清单。
+
+## 摘要
+
+```console
+kmpkg new --application
+```
+
+```console
+kmpkg new --name hello --version 1.0 [--version-relaxed | --version-date | --version-string]
+```
+
+创建准备用于当前工作目录中项目的清单文件 (`kmpkg.json`) 和默认配置文件 ([`kmpkg-configuration.json`](../reference/kmpkg-configuration-json.mdx))。
+
+如果项目是最终用户应用程序，请使用 --application 标志。
+
+如果不使用 `--application`，则需要 `--name` 和 `--version`。 `--version-date`、`--version-relaxed` 或 `--version-string` 可以强制选择特定版本格式。 有关版本控制格式的详细信息，请参阅[版本控制](../users/versioning.mdx)参考。
+
+
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--application`
+
+创建适合在应用程序中使用的清单，无需提供名称和版本。
+
+### `--name`
+
+要写入清单的名称。
+
+### `--version`
+
+指示要写入清单的版本。 如果未传递其他版本格式开关，则根据输入的形式推断要使用的适当形式。
+
+### `--version-relaxed`
+
+指示要写入清单的版本是“宽松”版本。 宽松版本遵循语义版本控制的格式，但允许任意数量的数值。 有关详细信息，请参阅[版本控制](../users/versioning.mdx#version)参考。
+
+### `--version-date`
+
+指示要写入清单的版本是“日期”版本。 日期版本为 `ISO 8601` 日期（例如 `"YYYY-MM-DD"`）。 有关详细信息，请参阅[版本控制](../users/versioning.mdx#version-date)参考。
+
+### `--version-string`
+
+指示要写入清单的版本是没有排序语义的“字符串”
+
+版本。 有关详细信息，请参阅[版本控制](../users/versioning.mdx#version-string)参考。
+
+## 示例
+
+:::info
+`kmpkg new` 在 `kmpkg.json` 和 `kmpkg-configuration.json` 文件中生成元数据。 此项包括与试验性项目体验的集成。 具体而言，含有 `"kind": "artifact"` 的注册表适用于试验性 `kmpkg-artifacts` 功能。
+:::
+
+### With `--application`
+
+```console
+$ kmpkg new --application
+$ type kmpkg.json
+{}
+$ type .\kmpkg-configuration.json
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "64adda19c86e89526b5e27703a193c14477cce07",
+    "repository": "https://gitee.com/kumo-pub/kmpkg"
+  },
+  "registries": [
+    {
+      "kind": "artifact",
+      "location": "https://gitee.com/kumo-pub/kmpkg-ce-catalog/archive/refs/heads/main.zip",
+      "name": "microsoft"
+    }
+  ]
+}
+```
+
+### 使用 `--name` 和 `--version`
+
+```console
+$ kmpkg new --name hello --version 2023-07-05
+$ type kmpkg.json
+{
+  "name": "hello",
+  "version-date": "2023-07-05"
+}
+$ type .\kmpkg-configuration.json
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "64adda19c86e89526b5e27703a193c14477cce07",
+    "repository": "https://gitee.com/kumo-pub/kmpkg"
+  },
+  "registries": [
+    {
+      "kind": "artifact",
+      "location": "https://gitee.com/kumo-pub/kmpkg-ce-catalog/archive/refs/heads/main.zip",
+      "name": "microsoft"
+    }
+  ]
+}
+```
+
+### 选择显式版本格式
+
+```console
+$ kmpkg new --name hello --version 1.0 --version-date
+error: `1.0` is not a valid date version. Dates must follow the format YYYY-MM-DD and disambiguators must be dot-separated positive integer values without leading zeroes.
+$ kmpkg new --name hello --version 1.0 --version-string
+$ type kmpkg.json
+{
+  "name": "hello",
+  "version-string": "1.0"
+}
+$ type .\kmpkg-configuration.json
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "64adda19c86e89526b5e27703a193c14477cce07",
+    "repository": "https://gitee.com/kumo-pub/kmpkg"
+  },
+  "registries": [
+    {
+      "kind": "artifact",
+      "location": "https://gitee.com/kumo-pub/kmpkg-ce-catalog/archive/refs/heads/main.zip",
+      "name": "microsoft"
+    }
+  ]
+}
+```

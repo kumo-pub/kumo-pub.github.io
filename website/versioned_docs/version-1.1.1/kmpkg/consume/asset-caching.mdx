@@ -1,0 +1,57 @@
+---
+date: 07/16/2024
+---
+
+# 教程：设置 kmpkg 资源缓存
+
+了解如何设置本地资源缓存来镜像下载资源。
+
+所有资源缓存均通过`X_KMPKG_ASSET_SOURCES`环境变量进行配置。价值`X_KMPKG_ASSET_SOURCES` 遵循特定的 [配置语法](../users/assetcaching.mdx)。
+
+在本教程中，您将学习如何：
+
+* [创建资源缓存目录](#create-an-asset-cache-directory)
+* [配置`X_KMPKG_ASSET_SOURCES`](#configure-x_kmpkg_asset_sources)
+
+## 先决条件
+
+* A terminal
+* kmpkg
+
+## 1 - 创建资源缓存目录 {#create-an-asset-cache-directory}
+
+您可以使用 Azure Blob 存储后端“[`x-azurl`](../users/assetcaching.mdx#x-azurl)”来存储资产。或者，您可以使用文件系统目录来存储
+您的下载资源，包括网络位置。为此，您需要使用资产缓存 URL 中的`file://`协议。
+
+在本教程中，您将创建一个本地资源缓存位置来存储下载的资源。
+
+1. 创建一个目录作为资源缓存位置（替换为您选择的任何位置）：
+
+```bash
+mkdir /home/kmpkg/asset-cache
+```
+
+
+## 2 -配置`X_KMPKG_ASSET_SOURCES` {#configure-x_kmpkg_asset_sources}
+
+接下来设置 `X_KMPKG_ASSET_SOURCES`的值，如下所示：
+
+```console
+set "X_KMPKG_ASSET_SOURCES=clear;x-azurl,file:/kmpkg/asset-cache,,readwrite"
+```
+
+```bash
+export X_KMPKG_ASSET_SOURCES="clear;x-azurl,file:///home/kmpkg/asset-cache,,readwrite"
+```
+
+此“X_KMPKG_ASSET_SOURCES”配置添加以下源字符串：
+
+* `clear`，禁用任何先前配置的资源缓存
+* `x-azurl,file:///home/kmpkg/asset-cache,,readwrite`，设置文件系统资源缓存，位于
+`home/kmpkg/asset-cache`，具有读写权限。
+
+## 后续步骤
+
+以下是接下来要尝试的其他任务：
+
+* [设置二进制缓存以节省重建时间](../consume/binary-caching-local.mdx)

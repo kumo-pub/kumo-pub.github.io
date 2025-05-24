@@ -1,0 +1,173 @@
+---
+date: 01/10/2024
+---
+# 教程： 使用注册表基线安装特定版本的 Boost 库
+
+了解如何使用基线安装特定版本的 Boost 软件包。
+
+:::warning 重要
+boost库在迁移过程中，目前最低版本为`1.8.5`，本文仅演示如何安装指定版本，相应的版本请
+根据官方的仓库进行试验。
+:::
+
+kmpkg 将“Boost”库集作为单独的包提供为仅依赖 Boost 软件包有限子集的用户提供便利。然而，这种方法需要权衡。想要锁定特定的用户
+需要使用 Boost 依赖项的版本来覆盖它们所依赖的每个 Boost 包。
+
+但是，有一个简单的解决方案可以使用注册表基线和封装图案。
+
+## 先决条件
+
+* A terminal
+* A C++ compiler
+* kmpkg
+
+## 问题
+
+假设您有一个依赖于`Boost-Optional`的项目，并且您
+想要锁定 Boost 库的`1.80.0`版本。所以你创建了一个
+覆盖您的依赖项，如下所示：
+
+`kmpkg.json`
+
+```json
+{
+    "dependencies": [ "boost-optional" ],
+    "overrides": [
+        { "name": "boost-optional", "version": "1.80.0" }
+    ]
+}
+```
+
+`kmpkg-configuration.json`
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://gitee.com/kumo-pub/kmpkg",
+    "baseline": "3265c187c74914aa5569b75355badebfdbab7987"
+  }
+}
+```
+
+当您运行`kmpkg install`时，您会注意到只有
+`boost-optional`已锁定为 `1.80.0`，而其他 Boost 依赖项
+使用基线版本（`1.83.0`）。
+
+```console
+Fetching registry information from https://gitee.com/kumo-pub/kmpkg (HEAD)...
+Detecting compiler hash for triplet x64-linux...
+The following packages will be built and installed:
+  * boost-assert:x64-linux -> 1.83.0
+  * boost-config:x64-linux -> 1.83.0
+  * boost-core:x64-linux -> 1.83.0
+  * boost-detail:x64-linux -> 1.83.0
+  * boost-io:x64-linux -> 1.83.0
+  * boost-move:x64-linux -> 1.83.0
+    boost-optional:x64-linux -> 1.80.0
+  * boost-predef:x64-linux -> 1.83.0
+  * boost-preprocessor:x64-linux -> 1.83.0
+  * boost-static-assert:x64-linux -> 1.83.0
+  * boost-throw-exception:x64-linux -> 1.83.0
+  * boost-type-traits:x64-linux -> 1.83.0
+  * boost-uninstall:x64-linux -> 1.83.0
+  * boost-utility:x64-linux -> 1.83.0
+  * boost-kmpkg-helpers:x64-linux -> 1.83.0
+Additional packages (*) will be modified to complete this operation.
+```
+
+### 1 - 获取Boost版本基线
+
+运行以下命令查看修改过的提交的历史记录 `boost-optional` 包的版本数据库：
+
+```Console
+git log "--format=%H %cd %s" --date=short --left-only -- versions/b-/boost-optional.json
+```
+
+您应该看到与此类似的输出：
+
+```Console
+caa7579a1c48e2ca770f6ccf98cb03db95642631 2023-09-13 [boost] update to v1.83.0 (#33597)
+5d3798ac7388ca66c169773e46103b14077b76a4 2023-06-06 [boost] Remove port version constraints (#31572)
+501db0f17ef6df184fcdbfbe0f87cde2313b6ab1 2023-04-15 [boost-build] Fix SHA512 and add MSVC workaround. (#30884)
+bedfdb774cfbe47da202169046ca15441a213f3e 2023-04-15 [Boost] Update Boost ports to 1.82#0 (#30856)
+9484a57dd560b89f0a583be08af6753611c57fd5 2023-02-24 Update kmpkg-tool to 2023-02-16. (#29664)
+6aa38234d08efefc55b70025cf6afc2212e78e15 2023-02-01 [boost] Fix generate ports to match the tree. (#29338)
+6d41737729b170cb7d323a4fddd21607c9237636 2022-12-20 [boost] update to 1.81.0 (#28356)
+5ba2b95aea2a39aa89444949c7a047af38c401c1 2022-10-18 [boost] Add version constraints (#26817)
+8424da584e59e05956913bf96f87654aa3096c7e 2022-08-25 [boost] update to 1.80.0 (#26233)
+96ec7fb25da25e0463446e552d59715a47c95e73 2022-04-21 [boost] update to 1.79.0 (#24210)
+76d4836f3b1e027758044fdbdde91256b0f0955d 2022-01-10 [boost] update to 1.78.0 (#21928)
+cc471dc0f59b7b2066d6172c2893419412327a7a 2021-09-27 [boost] update to 1.77.0 (#19556)
+761c81d43335a5d5ccc2ec8ad90bd7e2cbba734e 2021-07-07 [boost] update to 1.76.0 (#17335)
+68a74950d0400f5a803026d0860f49853984bf11 2021-01-21 [kmpkg] Rename `port_versions` to `versions` (#15784)
+```
+
+如您所见，列出了版本`1.80.0`的提交。在下一步中，
+您将使用该提交作为所有 `Boost` 包的基准。
+
+### 2 - 使用基线覆盖 Boost 包
+
+您可以使用用于锁定版本集的注册表基线。修改你的`kmpkg-configuration.json` 文件如下所示：
+
+`kmpkg-configuration.json`
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://gitee.com/kumo-pub/kmpkg",
+    "baseline": "3265c187c74914aa5569b75355badebfdbab7987"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://gitee.com/kumo-pub/kmpkg",
+      "baseline": "8424da584e59e05956913bf96f87654aa3096c7e",
+      "packages": [ "boost*", "boost-*"]
+    }
+  ]
+}
+```
+
+配置文件包含两个注册表定义。 `default-registry` 它指向 kmpkg 策划的注册表，网址为
+[kmpkg](https://gitee.com/kumo-pub/kmpkg) 使用当时的最新提交写这篇文章。第二个注册表也指向 kmpkg
+策划的注册表，但处于先前的基线，并且仅限于以下软件包匹配 `boost*` 和 `boost-*` 模式。
+
+如果您运行 `kmpkg install` 命令，您应该注意到这次所有
+Boost 库使用版本 `1.80.0` 。
+
+```Console
+Fetching registry information from https://gitee.com/kumo-pub/kmpkg (HEAD)...
+Detecting compiler hash for triplet x64-linux...
+The following packages will be built and installed:
+  * boost-assert:x64-linux -> 1.80.0
+  * boost-config:x64-linux -> 1.80.0
+  * boost-core:x64-linux -> 1.80.0
+  * boost-detail:x64-linux -> 1.80.0
+  * boost-io:x64-linux -> 1.80.0
+  * boost-move:x64-linux -> 1.80.0
+    boost-optional:x64-linux -> 1.80.0
+  * boost-predef:x64-linux -> 1.80.0
+  * boost-preprocessor:x64-linux -> 1.80.0
+  * boost-static-assert:x64-linux -> 1.80.0
+  * boost-throw-exception:x64-linux -> 1.80.0
+  * boost-type-traits:x64-linux -> 1.80.0
+  * boost-uninstall:x64-linux -> 1.80.0
+  * boost-utility:x64-linux -> 1.80.0
+  * boost-kmpkg-helpers:x64-linux -> 1.80.0
+  * boost-winapi:x64-linux -> 1.80.0
+Additional packages (*) will be modified to complete this operation.
+```
+
+相同的方法可用于其他元包，例如“qt”。
+
+## 后续步骤
+
+以下是接下来要尝试的一些其他任务：
+
+* 使用[清单文件](manifest-mode.mdx) 安装软件包
+* 使用 [三元组](../users/triplets.mdx) 为自定义平台安装软件包
+* 使用 [版本控制](../users/versioning.concepts.mdx) 锁定可重复构建的版本
+* 使用 [二进制缓存](../users/binarycaching.mdx) 在持续集成运行中重用二进制文件
+* 使用[自定义注册表](../maintainers/registries.mdx) 管理您的私有库

@@ -1,0 +1,167 @@
+
+# 数据类型
+
+`数据类型 API 参考 <alkaid/core/datatype.h>`.
+
+数据类型控制着物理数据的解释方式。它们的[规范](format.mdx)允许不同的
+Alkaid 实现之间的二进制互操作性，包括来自不同编程语言
+和运行时（例如，可以使用 :py`pyarrow.jvm`
+bridge 模块从 Python 和 Java 访问相同的数据，而无需复制）。
+
+有关 C++ 中数据类型的信息可以通过三种方式表示：
+
+1. 使用 `alkaid::DataType` 实例（例如作为函数参数）
+
+2. 使用 `alkaid::DataType` 具体子类（例如作为模板
+参数）
+
+3. 使用 `alkaid::Type::type` 枚举值（例如作为 switch 语句的条件）
+
+第一种形式（使用 `alkaid::DataType` 实例）是最惯用和灵活的。运行时参数类型只能用 DataType 实例完全表示。例如，需要在运行时使用
+
+`alkaid::TimestampType` 构造一个
+
+`alkaid::TimeUnit::type` 参数；`alkaid::Decimal128Type` 带有
+
+*scale* 和 *precision* 参数；`alkaid::ListType` 带有一个完整的
+
+子类型（本身就是一个 `alkaid::DataType` 实例）。
+
+在性能至关重要的情况下，可以使用其他两种形式，以避免付出动态类型和多态性的代价。但是，对于参数类型，仍然
+需要一定程度的运行时切换。由于 Alkaid 数据类型允许任意嵌套，因此不可能在编译时具体化所有可能的类型。
+
+
+## 创建数据类型
+
+要实例化数据类型，建议调用提供的
+`factory functions <api-type-factories>`:
+```cpp
+    std::shared_ptr<alkaid::DataType> type;
+
+    // A 16-bit integer type
+    type = alkaid::int16();
+    // A 64-bit timestamp type (with microsecond granularity)
+    type = alkaid::timestamp(alkaid::TimeUnit::MICRO);
+    // A list type of single-precision floating-point values
+    type = alkaid::list(alkaid::float32());
+```
+## 类型特征
+
+如果没有类型特征，编写能够处理具体 `alkaid::DataType` 子类的代码将会非常冗长。Alkaid 的类型特征将 Alkaid 数
+据类型映射到专门的数组、标量、构建器和其他相关类型。例如，布尔类型具有以下特征：
+
+``` sourceCode
+template <>
+struct TypeTraits<BooleanType> {
+  using ArrayType = BooleanArray;
+  using BuilderType = BooleanBuilder;
+  using ScalarType = BooleanScalar;
+  using CType = bool;
+
+  static constexpr int64_t bytes_required(int64_t elements) {
+    return bit_util::BytesForBits(elements);
+  }
+  constexpr static bool is_parameter_free = true;
+  static inline std::shared_ptr<DataType> type_singleton() { return boolean(); }
+};
+```
+
+请参阅`类型特征`以了解每个字段的说明。
+
+使用类型特征，可以编写能够处理各种 Alkaid 类型的模板函数。例如，要编写一个为任何 Alkaid 数字类型创建斐波那契值数组的函数：
+
+``` sourceCode
+template <typename DataType,
+          typename BuilderType = typename alkaid::TypeTraits<DataType>::BuilderType,
+          typename ArrayType = typename alkaid::TypeTraits<DataType>::ArrayType,
+          typename CType = typename alkaid::TypeTraits<DataType>::CType>
+alkaid::Result<std::shared_ptr<ArrayType>> MakeFibonacci(int32_t n) {
+  BuilderType builder;
+  CType val = 0;
+  CType next_val = 1;
+  for (int32_t i = 0; i < n; ++i) {
+    builder.Append(val);
+    CType temp = val + next_val;
+    val = next_val;
+    next_val = temp;
+  }
+  std::shared_ptr<ArrayType> out;
+  ARROW_RETURN_NOT_OK(builder.Finish(&out));
+  return out;
+}
+```
+
+对于一些常见情况，类本身存在类型关联。使用：
+
+- `Scalar::TypeClass` 获取标量的数据类型类
+- `Array::TypeClass` 获取数组的数据类型类
+- `DataType::c_type` 获取 Alkaid 数据类型的关联 C 类型
+
+与
+[std::type\_traits](https://en.cppreference.com/w/cpp/header/type_traits) 中提供的类型特征类似，
+Alkaid 提供类型谓词（例如 `is_number_type`）以及包装 `std::enable_if_t` 的相应模板（例如 `enable_if_number`）。
+这些可以限制模板函数仅针对相关类型进行编译，如果需要实现其他重载，这将非常有用。例如，要为任何数字（整数或浮点）数组编写求和函数：
+
+``` sourceCode
+template <typename ArrayType, typename DataType = typename ArrayType::TypeClass,
+          typename CType = typename DataType::c_type>
+alkaid::enable_if_number<DataType, CType> SumArray(const ArrayType& array) {
+  CType sum = 0;
+  for (std::optional<CType> value : array) {
+    if (value.has_value()) {
+      sum += value.value();
+    }
+  }
+  return sum;
+}
+```
+
+See `type-predicates-api` for a list of these.
+
+## 访客模式
+
+为了处理 `alkaid::DataType`、`alkaid::Scalar` 或
+`alkaid::Array`，您可能需要编写基于特定 Alkaid 类型的专门逻辑。在这些情况下，请使用 [visitor
+pattern](https://en.wikipedia.org/wiki/Visitor_pattern)。Alkaid 提供
+模板函数：
+
+- `alkaid::VisitTypeInline`
+- `alkaid::VisitScalarInline`
+- `alkaid::VisitArrayInline`
+
+要使用这些函数，请为每种专门类型实现 `Status Visit()` 方法，然后将类实例传递给内联访问函数。为避免重复代
+码，请使用上一节中记录的类型特征。作为一个简短的示例，以下是如何对任意数字类型的列进行求和：
+
+``` sourceCode
+class TableSummation {
+  double partial = 0.0;
+ public:
+
+  alkaid::Result<double> Compute(std::shared_ptr<alkaid::RecordBatch> batch) {
+    for (std::shared_ptr<alkaid::Array> array : batch->columns()) {
+      ARROW_RETURN_NOT_OK(alkaid::VisitArrayInline(*array, this));
+    }
+    return partial;
+  }
+
+  // Default implementation
+  alkaid::Status Visit(const alkaid::Array& array) {
+    return alkaid::Status::NotImplemented("Cannot compute sum for array of type ",
+                                         array.type()->ToString());
+  }
+
+  template <typename ArrayType, typename T = typename ArrayType::TypeClass>
+  alkaid::enable_if_number<T, alkaid::Status> Visit(const ArrayType& array) {
+    for (std::optional<typename T::c_type> value : array) {
+      if (value.has_value()) {
+        partial += static_cast<double>(value.value());
+      }
+    }
+    return alkaid::Status::OK();
+  }
+};
+```
+
+Alkaid 还提供了抽象访问者类（`alkaid::TypeVisitor`、`alkaid::ScalarVisitor`、`alkaid::ArrayVisitor`）以及每个相应
+基类型（例如`alkaid::Array::accept`）上的`accept()`方法。但是，这些无法使用模板函数实现，因此您通常更喜欢使用内联
+类型访问者。

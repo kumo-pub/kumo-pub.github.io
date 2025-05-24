@@ -1,0 +1,236 @@
+---
+---
+
+# 规范返回
+
+
+Turbo 在 `turbo/utility` 目录中包含两个 Status 库：
+
+* 一个包含“turbo::Status”类的“status”库，用于保存错误处理信息、一组规范的“turbo::StatusCode”错误代码，以及
+用于生成和传播状态代码的相关实用程序。
+* 一个 `statusor` 库，包含可供使用的 `turbo::Result<T>` 类模板返回“turbo::Status”错误或“T”类型的对象。 （这
+`Result<T>` 抽象类似于 [C++23's `std::expected`](https://en.cppreference.com/w/cpp/utility/expected)。)
+
+## `turbo::Status` 概述 {#overview}
+
+在 Kumo 中，`turbo::Status`是优雅处理的主要机制
+跨 API 边界（特别是跨 RPC 边界）的错误。一些这些错误可能可以恢复，但其他错误则可能无法恢复。大多数功能都可以
+产生可恢复错误应设计为返回`turbo::Status` 或类似的 `turbo::Result<T>`，它保存一个对象
+类型为`T`或错误。
+
+在 Kumo 中， `turbo::Status` 是优雅处理的主要机制跨 API 边界（特别是跨 RPC 边界）的错误。一些
+这些错误可能可以恢复，但其他错误则可能无法恢复。大多数功能都可以产生可恢复错误应设计为返回
+`turbo::Status` 或类似的 `turbo::Result<T>`，它保存一个对象类型为“T”或错误。
+
+示例:
+
+```c++
+turbo::Status MyFunction(turbo::string_view filename, ...) {
+  ...
+  // encounter error
+  if (error condition) {
+    return turbo::InvalidArgumentError("bad mode");
+  }
+  // else, return OK
+  return turbo::OkStatus();
+}
+```
+Turbo（或 Google）代码中的大多数操作都会返回
+[`turbo::Status`](https://gitee.com/kumo-pub/turbo/blob/master/turbo/utility/status.h)
+（下文中缩写为“状态”）。 “状态”旨在返回“OK”或多个不同错误代码之一，对应于
+典型的错误情况。几乎在所有情况下，当使用 `turbo::Status` 时，您应使用规范的错误代码（类型为“turbo::StatusCode”）。这些
+规范代码在整个代码库中都被理解，并且将被整个代码库接受所有 API 和 RPC 边界。返回值为“Status”的函数
+*必须处理*（并标记为“TURBO_MUST_USE_RESULT”）。
+
+Turbo（或 Kumo）代码中的大多数操作都会返回[`turbo::Status`](https://gitee.com/kumo-pub/turbo/blob/master/turbo/utility/status.h)
+（下文中缩写为“状态”）。 “状态”旨在返回“OK”或多个不同错误代码之一，对应于
+典型的错误情况。几乎在所有情况下，当使用 `turbo::Status` 时，您应使用规范的错误代码（类型为“turbo::StatusCode”）。这些
+规范代码在整个代码库中都被理解，并且将被整个代码库接受所有 API 和 RPC 边界。返回值为“Status”的函数*必须处理*（并标记为“TURBO_MUST_USE_RESULT”）。
+
+## 使用 `Status` 返回错误
+
+任何特定操作的成功均由以下“状态”错误代码表示 `OK`（技术上来说是状态错误代码 `turbo::StatusCode::kOk`）。应用程序编程接口
+开发人员应该构建他们的操作来返回 `turbo::OkStatus()`成功，或者出现另一种类型的错误时的“turbo::StatusCode”（例如
+`turbo::StatusCode::kInvalidArgument` 错误）。 API提供便利构造每个特定状态代码的函数。 （参考[规范错误](#canonical_errors)如下。）
+
+任何特定操作的成功均由以下“状态”错误代码表示`OK`（技术上来说是状态错误代码 `turbo::StatusCode::kOk`）。应用程序编程接口
+开发人员应该构建他们的操作来返回 `turbo::OkStatus()`成功，或者出现另一种类型的错误时的“turbo::StatusCode”（例如
+`turbo::StatusCode::kInvalidArgument` 错误）。 API提供便利构造每个特定状态代码的函数。 （参考[规范错误](#canonical_errors)如下。）
+
+例如，下面的代码显示了如何返回错误
+在执行文件操作时遇到：
+
+```c++
+turbo::Status Open(turbo::string_view filename, turbo::string_view mode, ...) {
+  if (...) return turbo::OkStatus();  // Signal success
+  if (...) return turbo::InvalidArgumentError("bad mode");
+
+  turbo::Status result;  // Default constructor creates an OK value as well.
+  if (...) {
+    // Short-hand for result = turbo::Status(turbo::StatusCode::kNotFound, ...)
+    result = turbo::NotFoundError(turbo::StrCat(filename, " is missing"));
+  } else {
+    ...
+  }
+  return result;  // could be "OK" or "NOT_FOUND"
+}
+```
+
+非正常状态通常包括错误代码（`turbo::StatusCode::kNotFound`，映射到`NOT_FOUND`）和消息（`file.txt 文件名丢失`）。
+API 提供了`code()`和`message()`成员函数来检索这些值。错误代码供程序检查（例如，调用者可能会根据它看到的错误代码做出不同的反应）。
+错误消息可能会记录在某处，供开发人员或 SRE 检查并找出问题所在。该消息不适用于最终用户。
+
+:::info
+底层`API`（例如文件“Open()”操作）通常不应该记录状态值本身，而是应该将它们传递给调用者，调用者将更好地了解如何处理任何错误。
+:::
+
+## 规范错误 {#canonical_errors}
+
+这些与`turbo::Status`相关的规范错误在整个过程中使用
+代码库。因此，这些错误代码有些通用。施工时使用这些代码之一的 `turbo::Status`，您可能需要提供更多上下文
+在`Status`对象的消息中。
+
+有关规范错误代码的完整列表以及有关如何选择错误代码的建议
+适合您的用例的一种，请参阅[规范错误代码](status-codes.mdx) 指南。
+
+## 检查错误 {#check-errors}
+
+正如 API 提供者必须正确构造并返回 `turbo::Status` 一样，调用者必须正确处理收到的“状态”。这涉及到检查
+操作是否成功完成（检查“OK”）以及确定确切的错误以及如何处理它（如果操作没有）成功。
+
+而不是检查特定的“OK”状态代码（例如`turbo::StatusCode::kOk`)，Turbo Status 库提供了一个 `Status::ok()`
+成员函数。处理状态错误代码的用户应该更喜欢检查使用此 `Status::ok()` 成员函数来确定状态。
+
+`turbo::Status` 值可以直接记录，无需任何转换一个字符串值。
+
+```c++
+turbo::Status my_status = DoSomething();
+// Don't do this:
+//
+//   if (my_status.code() == turbo::StatusCode::kOk) { ... }
+//
+// Use the Status.ok() helper function:
+if (!my_status.ok()) {
+  LOG(WARNING) << "Unexpected error " << my_status;
+}
+```
+
+同样，不检查特定的 `turbo::StatusCode` 错误代码，例如作为`turbo::StatusCode::kInvalidArgument`，您可以使用辅助函数，例如
+`turbo::IsInvalidArgument(状态)`。
+
+处理多个错误代码可能会证明使用“switch”语句是合理的，但仅检查您知道如何处理的错误代码；不要尝试彻底匹配
+针对所有规范错误代码。无法处理的错误应该记录和/或传播以供更高级别处理。
+
+如果您确实使用`switch`语句来区分状态代码，请确保您还提供了一个“default:”开关案例，这样代码就不会像其他代码那样被破坏
+规范代码已添加到 API 中。
+
+```c++
+turbo::Status s = Open(filename, "r");
+if (turbo::IsNotFound(s)) {
+  s = Create(...);
+}
+if (!s.ok()) {  // Either Open or Create failed
+  LOG(WARNING) << "Unexpected error " << s;
+}
+```
+
+## 返回状态或值
+
+假设一个函数需要在成功时返回一个值，或者返回一个错误时的“状态”。 Turbo Status 库提供了 `turbo::Result<T>`
+用于此目的的类模板。 `turbo::Result<T>` 表示一个并集`turbo::Status` 对象和一个 `T` 类型的对象。 `turbo::Result<T>` 将
+要么包含一个“T”类型的对象（表示操作成功），要么包含一个错误（类型为`turbo::Status`）解释了为什么不存在这样的值。笔记
+`Result<T>` 不能保持 OK 状态，因为这意味着值应该返回。
+
+一般来说，检查操作是否成功返回`turbo::Result<T>` 就像使用 `ok()` 得到 `turbo::Status` 一样
+成员函数。
+
+```c++
+Result<Foo> result = Calculation();
+if (result.ok()) {
+  result->DoSomethingCool();
+} else {
+  LOG(ERROR) << result.status();
+}
+```
+
+成功后，访问由 `turbo::Result<T>` 持有的对象应该是在调用`ok()`确认后，通过`operator*`或`operator->`执行
+`turbo::Result<T>` 保存一个 `T` 类型的对象：
+
+```c++
+turbo::Result<int> i = GetCount();
+if (i.ok()) {
+  updated_total += *i;
+}
+```
+
+`turbo::Result<T*>` 可以像任何其他指针一样从空指针构造指针值，结果将是`ok()`返回`true`和`value()`返回`nullptr`。检查 `turbo::Result<T>` 中指针的值
+通常需要多加小心，以确保值存在并且该值不为空：
+
+```c++
+Result<std::unique_ptr<Foo>> result = FooFactory::MakeNewFoo(arg);
+if (!result.ok()) {
+  LOG(ERROR) << result.status();
+} else if (*result == nullptr) {
+  LOG(ERROR) << "Unexpected null pointer";
+} else {
+  (*result)->DoSomethingCool();
+}
+```
+
+## 忽略状态结果
+
+如果函数返回的`Status`值是被忽略。在某些情况下，忽略结果是正确的做法，这
+您可以通过使用`ignore_error()`来实现：
+
+```c++
+// Don't let caching errors fail the response.
+StoreInCache(request, response).ignore_error();
+```
+
+使用`ignore_error()`之前请仔细考虑。除非你有充分的理由更喜欢实际处理返回值：也许您可以验证
+结果与您期望的错误匹配，或者您可以将其导出监控。
+
+## 跟踪遇到的第一个错误
+
+使用 `Status::update()` 来跟踪在一个进程中遇到的第一个非正常状态
+顺序。 `update()` 将覆盖现有的`OK`状态，但不会覆盖另一个值的现有错误代码。
+
+例如，假设您要执行两个操作（无论是否或者不是第一个操作失败），但如果以下任一操作想要返回错误
+操作失败。而不是：
+
+```c++
+turbo::Status s = Operation1();
+turbo::Status s2 = Operation2();
+if (s.ok()) s = s2;
+```
+
+use
+
+```c++
+turbo::Status s = Operation1();
+s.update(Operation2());
+```
+`update()` 将保留第一次遇到错误的信息，例如它的错误代码、消息和任何有效负载。
+
+## 检查宏
+
+`Status`提供检查的`宏`，如果被检查的`Status`是`OK`宏会继续执行后面的代码，否则会返回检查的`Status`.
+
+```cpp
+turbo::Status good_func() {
+    return turbo::Status();
+}
+
+turbo::Status not_found_func() {
+    return turbo::Status(turbo::StatusCode::kNotFound,"bad");
+}
+
+turbo::Status call_func() {
+    STATUS_RETURN_IF_ERROR(some_func());
+    std::cout<<"this should display"<<std::endl;
+    STATUS_RETURN_IF_ERROR(some_func());
+    std::cout<<"this should not display"<<std::endl;
+    return turbo::Status();
+}
+```
+

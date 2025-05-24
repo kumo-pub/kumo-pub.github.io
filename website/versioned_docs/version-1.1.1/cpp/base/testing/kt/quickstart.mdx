@@ -1,0 +1,113 @@
+# 快速开始
+
+本教程旨在帮助您使用 CMake 启动并运行 KumoTest。如果您是第一次使用 KumoTest 或需要复习一下，我们建议您
+本教程作为起点。
+
+## 先决条件 {#prerequisites}
+
+* [后端开发环境](../../../../env_prepare_be.mdx)
+* [安装`kmpkg`](../../../../kmpkg/get_started/setup-kmpkg.mdx)
+
+## 建立一个项目 {#set-up-a-project}
+
+CMake 使用名`CMakeLists.txt`的文件来配置构建系统项目。您将使用此文件来设置您的项目并声明对
+云测试。
+
+首先，为您的项目创建一个目录：
+
+```shell
+$ mkdir my_project && cd my_project
+```
+
+安装`ktest`:
+
+```shell
+kmpkg install ktest
+```
+
+接下来，您将创建“CMakeLists.txt”文件并声明对`KumoTest`。
+为此，请在项目目录 (`my_project`) 中创建一个名为`CMakeLists.txt` 包含以下内容：
+
+```cmake
+cmake_minimum_required(VERSION 3.24.3)
+project(my_project)
+
+# KumoTest requires at least C++17
+set(CMAKE_CXX_STANDARD 17)
+```
+
+## 创建并运行二进制文件 {#create-and-run-a-binary}
+
+将 KumoTest 声明为依赖项后，您可以在其中使用 KumoTest 代码
+你自己的项目。
+
+例如，在`my_project`中创建一个名为`hello_test.cc`的文件
+包含以下内容的目录：
+
+```cpp
+#include <ktest/ktest.h>
+
+// Demonstrate some basic assertions.
+TEST(HelloTest, BasicAssertions) {
+  // Expect two strings not to be equal.
+  EXPECT_STRNE("hello", "world");
+  // Expect equality.
+  EXPECT_EQ(7 * 6, 42);
+}
+```
+KumoTest 提供了用于测试的 [断言](primer.mdx#assertions)
+您的代码的行为。上面的示例包含主要的 KumoTest 头文件
+并论证了一些基本断言。
+
+要构建代码，请将以下内容添加到`CMakeLists.txt`文件的末尾：
+
+```cmake
+find_package(KTest REQUIRED)
+enable_testing()
+
+add_executable(
+  hello_test
+  hello_test.cc
+)
+target_link_libraries(
+    hello_test
+    KTest::ktest
+    KTest::ktest_main
+)
+
+include(KumoTest)
+add_test(NAME hello_test COMMAND hello_test)
+```
+
+上述配置启用了 CMake 中的测试，声明了 C++ 测试二进制文件
+您想要构建 (`hello_test`)，并将其链接到 KumoTest (`ktest_main`)。
+
+现在您可以构建并运行测试：
+
+```cmake
+my_project$ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=$KMPKG_CMAKE
+-- The C compiler identification is GNU 10.2.1
+-- The CXX compiler identification is GNU 10.2.1
+...
+-- Build files have been written to: .../my_project/build
+my_project$ cmake --build build
+Scanning dependencies of target ktest
+...
+[100%] Built target gmock_main
+my_project$ cd build && ctest
+Test project .../my_project/build
+    Start 1: HelloTest.BasicAssertions
+1/1 Test #1: HelloTest.BasicAssertions ........   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.01 sec
+```
+
+恭喜！您已使用以下命令成功构建并运行了测试二进制文件
+`ktest`。
+
+## 后续步骤
+
+* [查看 Primer](primer.mdx) 开始学习如何编写简单的内容测试。
+* [请参阅代码示例](samples.mdx) 了解更多示例，展示如何使用各种 KumoTest 功能。

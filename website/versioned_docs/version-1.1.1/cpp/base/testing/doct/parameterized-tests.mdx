@@ -1,0 +1,173 @@
+
+# 参数化测试 {#parameterized-test-cases}
+
+测试用例可以通过类型轻松参数化，也可以通过值间接参数化。
+
+## 值参数化测试用例 {#value-parameterized-test-cases}
+
+未来将会对此给予适当的支持。目前，在 doctest 中有两种进行数据驱动测试的方法：
+
+- 在辅助函数中提取断言并使用用户构造的数据数组调用它：
+
+    ```c++
+    void doChecks(int data) {
+        // do asserts with data
+    }
+
+    TEST_CASE("test name") {
+        std::vector<int> data {1, 2, 3, 4, 5, 6};
+
+        for(auto& i : data) {
+            CAPTURE(i); // log the current input data
+            doChecks(i);
+        }
+    }
+    ```
+
+    这有几个缺点：
+    - 如果出现异常（或“REQUIRE”断言失败），则整个测试用例结束，并且不会对其余输入数据进行检查
+    - 用户必须通过调用“CAPTURE()”（或“INFO()”）手动记录数据
+    - 更多样板文件 - doctest 应该提供用于生成数据的原语，但目前没有 - 因此用户必须编写自己的数据生成
+
+- 使用子情况以不同方式初始化数据：
+
+    ```c++
+    TEST_CASE("test name") {
+        int data;
+        SUBCASE("") { data = 1; }
+        SUBCASE("") { data = 2; }
+
+        CAPTURE(data);
+
+        // do asserts with data
+    }
+    ```
+
+    这样做有以下缺点：
+    - 扩展性不好 - 为多个不同的输入编写这样的代码是非常不切实际的
+    - 用户必须通过调用`CAPTURE()`（或`INFO()`）手动记录数据
+
+    --------------------------------
+
+    然而，有一种简单的方法可以将其封装到宏中（为简单起见，使用 C++14 编写）：
+
+    ```c++
+    #include <algorithm>
+    #include <string>
+
+    #define DOCTEST_VALUE_PARAMETERIZED_DATA(data, data_container)                                  \
+        static size_t _doctest_subcase_idx = 0;                                                     \
+        std::for_each(data_container.begin(), data_container.end(), [&](const auto& in) {           \
+            DOCTEST_SUBCASE((std::string(#data_container "[") +                                     \
+                            std::to_string(_doctest_subcase_idx++) + "]").c_str()) { data = in; }  \
+        });                                                                                         \
+        _doctest_subcase_idx = 0
+    ```
+
+    现在可以按如下方式使用：
+
+    ```c++
+    TEST_CASE("test name") {
+        int data;
+        std::list<int> data_container = {1, 2, 3, 4}; // must be iterable - std::vector<> would work as well
+
+        DOCTEST_VALUE_PARAMETERIZED_DATA(data, data_container);
+
+        printf("%d\n", data);
+    }
+    ```
+
+    并通过重新输入测试用例 3 次（第一次输入后）来打印 4 个数字 - 就像子用例一样：
+
+    ```
+    1
+    2
+    3
+    4
+    ```
+
+    这种方法的一大限制是宏不能与同一代码块 {} 缩进级别的其他子用例一起使用（会表现得很奇怪） - 它只能在子用例中使用。
+
+请继续关注 doctest 中正确的值参数化！
+
+## 模板化测试用例 - 按类型参数化 {#templated-test-cases-parameterized-by-type}
+
+假设您有同一接口的多个实现，并且希望确保所有实现都满足一些共同的要求。或者，您可能已经定义了几种应该符合相同“概念”的类型，并且您想要验证它。在这两种情况下，您都希望对不同类型重复相同的测试逻辑。
+
+虽然您可以为要测试的每种类型编写一个`TEST_CASE`（您甚至可以将测试逻辑分解到从测试用例调用的函数模板中），但它很乏味并且无法扩展：如果你想要对`N`类型进行`M`测试，你最终会编写`M * N`测试。
+
+模板化测试允许您对一系列类型重复相同的测试逻辑。您只需编写一次测试逻辑。
+
+有两种方法可以做到这一点：
+
+- 直接将类型列表传递给模板化测试用例
+
+    ```c++
+    TEST_CASE_TEMPLATE("signed integers stuff", T, char, short, int, long long int) {
+        T var = T();
+        --var;
+        CHECK(var == -1);
+    }
+    ```
+
+- 使用特定的唯一名称（标识符）定义模板化测试用例以供以后实例化
+
+    ```c++
+    TEST_CASE_TEMPLATE_DEFINE("signed integer stuff", T, test_id) {
+        T var = T();
+        --var;
+        CHECK(var == -1);
+    }
+
+    TEST_CASE_TEMPLATE_INVOKE(test_id, char, short, int, long long int);
+
+    TEST_CASE_TEMPLATE_APPLY(test_id, std::tuple<float, double>);
+    ```
+    如果您正在设计接口或概念，则可以定义一套类型参数化测试来验证接口/概念的任何有效实现应具有的属性。然后，每个实现的作者只需使用其类型实例化测试套件即可验证其是否符合要求，而无需重复编写类似的测试。
+
+为类型“int”实例化的名为“signed integers stuff”的测试用例将产生以下测试用例名称：
+
+```
+signed integers stuff<int>
+```
+
+默认情况下，所有基本类型（基本 - ```int```、``bool```、``float```...）都具有库提供的字符串化。对于所有其他类型，用户必须使用 ``TYPE_TO_STRING(type)``` 宏 - 像这样：
+
+```c++
+TYPE_TO_STRING(std::vector<int>);
+```
+
+``TYPE_TO_STRING```` 宏仅在当前源文件中有效，因此如果在模板化测试用例的单独源文件中使用相同类型，则需要在某些标头中使用。
+
+其他测试框架除了使用 demangling 来自动获取类型字符串之外，还使用标头 ```<typeinfo>```，但
+doctest 无法在标头的前向声明部分（公共部分）中包含任何标头 - 因此用户必须教授每种类型的框架。这样做是为了实现[最大编译时性能](benchmarks.mdx)。
+
+一些注意事项：
+
+- 不会过滤类型的唯一性 - 相同的模板化测试用例可以针对同一类型多次实例化 - 防止由用户决定
+- 您不需要为每种类型提供字符串化，因为它仅在测试用例名称中起作用 - 默认为``<>`` - 测试仍然有效并且是不同的
+- 如果您需要对超过 1 种类型进行参数化，您可以将多种类型打包在一个类型中，如下所示：
+
+    ```c++
+    template <typename first, typename second>
+    struct TypePair
+    {
+        typedef first  A;
+        typedef second B;
+    };
+
+    #define pairs \
+        TypePair<int, char>, \
+        TypePair<char, int>
+
+    TEST_CASE_TEMPLATE("multiple types", T, pairs) {
+        typedef typename T::A T1;
+        typedef typename T::B T2;
+        // use T1 and T2 types
+    }
+    ```
+
+------
+
+- 查看 [**example**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/templated_test_cases.cpp)，它显示了如何使用所有这些。
+

@@ -1,0 +1,185 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg install
+
+kmpkg install 命令的命令行参考。构建并安装端口包。
+
+## 摘要
+
+- **经典模式**
+
+```console
+kmpkg install [options] <package>...
+```
+
+- **清单模式**
+
+```console
+kmpkg install [options]
+```
+
+## 说明
+
+构建并安装端口包。
+
+### Classic mode
+
+在[经典模式](../concepts/classic-mode.mdx)下，此动词将端口包添加到已[安装目录](common-options.mdx#install-root)（默认为 kmpkg 根目录下的 `installed/`）中的现有集合中。 这可能需要移除和重新构建现有包，从而可能会失败。
+
+####  Package Syntax {#package-syntax}
+
+```console
+portname[feature1,feature2]:triplet
+```
+不带三元组的包引用由[默认目标三元组](common-options.mdx#triplet)自动限定。 未显式列出 `core` 的包引用视为默示所有默认功能。
+
+### Manifest mode
+
+在[清单模式](../concepts/manifest-mode.mdx)下，此命令会将已[安装目录](common-options.mdx#install-root)设置为 `kmpkg.json` 清单文件指定的状态，并根据需要添加、删除或重新生成包。
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--allow-unsupported`
+
+不要在不支持的端口上停止，而是继续并发出警告。
+
+默认情况下，kmpkg 拒绝执行包含其 [`"supports"`](../reference/kmpkg-json.mdx#supports) 子句之外三元组端口安装的安装计划。 包的 `"supports"` 子句描述了包预期可在其上构建的整组平台。 此标志指示 kmpkg 警告构建预期会失败，而不是停止。
+
+### `--clean-after-build` {#clean-after-build}
+
+构建每个包后，清理构建树、包和下载。
+
+此选项的效果与传递 [`--clean-buildtrees-after-build`](#clean-buildtrees-after-build)、 [`--clean-downloads-after-build`](#clean-downloads-after-build) 和 [`--clean-packages-after-build`](#clean-packages-after-build) 相同。
+
+### `--clean-buildtrees-after-build` {#clean-buildtrees-after-build}
+
+构建每个包后，清理 `buildtrees` 临时子文件夹中的所有子目录。
+
+将保留 `buildtrees` 子文件夹中的所有顶级文件（例如 `buildtrees/zlib/config-x64-windows-out.log`）。 将删除所有子目录。
+
+### `--clean-downloads-after-build` {#clean-downloads-after-build}
+
+构建每个包后，清除 `downloads/` 文件夹中所有未提取的资产。
+
+将删除 `downloads/` 文件夹中的所有顶级文件。 将保留提取工具。
+
+
+### `--clean-packages-after-build` {#clean-packages-after-build}
+
+构建每个包后清理 packages 临时子文件夹。
+
+将删除生成的包的 packages 子文件夹（例如，`packages/zlib_x64-windows`）。
+
+
+### `--dry-run`
+
+打印安装计划，但不移除或安装任何包。
+
+安装计划列出了将安装的所有包和功能，以及需要移除和重新生成的任何其他包。
+
+### `--editable` {#editable}
+
+- **仅限经典模式**
+
+对命令行上所有直接引用的包执行可编辑构建。
+
+kmpkg 构建端口时，每次都会清除并重新提取源代码，以确保输入准确无误。 这对于清单模式准确更新安装的内容以及二进制缓存确保缓存内容正确是必要的。
+
+传递 `--editable` 标志会禁用此行为，保留对 `buildtrees/` 文件夹中提取的源的编辑。 这有助于快速开发修补程序，无需在每次更改时写入文件。
+
+在可编辑构建期间提取的源目录名没有 `.clean/` 后缀，并且不会被后续的不可编辑构建清除。
+
+### `--enforce-port-checks`
+
+如果端口检测到问题或尝试使用已弃用的功能，则安装失败。
+
+默认情况下，kmpkg 将在生成的包上运行多个检查，并在检测到任何问题时发出警告。 此标志将这些警告升级到错误。
+
+### `--x-feature=<feature>` {#feature}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+- **仅限清单模式**
+
+从 `kmpkg.json` 中指定要安装依赖项的附加功能。
+
+默认情况下，将仅安装 [`"dependencies"`](../reference/kmpkg-json.mdx#dependencies) 和 [`"default-features"`](../reference/kmpkg-json.mdx#default-features) 的依赖项。
+
+### `--head`
+
+- **仅限经典模式**
+
+请求命令行中显式引用的所有包，以提取构建时可用的最新源。
+
+此标志仅用于临时测试，不适用于生产或长期使用。 此项会禁用所有显式引用的包及其依赖项的[二进制缓存](../users/binarycaching.mdx)，因为 kmpkg 无法准确跟踪所有输入。
+
+### `--keep-going`
+
+在第一次失败后继续安装计划。
+
+默认情况下，kmpkg 将在第一次包构建失败时停止。 此标志指示 kmpkg 继续构建并安装不依赖于失败包的安装计划的其他部分。
+
+### `--x-no-default-features`
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+- **仅限清单模式**
+
+不要从顶级清单安装默认功能。
+
+在清单模式下使用 `install` 时，默认情况下将安装 `"default-features"` 中列出功能的所有依赖项。 此标志禁用该行为，因此将仅安装 [`--x-feature`](#feature) 显式启用的功能。
+
+### `--no-downloads`
+
+构建包时，防止端口在构建过程中下载新资产。
+
+默认情况下，端口将从 Internet 按需获取源代码和工具（受[资产缓存](../users/assetcaching.mdx)的约束）。 此参数阻止下载并将端口限制为仅先前下载并缓存在计算机上的资源。
+
+### `--only-downloads`
+
+尝试下载安装计划所需的所有资产而不执行任何构建。
+
+传递此选项后，kmpkg 将在计划中运行每个构建，直到其进行第一次非下载外部进程调用。 大多数端口都在第一次外部进程调用（通常是对其构建系统）之前执行所有下载，因此该过程将下载所有必需的资产。 不遵循此过程的端口不会预先下载其资产。
+
+### `--only-binarycaching`
+
+拒绝执行任何构建。 仅从[二进制缓存](../users/binarycaching.mdx)还原包。
+
+此标志阻止 kmpkg 按需执行构建，如果在任何二进制缓存中找不到包则失败。
+
+### `--recurse`
+
+- **仅限经典模式**
+
+批准需要重新构建包的安装计划。
+
+要修改已安装包的一组功能，kmpkg 必须移除并重新构建该包。 由于此操作可能会失败，并且使安装树的包少于用户开始时的包，因此用户必须通过传递此标志来批准重新构建包的计划。
+
+### `--x-use-aria2`
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+使用 aria2 执行下载任务。
+
+### `--x-write-nuget-packages-config` {#write-nuget-packages-config}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+写出 NuGet `packages.config` 格式的文件用于[二进制缓存](../users/binarycaching.mdx)。
+
+此选项可与 `--dry-run` 组合使用，以获取二进制缓存所需的 NuGet 包列表，而无需构建或安装任何包。 这使 NuGet 命令行能够针对高级应用场景单独调用，例如使用备用协议获取 `.nupkg` 文件。
+
+### `--no-print-usage`
+
+禁止生成在安装结束时打印的使用情况文本。

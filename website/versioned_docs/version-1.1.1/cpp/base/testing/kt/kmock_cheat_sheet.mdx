@@ -1,0 +1,241 @@
+# kmock 备忘录
+
+## 定义模拟类
+
+### 模拟一个普通类 {#MockClass}
+
+给定
+
+```cpp
+class Foo {
+ public:
+  virtual ~Foo();
+  virtual int GetSize() const = 0;
+  virtual string Describe(const char* name) = 0;
+  virtual string Describe(int type) = 0;
+  virtual bool Process(Bar elem, int count) = 0;
+};
+```
+
+（请注意，`~Foo()` **必须**是虚拟的）我们可以将其模拟定义为
+
+```cpp
+#include "kmock/kmock.h"
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(int, GetSize, (), (const, override));
+  MOCK_METHOD(string, Describe, (const char* name), (override));
+  MOCK_METHOD(string, Describe, (int type), (override));
+  MOCK_METHOD(bool, Process, (Bar elem, int count), (override));
+};
+```
+
+要创建一个“nice”mock，它会忽略所有无趣的调用，一个“naggy”mock，
+它对所有无趣的调用或“严格”模拟发出警告，将它们视为
+失败：
+
+```cpp
+using ::testing::NiceMock;
+using ::testing::NaggyMock;
+using ::testing::StrictMock;
+
+NiceMock<MockFoo> nice_foo;      // The type is a subclass of MockFoo.
+NaggyMock<MockFoo> naggy_foo;    // The type is a subclass of MockFoo.
+StrictMock<MockFoo> strict_foo;  // The type is a subclass of MockFoo.
+```
+
+:::info
+**注意：** 默认情况下，模拟对象当前是烦人的。我们可以通过以下方式让它变得更好
+未来默认。
+:::
+
+### 模拟类模板 {#MockTemplate}
+
+类模板可以像任何类一样被模拟。
+
+如下：
+
+```cpp
+template <typename Elem>
+class StackInterface {
+ public:
+  virtual ~StackInterface();
+  virtual int GetSize() const = 0;
+  virtual void Push(const Elem& x) = 0;
+};
+```
+
+（请注意，所有被模拟的成员函数，包括`~StackInterface()`
+**必须**是虚拟的）。
+
+```cpp
+template <typename Elem>
+class MockStack : public StackInterface<Elem> {
+ public:
+  MOCK_METHOD(int, GetSize, (), (const, override));
+  MOCK_METHOD(void, Push, (const Elem& x), (override));
+};
+```
+
+### 指定模拟函数的调用约定
+
+如果您的模拟函数不使用默认的调用约定，您可以
+通过将“Calltype(convention)”添加到“MOCK_METHOD”的第四个参数来指定它。
+例如，
+
+```cpp
+  MOCK_METHOD(bool, Foo, (int n), (Calltype(STDMETHODCALLTYPE)));
+  MOCK_METHOD(int, Bar, (double x, double y),
+              (const, Calltype(STDMETHODCALLTYPE)));
+```
+
+其中“STDMETHODCALLTYPE”在 Windows 上由`<objbase.h>`定义。
+
+## 在测试中使用模拟 {#UsingMocks}
+
+典型的工作流程是：
+
+1. 导入您需要使用的gMock名称。所有 kMock 符号都在
+“testing”命名空间，除非它们是宏或另有说明。
+2. 创建模拟对象。
+3. （可选）设置模拟对象的默认操作。
+4. 设定您对模拟对象的期望（它们将如何被调用？什么
+他们会这样做吗？）。
+5. 练习使用模拟对象的代码；如有必要，检查结果
+使用 googletest 断言。
+6.当mock对象被破坏时，gMock会自动验证所有
+对其的期望得到了满足。
+
+这是一个例子：
+
+```cpp
+using ::testing::Return;                          // #1
+
+TEST(BarTest, DoesThis) {
+  MockFoo foo;                                    // #2
+
+  ON_CALL(foo, GetSize())                         // #3
+      .WillByDefault(Return(1));
+  // ... other default actions ...
+
+  EXPECT_CALL(foo, Describe(5))                   // #4
+      .Times(3)
+      .WillRepeatedly(Return("Category 5"));
+  // ... other expectations ...
+
+  EXPECT_EQ(MyProductionFunction(&foo), "good");  // #5
+}                                                 // #6
+```
+
+## 设置默认操作 {#OnCall}
+
+kMock 对于任何返回 `void` 的函数都有一个**内置默认操作**，
+`bool`，数值或指针。在 C++11 中，它还会返回
+默认构造值（如果给定类型存在）。
+
+要自定义返回类型为“T”的函数的默认操作，请使用
+[`DefaultValue<T>`]（reference/mocking.mdx#DefaultValue）。例如：
+
+```cpp
+  // Sets the default action for return type std::unique_ptr<Buzz> to
+  // creating a new Buzz every time.
+  DefaultValue<std::unique_ptr<Buzz>>::SetFactory(
+      [] { return MakeUnique<Buzz>(AccessLevel::kInternal); });
+
+  // When this fires, the default action of MakeBuzz() will run, which
+  // will return a new Buzz object.
+  EXPECT_CALL(mock_buzzer_, MakeBuzz("hello")).Times(AnyNumber());
+
+  auto buzz1 = mock_buzzer_.MakeBuzz("hello");
+  auto buzz2 = mock_buzzer_.MakeBuzz("hello");
+  EXPECT_NE(buzz1, nullptr);
+  EXPECT_NE(buzz2, nullptr);
+  EXPECT_NE(buzz1, buzz2);
+
+  // Resets the default action for return type std::unique_ptr<Buzz>,
+  // to avoid interfere with other tests.
+  DefaultValue<std::unique_ptr<Buzz>>::Clear();
+```
+
+为特定模拟的特定方法自定义默认操作
+对象，使用 [`ON_CALL`](reference/mocking.mdx#ON_CALL)。 `ON_CALL` 有类似的
+语法为`EXPECT_CALL`，但它用于设置默认行为
+不需要调用模拟方法。看
+[了解何时预计](kmock_cook_book.mdx#UseOnCall) 了解更详细的信息
+讨论。
+## 设定期望 {#ExpectCall}
+
+请参阅模拟参考中的 [`EXPECT_CALL`](reference/mocking.mdx#EXPECT_CALL)。
+
+## 匹配器 {#MatcherList}
+
+请参阅[匹配器参考](reference/matchers.mdx)。
+
+## Actions {#ActionList}
+
+请参阅[操作参考](reference/actions.mdx)。
+
+## 基数 {#CardinalityList}
+
+请参阅 [`Times` 子句](reference/mocking.mdx#EXPECT_CALL.Times)
+模拟参考中的“EXPECT_CALL”。
+
+## 期望顺序
+
+默认情况下，期望可以按“任意”顺序匹配。如果部分或全部
+期望必须按给定顺序匹配，您可以使用
+[`After` 子句](reference/mocking.mdx#EXPECT_CALL.After) 或
+[`InSequence` 子句](reference/mocking.mdx#EXPECT_CALL.InSequence) of
+`EXPECT_CALL`，或使用 [`InSequence` 对象](reference/mocking.mdx#InSequence)。
+
+## 验证和重置模拟
+
+kMock 将在模拟对象被破坏时验证对它的期望，或者
+你可以早点做：
+
+```cpp
+using ::testing::Mock;
+...
+// Verifies and removes the expectations on mock_obj;
+// returns true if and only if successful.
+Mock::VerifyAndClearExpectations(&mock_obj);
+...
+// Verifies and removes the expectations on mock_obj;
+// also removes the default actions set by ON_CALL();
+// returns true if and only if successful.
+Mock::VerifyAndClear(&mock_obj);
+```
+
+在使用后验证并清除模拟后，不要设定新的期望。
+在执行模拟的代码之后设置期望具有未定义的行为。
+有关更多信息，请参阅[在测试中使用 Mock](kmock_for_dummies.mdx#using-mocks-in-tests)
+信息。
+
+您还可以告诉 kMock 模拟对象可以泄漏，但不需要泄漏
+已验证：
+
+```cpp
+Mock::AllowLeak(&mock_obj);
+```
+
+## 模拟类
+
+kMock 定义了一个方便的模拟类模板
+
+```cpp
+class MockFunction<R(A1, ..., An)> {
+ public:
+  MOCK_METHOD(R, Call, (A1, ..., An));
+};
+```
+
+请参阅此[食谱](kmock_cook_book.mdx#UsingCheckPoints) 的一项应用
+它。
+
+## Flags
+
+| Flag                           | Description                               |
+| :----------------------------- | :---------------------------------------- |
+| `--kmock_catch_leaked_mocks=0` | 不要将泄漏的模拟对象报告为失败。 |
+| `--kmock_verbose=LEVEL` | 设置 kumo Mock 消息的默认详细级别（“信息”、“警告”或“错误”）。 |

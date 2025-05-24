@@ -1,0 +1,193 @@
+---
+---
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 联合搜索
+
+## 联合/多重搜索 {#multi-search}
+
+您可以使用多重搜索功能在单个 HTTP 请求中发送多个搜索请求，这有助于避免网络延迟，尤其是当每个请求单独发送时。
+
+此外，您还可以在单个 HTTP 请求中对多个索引表进行**联合搜索**。例如，在电商数据集中，可以通过在 `multi_search` 请求中并行查询 `product` 和 `brands` 索引表，向用户展示综合结果。
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let searchRequests = {
+  'searches': [
+    {
+      'collection': 'products',
+      'q': 'shoe',
+      'filter_by': 'price:=[50..120]'
+    },
+    {
+      'collection': 'brands',
+      'q': 'Nike'
+    }
+  ]
+}
+
+// Search parameters that are common to all searches go here
+let commonSearchParams =  {
+    'query_by': 'name',
+}
+
+client.multiSearch.perform(searchRequests, commonSearchParams)
+```
+
+  </TabItem>
+      <TabItem value="Python" label="Python">
+```py
+search_requests = {
+  'searches': [
+    {
+      'collection': 'products',
+      'q': 'shoe',
+      'filter_by': 'price:=[50..120]'
+    },
+    {
+      'collection': 'brands',
+      'q': 'Nike'
+    }
+  ]
+}
+
+# Search parameters that are common to all searches go here
+common_search_params =  {
+    'query_by': 'name',
+}
+
+client.multi_search.perform(search_requests, common_search_params)
+```
+
+      </TabItem>
+      <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/multi_search?query_by=name" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+          "searches": [
+            {
+              "collection": "products",
+              "q": "shoe",
+              "filter_by": "price:=[50..120]"
+            },
+            {
+              "collection": "brands",
+              "q": "Nike"
+            }
+          ]
+        }'
+```
+
+      </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+      <TabItem value="json" label="json">
+
+```json
+{
+  "results": [
+    {
+      "facet_counts": [],
+      "found": 1,
+      "hits": [
+        {
+          "document": {
+            "name": "Blue shoe",
+            "brand": "Adidas",
+            "id": "126",
+            "price": 50
+          },
+          "highlights": [
+            {
+              "field": "name",
+              "matched_tokens": [
+                "shoe"
+              ],
+              "snippet": "Blue <mark>shoe</mark>"
+            }
+          ],
+          "text_match": 130816
+        }
+      ],
+      "out_of": 10,
+      "page": 1,
+      "request_params": {
+        "per_page": 10,
+        "q": "shoe"
+      },
+      "search_time_ms": 1
+    },
+    {
+      "facet_counts": [],
+      "found": 1,
+      "hits": [
+        {
+          "document": {
+            "name": "Nike shoes",
+            "brand": "Nike",
+            "id": "391",
+            "price": 60
+          },
+          "highlights": [
+            {
+              "field": "name",
+              "matched_tokens": [
+                "Nike"
+              ],
+              "snippet": "<mark>Nike</mark>shoes"
+            }
+          ],
+          "text_match": 144112
+        }
+      ],
+      "out_of": 5,
+      "page": 1,
+      "request_params": {
+        "per_page": 10,
+        "q": "Nike"
+      },
+      "search_time_ms": 1
+    }
+  ]
+}
+```
+
+      </TabItem>
+</Tabs>
+
+**定义**
+
+`POST ${KUMOSEARCH_HOST}/multi_search`
+
+## `multi_search` 参数
+
+在 `multi_search` 请求中，您可以为每个单独的搜索操作使用任意[搜索参数](./search_api.mdx#search-parameter)。
+
+此外，您还可以在 `multi_search` 请求中使用以下参数：
+
+
+| 参数                   | 必选  | 描述                                   |
+|----------------------|-----|-------------------|
+| limit_multi_searches | 否	 | 多重搜索请求中可以发送的最大搜索请求数。例如：`20`<br/><br/>默认：`50`<br/><br/>您可以生成一个 [scoped API key](./api-keys.mdx#generate-scope-api-key) 并将其嵌入此参数，以便使用该 API 密钥执行搜索，它会自动应用并且在搜索过程中无法更改。   |
+| x-kumosearch-api-key       | 否	 | 您可以为 `multi_search` 请求中的每个搜索嵌入单独的搜索 API 密钥。 <br/><br/> 这样做可以确保在不同 [scoped API key](./api-keys.mdx#generate-scope-api-key) 下，对各个索引表应用特定的嵌入式过滤器。           |
+
+::: tip
+`multi_search` 响应中的 `results` 数组顺序与请求中 `searches` 数组中的查询顺序一致。
+:::
+
+## 界面实现示例
+
+下面是一个前端应用程序演示，展示如何实现联合搜索 UI：[federated-search.kumo-ai.tech](https://federated-search.kumo-ai.tech/)。
+
+这是它的源代码：[https://github.com/gottingen/showcase-federated-search/blob/master/src/app.js](https://github.com/gottingen/showcase-federated-search/blob/master/src/app.js)。

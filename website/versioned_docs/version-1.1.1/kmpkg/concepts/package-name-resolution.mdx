@@ -1,0 +1,187 @@
+---
+date: 01/10/2024
+---
+# 包名称解析
+
+了解 kmpkg 如何将软件包名称解析为要安装的端口。
+
+kmpkg 之前确定每个包的负责注册表（或覆盖层）接触网络。这可以防止包依赖混淆攻击因为名称解析不依赖于任何外部状态。
+
+名称解析算法步骤为：
+
+- 如果在 [覆盖层](#overlays) 中找到该名称，则使用该覆盖层；否则
+- 如果有一个[`"packages"`](../reference/kmpkg-configuration-json.mdx#registry-packages)与端口名称匹配的模式，使用该注册表；否则
+- 如果[默认注册表](../reference/kmpkg-configuration-json.mdx#default-registry) 不是`null`，使用该注册表；否则无法将端口解析到注册表。
+
+当有多个“packages”模式与名称匹配时，kmpkg优先顺序如下：
+
+1. **精确匹配** -- 选择 `boost` 而不是 `boost*`
+2. **最长模式** -- 选择 `boost*` 而不是 `b*`
+3. **第一个匹配** -- 选择第一个声明最佳模式的注册表
+
+## 示例#1：包名称解析
+
+`kmpkg-configuration.json`
+```json
+{
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://gitee.com/kumo-pub/kmpkg-docs",
+      "reference": "kmpkg-registry",
+      "baseline": "768f6a3ad9f9b6c4c2ff390137690cf26e3c3453",
+      "packages": ["bei*"]
+    },
+    {
+      "kind": "git",
+      "repository": "https://github.com/vicroms/kmpkg-registry",
+      "baseline": "dacf4de488094a384ca2c202b923ccc097956e0c",
+      "packages": ["beicode", "bei*"]
+    }
+  ]
+}
+```
+
+`kmpkg.json`
+
+```json
+{
+  "dependencies": [
+    "beicode",
+    "beison",
+    "fmt"
+  ],
+  "builtin-baseline": "7e7c62d863b1bf599c1d104b76cd8b74475844d4"
+}
+```
+
+给定此配置，每个包名称解析为：
+
+* `beicode`：来自注册表 `https://github.com/vicroms/kmpkg-registry` （确切地说匹配`beicode`）
+* `beison`：来自注册表`https://gitee.com/kumo-pub/kmpkg-docs` （在 `beison` 上进行模式匹配并在 `"registries"` 数组中首先声明）
+* `fmt`：来自默认注册表（不匹配）
+
+因为多个注册表声明了“bei*”，所以 kmpkg 也会发出警告：
+
+```Console
+Found the following problems in configuration (path/to/kmpkg-configuration.json):
+$ (a configuration object): warning: Package "bei*" is duplicated.
+    First declared in:
+        location: $.registries[0].packages[0]
+        registry: https://gitee.com/kumo-pub/kmpkg-docs
+    The following redeclarations will be ignored:
+        location: $.registries[1].packages[1]
+        registry: https://github.com/vicroms/kmpkg-registry
+```
+
+## 示例#2：将多个模式分配给默认注册表
+
+您可以通过两种方式更改默认注册表。首先，通过定义[`“默认注册表”`](../reference/kmpkg-configuration-json.mdx#default-registry):
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://gitee.com/kumo-pub/kmpkg",
+    "baseline": "e79c0d2b5d72eb3063cf32a1f7de1a9cf19930f3"
+  }
+}
+```
+
+其次，通过将`default-registry`设置为`null`并使用`*` `registries`数组中的模式：
+
+```json
+{
+  "default-registry": null,
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://gitee.com/kumo-pub/kmpkg",
+      "baseline": "e79c0d2b5d72eb3063cf32a1f7de1a9cf19930f3",
+      "packages": ["*"]
+    }
+  ]
+}
+```
+
+第二种形式的优点是您可以向包中添加更多条目数组，而`default-registry`对象不允许您定义
+根本没有包数组。在您需要的情况下，这种差异变得很重要确保包来自默认注册表。
+
+让我们考虑一个提供 Qt 框架库的注册表。
+
+`kmpkg-configuration.json`
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://gitee.com/kumo-pub/kmpkg",
+    "baseline": "7e7c62d863b1bf599c1d104b76cd8b74475844d4"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/custom-qt/custom-qt-registry",
+      "baseline": "adfc4de488094a384ca2c202b923ccc097956e0c",
+      "packages": ["qt*"]
+    }
+  ]
+}
+```
+
+以及以下项目依赖项：
+
+`kmpkg.json`
+```json
+{
+  "dependencies": [
+    "qt5",
+    "qt-advanced-docking-system",
+    "qtkeychain"
+  ]
+}
+```
+
+`"qt*"` 模式匹配 `kmpkg.json` 中的所有端口名称。但有一个问题！端口`qt-advanced-docking-system`和`qtkeychain`不属于
+官方 Qt 框架库，因为 kmpkg 将无法找到自定义注册表中的端口安装将失败。
+
+可以通过将这些包分配给默认注册表来解决此问题。我们通过改变声明默认注册表的方式来实现这一点将 `qt-advanced-docking-system` 和 `qtkeychain` 添加到其 `"packages"` 数组中：
+
+`kmpkg-configuration.json`
+
+```json
+{
+  "default-registry": null,
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://gitee.com/kumo-pub/kmpkg",
+      "baseline": "e79c0d2b5d72eb3063cf32a1f7de1a9cf19930f3",
+      "packages": ["*", "qt-advanced-docking-system", "qtkeychain"]
+    },
+    {
+      "kind": "git",
+      "repository": "https://github.com/custom-qt/custom-qt-registry",
+      "baseline": "adfc4de488094a384ca2c202b923ccc097956e0c",
+      "packages": ["qt*"]
+    }
+  ]
+}
+```
+
+因为精确匹配优于模式匹配，`qt-advanced-docking-system` 和 `qtkeychain` 将解析为默认值注册表。
+
+## 覆盖 {#overlays}
+
+覆盖是一种通过附加端口和附加功能来扩展 kmpkg 的方法三元组，无需创建完整的注册表。之前考虑过叠加
+执行任何注册表查找或版本控制，并将替换任何内置三联体或端口。请参阅 [overlay ports](../concepts/overlay-ports.mdx) 了解更多信息。
+
+覆盖设置按以下顺序评估：
+
+1. 来自[命令行]的叠加(../commands/common-options.mdx#overlay-ports)
+按照通过的顺序；然后
+2. 叠加来自
+[`kmpkg-configuration.json`](../reference/kmpkg-configuration-json.mdx#overlay-ports)
+为了;然后
+3. 来自“KMPKG_OVERLAY_[PORTS|TRIPLETS]”[环境的叠加
+变量](../users/config-environment.mdx#kmpkg_overlay_ports) 按顺序。

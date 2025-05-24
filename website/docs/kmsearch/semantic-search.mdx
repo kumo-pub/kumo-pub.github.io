@@ -1,0 +1,449 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# 语义搜索
+
+kumosearch 支持使用内置机器学习模型进行开箱即用的语义搜索。您也可以使用外部 ML 模型，如 OpenAI、PaLM API 和 Vertex AI API。
+
+## 使用案例
+
+语义搜索有助于检索与用户查询在概念上相关的结果。
+
+例如，如果用户输入 `ocean`，但数据集中仅包含 `sea` 关键字，语义搜索可以识别 `ocean` 和 `sea` 之间的关联，从而提取 `sea` 的相关结果。
+
+本文将通过一个简单的产品数据集演示如何实现语义搜索的步骤。
+
+## Step 1: 创建索引表
+
+这与创建常规索引表非常相似，只是需要添加[自动嵌入字段](../api/kmsearch/vector-search.mdx#opion-b-embedding)。
+
+<Tabs>
+
+<TabItem value="S-BERT" label="S-BERT" default>
+
+```shell{15-22}
+curl -X POST \
+  'http://localhost:8868/collections' \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "ts/all-MiniLM-L12-v2"
+              }
+            }
+          }
+        ]
+      }'
+```
+    </TabItem>
+    <TabItem value="E-5" label="E-5" default>
+```shell{15-22}
+curl -X POST \
+  'http://localhost:8868/collections' \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "ts/e5-small-v2"
+              }
+            }
+          }
+        ]
+      }'
+```
+
+</TabItem>
+    <TabItem value="GTE" label="GTE" default>
+
+```shell{15-22}
+curl -X POST \
+  'http://localhost:8868/collections' \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "ts/gte-small"
+              }
+            }
+          }
+        ]
+      }'
+```
+
+    </TabItem>
+    <TabItem value="MPNET" label="MPNET" default>
+```shell{15-22}
+curl -X POST \
+  'http://localhost:8868/collections' \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "ts/paraphrase-multilingual-mpnet-base-v2"
+              }
+            }
+          }
+        ]
+      }'
+```
+
+</TabItem>
+    <TabItem value="OpenAI" label="OpenAI" default>
+```shell{15-23}
+curl -X POST \
+  'http://localhost:8868/collections' \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "openai/text-embedding-ada-002",
+                "api_key": "your_openai_api_key"
+              }
+            }
+          }
+        ]
+      }'
+```
+
+</TabItem>
+    <TabItem value="PaLM" label="PaLM" default>
+```shell{15-23}
+curl -X POST \
+  'http://localhost:8868/collections' \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "google/embedding-gecko-001",
+                "api_key": "your_google_api_key"
+              }
+            }
+          }
+        ]
+      }'
+```
+
+</TabItem>
+    <TabItem value="VertexAI" label="VertexAI" default>
+```shell{15-27}
+curl -X POST \
+  'http://localhost:8868/collections' \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "gcp/embedding-gecko-001",
+                "access_token": "your_gcp_access_token",
+                "refresh_token": "your_gcp_refresh_token",
+                "client_id": "your_gcp_app_client_id", 
+                "client_secret": "your_gcp_client_secret",
+                "project_id": "your_gcp_project_id"
+              }
+            }
+          }
+        ]
+      }'
+```
+
+    </TabItem>
+
+</Tabs>
+
+在此示例中，我们使用内置 ML 模型 `ts/all-MiniLM-L12-v2`（又名 S-BERT），自动从文档中的 `product_name` 字段生成嵌入数据。
+
+您还可以使用
+[OpenAI API](../api/kmsearch/vector-search.mdx#using-openai-api),
+[PaLM API](../api/kmsearch/vector-search.mdx#using-google-paLm_api) 或[Vertex AI API](../api/kmsearch/vector-search.mdx#using-gcp-vertex-api)，kumosearch 会自动调用这些服务生成嵌入以支持语义搜索。
+
+或者，您可以指定使用 [HuggingFace 存储库](https://huggingface.co/kumo-ai/models/tree/main) 中的任何内置 ML 模型。
+
+## Step 2: 索引您的 JSON 数据
+
+将 JSON 数据发送到 kumosearch：
+
+```shell
+curl "http://localhost:8868/collections/products/documents/import?action=create" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -H "Content-Type: text/plain" \
+        -X POST \
+        -d '{"product_name": "Cell phone"}
+            {"product_name": "Laptop"}
+            {"product_name": "Desktop"}
+            {"product_name": "Printer"}
+            {"product_name": "Keyboard"}
+            {"product_name": "Monitor"}
+            {"product_name": "Mouse"}'
+```
+
+kumosearch 会自动使用在创建schema时指定的 ML 模型来生成和存储每个 JSON 文档的嵌入。
+
+这就是语义搜索的准备工作！
+
+## Step 3: 语义搜索
+
+进行语义搜索时，只需将 `embedding` 字段添加到 `query_by` 搜索参数中：
+
+```shell{7-8}
+curl 'http://localhost:8868/multi_search' \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -X POST \
+    -d '{
+      "searches": [
+        {
+          "q": "device to type things on",
+          "query_by": "embedding",
+          "collection": "products",
+          "prefix": "false",
+          "exclude_fields": "embedding",
+          "per_page": 1
+        }
+      ]
+    }'
+```
+
+这将返回以下结果。
+
+请注意，我们搜索的是 `device to type things on`，即使我们的 JSON 数据集中没有这些确切的关键字，kumosearch 仍能够进行语义搜索并将结果返回为 `Keyboard`，因为它在概念上是相关的。
+
+```json{10}
+{
+  "results": [
+    {
+      "facet_counts": [],
+      "found": 1,
+      "hits": [
+        {
+          "document": {
+            "id": "4",
+            "product_name": "Keyboard"
+          },
+          "highlight": {},
+          "highlights": [],
+          "vector_distance": 0.38377559185028076
+        }
+      ],
+      "out_of": 7,
+      "page": 1,
+      "request_params": {
+        "collection_name": "products",
+        "per_page": 1,
+        "q": "device to type things on"
+      },
+      "search_cutoff": false,
+      "search_time_ms": 16
+    }
+  ]
+}
+```
+
+### 混合搜索
+
+在许多情况下，您可能希望将关键字搜索与语义搜索结合。我们称之为混合搜索。
+
+除了自动嵌入字段之外，您还可以在 kumosearch 中通过在 `query_by` 添加关键字字段名称来执行混合搜索：
+
+```shell{7-8}
+curl 'http://localhost:8868/multi_search' \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -X POST \
+    -d '{
+      "searches": [
+        {
+          "query_by": "product_name,embedding",
+          "q": "desktop copier",
+          "collection": "products",
+          "prefix": "false",
+          "exclude_fields": "embedding",
+          "per_page": 2
+        }
+      ]
+    }'
+```
+
+这将返回以下结果。
+
+请注意搜索 `Desktop copier` 时，先返回了关键字匹配结果 `Desktop`，然后是语义匹配的 `Printer`。
+
+```json{10,45}
+{
+  "results": [
+    {
+      "facet_counts": [],
+      "found": 7,
+      "hits": [
+        {
+          "document": {
+            "id": "2",
+            "product_name": "Desktop"
+          },
+          "highlight": {
+            "product_name": {
+              "matched_tokens": [
+                "Desktop"
+              ],
+              "snippet": "<mark>Desktop</mark>"
+            }
+          },
+          "highlights": [
+            {
+              "field": "product_name",
+              "matched_tokens": [
+                "Desktop"
+              ],
+              "snippet": "<mark>Desktop</mark>"
+            }
+          ],
+          "hybrid_search_info": {
+            "rank_fusion_score": 0.8500000238418579
+          },
+          "text_match": 1060320051,
+          "text_match_info": {
+            "best_field_score": "517734",
+            "best_field_weight": 102,
+            "fields_matched": 3,
+            "score": "1060320051",
+            "tokens_matched": 0
+          },
+          "vector_distance": 0.510231614112854
+        },
+        {
+          "document": {
+            "id": "3",
+            "product_name": "Printer"
+          },
+          "highlight": {},
+          "highlights": [],
+          "hybrid_search_info": {
+            "rank_fusion_score": 0.30000001192092896
+          },
+          "text_match": 0,
+          "text_match_info": {
+            "best_field_score": "0",
+            "best_field_weight": 0,
+            "fields_matched": 0,
+            "score": "0",
+            "tokens_matched": 0
+          },
+          "vector_distance": 0.4459354281425476
+        }
+      ],
+      "out_of": 7,
+      "page": 1,
+      "request_params": {
+        "collection_name": "products",
+        "per_page": 2,
+        "q": "desktop copier"
+      },
+      "search_cutoff": false,
+      "search_time_ms": 22
+    }
+  ]
+}
+```
+
+## 应用演示
+
+[这里](https://hn-comments-search.kumo-ai.tech) 是一个现场演示，向您展示如何实现语义搜索和混合搜索。
+
+阅读有关向量搜索的[完整 API 参考文档](../api/kmsearch/vector-search.mdx)。
+
+:::warning Note: CPU 使用率
+
+内置机器学习模型是计算密集型的。当启用语义搜索并使用内置的 ML 模型时，即使是几千条记录也可能需要 10 秒的时间来生成嵌入和索引。
+
+如果想加快此过程，可以启用 kumosearch 中的[GPU 加速](../api/kmsearch/vector-search.mdx#using-gpu-optional)。
+
+在 kumosearch 中使用 OpenAI 等远程嵌入服务时，无需使用 GPU，因为该模型在 OpenAI 的服务器上运行。
+
+:::

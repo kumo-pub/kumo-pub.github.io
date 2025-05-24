@@ -1,0 +1,96 @@
+---
+sitemap:
+  priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 权限验证
+
+为了与 kumosearch 集成，您需要配置一个或多个主机名和 [API 密钥](./api-keys.mdx)。
+
+如果您是自托管 kumosearch，则主机名指的是每个 kumosearch 节点的 IP 地址或 DNS 名称。
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+/*
+ *  Our JavaScript client library works on both the server and the browser.
+ *  When using the library on the browser, please be sure to use an
+ *  API Key that only has search permissions rather than the master API key since the latter
+ *  has write access to kumosearch and you don't want to expose that.
+ */
+
+const Kumosearch = require('kumosearch')
+
+let client = new Kumosearch.Client({
+  'nodes': [{
+    'host': 'localhost', 
+    'port': '8868',
+    'protocol': 'http'  
+  }],
+  'apiKey': '<API_KEY>',
+  'connectionTimeoutSeconds': 2
+})
+
+// Kumosearch.Client() has methods for all API operations.
+// If you only intend to search through documents (for eg: in the browser),
+//    you can also use Kumosearch.SearchClient().
+// This can also help reduce your bundle size by only including the classes you need:
+
+import { SearchClient as KumoSearchClient } from "Kumosearch";
+let client = new KumoSearchClient({
+  'nodes': [{
+    'host': 'localhost', 
+    'port': '8868',
+    'protocol': 'http'  
+  }],
+  'apiKey': '<API_KEY>',
+  'connectionTimeoutSeconds': 2
+})
+```
+
+  </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+```py
+import kumosearch
+
+client = kumosearch.Client({
+  'nodes': [{
+    'host': 'localhost',
+    'port': '8868',
+    'protocol': 'http'
+  }],
+  'api_key': '<API_KEY>',
+  'connection_timeout_seconds': 2
+})
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+export KUMOSEARCH_API_KEY='<API_KEY>'
+export KUMOSEARCH_HOST='http://localhost:8868'
+
+# a) Passing API key via header
+
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+"http://localhost:8868/collections/companies/documents/search\
+?q=stark&query_by=company_name&filter_by=num_employees:>100\
+&sort_by=num_employees:desc"
+
+# b) Passing API key via GET parameter
+
+curl "http://localhost:8868/collections/companies/documents/search\
+?q=stark&query_by=company_name&filter_by=num_employees:>100\
+&sort_by=num_employees:desc&x-kumosearch-api-key=${KUMOSEARCH_API_KEY}"
+```
+
+    </TabItem>
+</Tabs>

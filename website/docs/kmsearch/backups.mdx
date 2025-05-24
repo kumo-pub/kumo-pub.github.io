@@ -1,0 +1,20 @@
+# 备份和恢复数据
+
+当您将文档发送到 kumosearch 时，数据会存储在data-dir [服务器配置参数](../api/kmsearch/server-configuration)指定的目录中，
+并生成支持搜索的内存数据结构。每当 kumosearch 进程重启时，它会从数据目录中读取数据并重新构建内存索引。
+
+## 备份步骤
+
+直接归档/备份 kumosearch 的数据目录是不安全的，因为在备份过程中，kumosearch 可能会写入文件。相反，您应该执行以下步骤：
+
+1. 调用[_Snapshot_ API 节点](../api/kmsearch/cluster-operations)，并指定将快照写入服务器的目录。
+2. 将该目录备份到远程存储，例如使用命令`tar -czvf backup.tar.gz -C /tmp/kumosearch-data-snapshot`。
+
+## 恢复步骤
+
+1. 停止任何正在运行的 kmsearch 进程。
+2. 删除现有数据目录的内容。例如：`rm -rf /var/lib/kumosearch/*`
+3. 将 tar gzip 备份文件解压到数据目录中。例如：`cd /var/lib/kumosearch ; tar -xf 备份.tar.gz`。
+4. 再次启动 kumosearch 进程。
+
+kumosearch 将从数据目录中读取快照并重建内存索引。

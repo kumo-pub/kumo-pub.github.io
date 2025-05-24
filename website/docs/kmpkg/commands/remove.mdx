@@ -1,0 +1,44 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg remove
+
+kmpkg remove 命令的命令行参考。从经典模式中删除端口包。
+
+## 摘要
+
+```console
+kmpkg remove [options] <package>...
+```
+
+```console
+kmpkg remove --outdated [options]
+```
+
+## 说明
+
+从经典模式中移除端口包。
+
+`remove` 从经典模式[安装目录](common-options.mdx#install-root)中移除列出的包及任何需要这些包的包。 有关 `<package>` 参数的详细语法，请参阅 [install 命令文档](install.mdx#package-syntax)。
+
+[清单模式](../concepts/manifest-mode.mdx)下当前不支持此命令。
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--recurse`
+
+允许移除命令行中未指定的包。
+
+默认情况下，kmpkg 拒绝执行将移除命令行中未列出包的移除计划。
+
+### `--dry-run`
+
+打印要移除的包，但不移除它们。
+
+### `--outdated`
+
+移除与可用端口版本不匹配的所有包。
+
+对于每个已安装的包，kmpkg 会将已安装版本字符串与当前方案的版本字符串进行比较。 如果这些版本不同，将选择要移除的包。 如果传递了 `--outdated`，则命令行中不应列出任何包。

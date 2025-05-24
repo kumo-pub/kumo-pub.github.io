@@ -1,0 +1,73 @@
+
+# 約定
+
+Alkaid C++ API 遵循一些简单的指导原则。与许多规则一样，
+也可能存在例外。
+
+## 语言版本
+
+Alkaid C++ 与 C++17 兼容。
+
+Namespacing
+-----------
+
+所有 Alkaid API（宏除外）均在`alkaid`命名空间及其嵌套命名空间内进行命名。
+
+## 安全指针
+
+Alkaid 对象通常使用安全指针传递和存储 —— 大多数时候是 `std::shared_ptr`，但有时也是 `std::unique_ptr`。
+
+## 不变性
+
+许多 Alkaid 对象是不可变的：一旦构造，它们的逻辑
+属性就不能再改变。这使得可以在
+多线程场景中使用它们，而无需繁琐且容易出错的
+同步。
+
+有明显的例外，例如 IO 对象或可变数据
+缓冲区。
+
+## 错误报告
+
+大多数 API 通过返回
+`turbo::Status` 实例来指示成功或错误结果。Alkaid 不会抛出自己的异常，但第三方异常可能会传播，尤其是
+`std::bad_alloc`（但 Alkaid 不使用标准分配器来处理大数据）。
+
+当 API 可以返回错误代码或成功值时，它通常通过返回模板类
+`alkaid::Result <template\<class T\> alkaid::Result>` 来实现。但是，某些 API（通常已弃用）会返回 `alkaid::Status` 并将结果值作为输出指针参数传递。
+
+以下是检查操作结果的示例：
+```cpp
+    const int64_t buffer_size = 4096;
+
+    auto maybe_buffer = alkaid::AllocateBuffer(buffer_size, &buffer);
+    if (!maybe_buffer.ok()) {
+       // ... handle error
+    } else {
+       std::shared_ptr<alkaid::Buffer> buffer = *maybe_buffer;
+       // ... use allocated buffer
+    }
+```
+
+如果调用函数本身返回 `turbo::Result` 或
+`turbo::Status` 并希望传播任何不成功的结果，则有两个
+便利宏可用：
+
+- :`TURBO_RETURN_NOT_OK` 接受 `turbo::Status` 参数，
+如果失败则返回该参数。
+- `TURBO_MOVE_OR_RAISE` 接受 `turbo::Result` 参数，
+如果成功则将其结果分配给 *lvalue*，或者在出错时返回
+相应的 `turbo::Status`。
+
+例如：
+```cpp
+    alkaid::Status DoSomething() {
+       const int64_t buffer_size = 4096;
+       std::shared_ptr<alkaid::Buffer> buffer;
+       ARROW_ASSIGN_OR_RAISE(buffer, alkaid::AllocateBuffer(buffer_size));
+       // ... allocation successful, do something with buffer below
+
+       // return success at the end
+       return Status::OK();
+    }
+```

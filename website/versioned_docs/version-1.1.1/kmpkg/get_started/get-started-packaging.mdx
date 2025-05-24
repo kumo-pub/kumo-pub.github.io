@@ -1,0 +1,286 @@
+---
+date: 7/16/2024
+---
+
+# 教程：使用 kmpkg 打包库
+
+教程指导用户完成为 kmpkg 打包库的过程。
+
+
+本教程将指导您如何使用自定义包为 kmpkg 打包库覆盖。我们建议您阅读[CMake 工程集成](get-started-cmake.mdx) 教程，然后再继续。
+
+## 先决条件 {#prerequisites}
+
+- A terminal
+- A C++ compiler
+- [CMake](https://cmake.org/download/)
+- [Git](https://git-scm.com/downloads)
+- [安装 kmpkg](setup-kmpkg.mdx)
+
+## 1 - 设置自定义覆盖
+
+1. 在 `Hello World` 旁边创建一个名为 `custom-overlay` 的新目录您在[CMake 工程集成](get-started-cmake.mdx) 教程。
+2. 在 `custom-overlay` 目录中，创建一个名为 `kmpkg-sample-library` 的文件夹。
+
+## 2 - 设置端口文件
+
+首先，在以下目录中创建 `kmpkg.json` 文件 `custom-overlay\kmpkg-sample-library` 文件夹包含以下内容：
+
+```json
+{
+  "name": "kmpkg-sample-library",
+  "version": "1.0.2",
+  "homepage": "https://gitee.com/kumo-pub/kmpkg-docs/tree/cmake-sample-lib",
+  "description": "A sample C++ library designed to serve as a foundational example for a tutorial on packaging libraries with kmpkg.",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name" : "kmpkg-cmake",
+      "host" : true
+    },
+    {
+      "name" : "kmpkg-cmake-config",
+      "host" : true
+    },
+    "fmt"
+  ]
+}
+```
+
+`kmpkg.json` 文件用作定义元数据和的清单C++ 库的依赖项，为 kmpkg 提供必要的信息
+构建、安装和管理包。
+
+- `name`：指定库的名称。这用作包标识符。
+- `version`：表示库的版本号。
+- `homepage`：项目主页的 URL，通常是其存储库。有用于那些想要了解更多或做出贡献的人。
+- `description`：描述库功能的简短文本。这是为了文档和用户。
+- `license`：指定分发库所依据的许可证。
+- `dependencies`：包含库所需的依赖项列表的数组。
+- `name`: `kmpkg-cmake`：指定对 `kmpkg-cmake` 的依赖，它提供kmpkg 端口中常用的 CMake 函数和宏。
+- `host`: true: 指定 `kmpkg-cmake` 是主机依赖项，​​这意味着它是构建包时需要，但使用时不需要。
+- `name`: `kmpkg-cmake-config`：指定对 `kmpkg-cmake-config` 的依赖，它有助于使用 CMake 配置脚本。
+- `fmt`：指定对 `fmt` 库的运行时依赖。这意味着“fmt”构建和使用该包都需要。
+
+有关“kmpkg.json”的更多信息，请参阅以下文档[清单](../reference/kmpkg-json.mdx)。
+
+现在，在“custom-overlay\kmpkg-sample-library”中创建“usage”文件
+目录包含以下内容：
+
+```usage
+kmpkg-sample-library provides CMake targets:
+
+find_package(my_sample_lib CONFIG REQUIRED)
+target_link_libraries(main PRIVATE my_sample_lib::my_sample_lib)
+```
+
+提供端口的使用文档，方便用户轻松采用他们的项目。我们强烈鼓励在端口内提供“使用”文件目录（`ports/<port name>/usage`），描述了必要的最少步骤
+与构建系统集成。确定正确的使用说明建议遵循上游的指导。如果上游不提供使用信息，可能需要深入研究他们的构建系统找到导出的目标。
+
+有关更多指导，请参阅[处理使用文件](../maintainers/handling-usage-files.mdx)
+
+最后，在以下目录中创建 `portfile.cmake` 文件
+`custom-overlay\kmpkg-sample-library` 目录包含以下内容：
+
+```cmake
+kmpkg_check_linkage(ONLY_STATIC_LIBRARY)
+
+kmpkg_from_gitee(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO kumo-pub/kmpkg-docs
+    REF "${VERSION}"
+    SHA512 0  # This is a temporary value. We will modify this value in the next section.
+    HEAD_REF cmake-sample-lib
+)
+
+
+kmpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+)
+
+kmpkg_cmake_install()
+
+kmpkg_cmake_config_fixup(PACKAGE_NAME "my_sample_lib")
+
+file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
+
+file(INSTALL "${SOURCE_PATH}/LICENSE" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/usage" "${CURRENT_PACKAGES_DIR}/share/${PORT}/usage" COPYONLY)
+```
+
+这个“portfile”定义了如何下载、构建、安装和打包特定的来自 GitHub 的 C++ 库，使用 kmpkg。
+
+- `kmpkg_check_linkage(ONLY_STATIC_LIBRARY)`：指定仅静态链接此包支持。
+- `kmpkg_from_github`：启动从github下载源代码的功能GitHub 存储库。
+- `OUT_SOURCE_PATH SOURCE_PATH`：设置源代码所在的目录被提取。
+- `REPO Microsoft/kmpkg-docs`：包含的 GitHub 存储库源代码。
+- `REF "${VERSION}"`：要下载的源代码的版本。
+- `SHA512 0`：源代码的 SHA-512 哈希值的占位符完整性验证。
+- `HEAD_REF main`：指定存储库的默认分支。
+- `kmpkg_cmake_configure`：使用 CMake 配置项目，设置构建。
+- `SOURCE_PATH "${SOURCE_PATH}"`：之前下载的源代码的路径。
+- `kmpkg_cmake_install()`：使用 CMake 构建并安装包。
+- `kmpkg_cmake_config_fixup(PACKAGE_NAME "my_sample_lib")`：修复 CMake包配置文件与 kmpkg 兼容。
+- `file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")`：删除包含调试安装中的目录以防止重叠。
+- `file(INSTALL "${SOURCE_PATH}/LICENSE" DESTINATION ...)`：安装许可证文件复制到包的共享目录并将其重命名为copyright。
+- `configure_file("${CMAKE_CURRENT_LIST_DIR}/usage" ...)`：复制用法指令文件到包的共享目录。
+
+有关更多信息，请参阅[维护者指南](../contributing/maintainer-guide.mdx)。
+
+## 3 - 更新“portfile.cmake”的 SHA512
+
+运行:
+
+```console
+kmpkg install kmpkg-sample-library --overlay-ports=C:\path\to\custom-overlay
+```
+
+You will get a long error message. Scan the output until you find:
+
+```console
+Expected hash: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+Actual hash: 4202125968a01219deeee14b81e1d476dab18d968425ba36d640816b0b3db6168f8ccf4120ba20526e9930c8c7294e64d43900ad2aef9d5f28175210d0c3a417
+```
+
+复制“实际哈希”
+`4202125968a01219deeee14b81e1d476dab18d968425ba36d640816b0b3db6168f8ccf4120ba20526e9930c8c7294e64d43900ad2aef9d5f28175210d0c3a417`,
+并将 portfile.cmake 中的 SHA512 值替换为其值。
+
+重新运行安装命令：
+
+```console
+kmpkg install kmpkg-sample-library --overlay-ports=C:\path\to\custom-overlay
+```
+
+```console
+Computing installation plan...
+The following packages will be built and installed:
+    kmpkg-sample-library:x64-windows -> 1.0.2 -- C:\Users\dev\demo\custom-overlay\kmpkg-sample-library
+Detecting compiler hash for triplet x64-windows...
+Restored 0 package(s) from C:\Users\dev\AppData\Local\kmpkg\archives in 174 us. Use --debug to see more details.
+Installing 1/1 kmpkg-sample-library:x64-windows...
+Building kmpkg-sample-library:x64-windows...
+-- Installing port from location: C:\Users\dev\demo\custom-overlay\kmpkg-sample-library
+-- Note: kmpkg-sample-library only supports static library linkage. Building static library.
+-- Using cached Microsoft-kmpkg-docs-1.0.2.tar.gz.
+-- Cleaning sources at C:/Users/dev/demo/kmpkg/buildtrees/kmpkg-sample-library/src/1.0.2-2aff836404.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/Users/dev/demo/kmpkg/downloads/Microsoft-kmpkg-docs-1.0.2.tar.gz
+-- Using source at C:/Users/dev/demo/kmpkg/buildtrees/kmpkg-sample-library/src/1.0.2-2aff836404.clean
+-- Configuring x64-windows
+-- Building x64-windows-dbg
+-- Building x64-windows-rel
+-- Installing: C:/Users/dev/demo/kmpkg/packages/kmpkg-sample-library_x64-windows/share/kmpkg-sample-library/copyright
+-- Performing post-build validation
+Stored binaries in 1 destinations in 94 ms.
+Elapsed time to handle kmpkg-sample-library:x64-windows: 6.1 s
+Total install time: 6.1 s
+kmpkg-sample-library provides CMake targets:
+
+find_package(my_sample_lib CONFIG REQUIRED)
+target_link_libraries(main PRIVATE my_sample_lib::my_sample_lib)
+```
+
+## 4 - 验证端口版本
+
+要验证库是否正确构建和链接，请向在[安装包教程](setup-kmpkg.mdx) 中创建的 `helloworld` 项目。
+对项目的清单和配置文件进行以下更改。
+
+修改 `helloworld/kmpkg.json` 添加对 `kmpkg-sample-library` 的依赖：
+
+```json
+{
+    "dependencies": [
+        "fmt",
+        "kmpkg-sample-library"
+    ]
+}
+```
+
+修改 `helloworld/kmpkg-configuration.json` 以包含 `overlay-ports`包含新端口的文件夹：
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "45f6e57d3e10ad96b7db206cf7888f736ba5aa61",
+    "repository": "https://gitee.com/kumo-pub/kmpkg"
+  },
+  "registries": [
+    {
+      "kind": "artifact",
+      "location": "https://gitee.com/kumo-pub/kmpkg-ce-catalog/archive/refs/heads/main.zip",
+      "name": "microsoft"
+    }
+  ],
+  "overlay-ports": [
+    "../custom-overlay"
+  ]
+}
+```
+
+接下来，修改 `helloworld/CMakeLists.txt` 和 `helloworld/main.cpp` 以使用
+新的依赖。
+
+使用以下内容修改 `helloworld/CMakeLists.txt`：
+
+```cmake
+cmake_minimum_required(VERSION 3.10)
+
+project(HelloWorld)
+
+find_package(fmt CONFIG REQUIRED)
+find_package(my_sample_lib CONFIG REQUIRED)  # Add this line
+
+add_executable(HelloWorld helloworld.cpp)
+
+target_link_libraries(HelloWorld PRIVATE fmt::fmt)
+target_link_libraries(HelloWorld PRIVATE my_sample_lib::my_sample_lib)  # Add this line
+```
+
+修改 `main.cpp` 内容如下：
+
+```cpp
+#include "my_sample_lib.h"  // Replace #include <fmt/core.h> with "my_sample_lib.h"
+
+int main()
+{
+    greet("kmpkg!");  // Replace fmt::print("Hello World!\n) with this line
+    return 0;
+}
+
+```
+
+配置、构建和运行应用程序。
+
+1. 使用 CMake 配置构建：
+
+  ```console
+  cmake --preset=default
+  ```
+
+2. 构建项目：
+
+  ```console
+  cmake --build build
+  ```
+
+3. 运行应用程序：
+
+  ```console
+  ./build/HelloWorld
+  ```
+
+项目可执行文件的路径可能不同，例如：`./build/Debug/HelloWorld.exe`。
+
+  ```console
+  Hello kmpkg!
+  ```
+
+## 后续步骤
+
+现在 `kmpkg-sample-library` 已打包为端口，下一步是将其添加到 `kmpkg` 策划的注册表中。
+请参阅，[将端口添加到 kmpkg注册表](get-started-adding-to-registry.mdx)。
+
+有关更多信息，请参阅：
+
+- [端口](../concepts/ports.mdx)
+- [维护者指南](../contributing/maintainer-guide.mdx)

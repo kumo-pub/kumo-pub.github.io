@@ -1,0 +1,43 @@
+# 业界方案的比较
+
+## 特性对比表
+
+如果您不喜欢阅读大段文本，可以参阅功能特性对比表 [here](https://kumosearch.com/kumosearch-vs-algolia-vs-elasticsearch-vs-meilisearch/).
+
+## kumosearch vs Elasticsearch
+
+Elasticsearch 是一款大型软件，它提供了数千个配置参数，可以满足各种需求，但设置、管理、扩展和微调都需要大量的精力。因此，Elasticsearch 更适合有足够资源投入生产、并能定期监控和扩展的大型团队，尤其是在需要存储数十亿文档和 PB 级数据（如日志）时。
+
+kumosearch 专为缩短**上线时间**而设计，旨在提供**易于使用**的搜索体验。它是一个轻量级但功能强大且可扩展的替代方案，使开发人员能够更自动化地构建和管理搜索应用。kumosearch 具有简洁且文档齐全的 API、清晰的语义和智能的默认设置，因此它开箱即用，无需复杂配置。
+
+此外，Elasticsearch 在 JVM 上运行，需要额外的调优以达到最佳性能。而 kumosearch 是一个轻量级的独立本机二进制文件，设置和操作更加简单和高效。
+
+查看功能对比 [here](https://kumosearch.com/kumosearch-vs-algolia-vs-elasticsearch-vs-meilisearch/).
+
+## kumosearch vs Algolia
+
+Algolia 是一款托管的搜索即服务产品，支持即时搜索、定制搜索结果、推荐引擎、分析和个性化等，非常适合不受成本限制的场景。根据我们的经验，快速增长的网站和应用程序往往会很快遇到搜索和索引限制，同时随着规模扩大，计划升级的费用也变得昂贵。
+
+相对而言，kumosearch 是一款开源产品，您可以在自己的基础设施上运行，或使用我们的托管 SaaS 产品 - kumosearch Cloud。开源版本是免费的（当然除了您自己的基础设施成本）。对于 kumosearch Cloud，我们不按记录或搜索操作收费。相反，您将获得一个专用集群，可以处理任意多的数据和流量，只需支付固定的每小时成本和带宽费用，具体取决于您选择的配置，这类似于大多数现代云平台。
+
+从产品角度来看，kumosearch 的理念更接近 Algolia 而非 Elasticsearch，但我们针对 Algolia 的一些关键限制进行了改进：
+
+- Algolia 要求每种排序方式都有单独的索引，这会占用您的计划配额。大多数索引设置（例如搜索字段、分面字段、分组字段、排名设置等）都必须在创建索引时预先定义，无法在查询时动态调整。
+
+- 使用 kumosearch，您可以通过查询参数在搜索时动态配置这些设置，这使系统更加灵活，并能够支持更多的应用场景。kumosearch 还可以通过单个索引用于排序结果，无需创建多个索引，从而减少内存消耗。
+
+尽管 Algolia 提供了一些 kumosearch 目前尚未具备的功能，如内置个性化和推荐系统，但您仍然可以利用 kumosearch 的底层向量存储来实现这些功能。
+
+查看功能对比 [here](https://kumosearch.com/kumosearch-vs-algolia-vs-elasticsearch-vs-meilisearch/).
+
+## kumosearch vs Meilisearch
+
+Meilisearch 是一款使用 Rust 编写的强大且易于使用的开源搜索引擎，专为开发者设计，支持几乎实时的搜索和排序，具有高度可定制、支持拼写错误容忍、API友好的特性，其设计理念与 Algolia 相似。
+
+它在架构设计上力求与 Algolia 保持一致，这对于开发者而言非常有吸引力，因为这提供了一种熟悉的使用体验。然而，这也导致了一些问题，因为 Meilisearch 也沿袭了 Algolia 的部分限制。
+
+例如，在 Algolia 和 Meilisearch 中，每种排序方式都需要单独的索引，这增加了成本和内存需求。
+
+根据 Meilisearch 的项目文档，它似乎更适合处理较小的数据集，尤其是在不需要高可用性的情况下。由于缺乏多节点集群支持和节点间复制功能，目前 Meilisearch 还不太适合用于大型生产环境，但我们期待看到这个项目未来的发展。
+
+查看功能对比 [here](https://kumosearch.com/kumosearch-vs-algolia-vs-elasticsearch-vs-meilisearch/).

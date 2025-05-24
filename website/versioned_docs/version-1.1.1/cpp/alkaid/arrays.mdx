@@ -1,0 +1,186 @@
+
+# 数组
+
+:::info
+`Array API reference <api/array>`
+:::
+
+Alkaid 中的核心类型是类 `alkaid::Array`。数组表示一个已知长度的值序列，所有值都具有相同的类型。在内部，这些值由一个或多个缓冲区表示，缓冲区的数量和含义取决于数组的数据类型，如 [`Alkaid 数据布局规范`](format.mdx#format_layout) 中所述。
+
+这些缓冲区由值数据本身和一个可选的位图缓冲区组成，该位图缓冲区指示哪些数组条目是空值。如果已知数组具有零个空值，则可以完全省略位图缓冲区。
+
+每种数据类型都有 `alkaid::Array` 的具体子类，可帮助您访问数组的各个值。
+
+## 构建数组
+
+### 可用策略
+
+由于 Alkaid 对象是不可变的，因此无法像 `std::vector` 那样直接填充它们。相反，可以使用几种策略：
+
+- 如果数据已经以正确的布局存在于内存中，则可以将所述内存包装在 `alkaid::Buffer` 实例中，然后构造一个描述数组的 `alkaid::ArrayData`；
+
+:::info
+`cpp_memory_management`
+:::
+
+- 否则，`alkaid::ArrayBuilder`
+基类及其具体子类可帮助逐步构建数组数据，而无需自己处理 Alkaid
+格式的细节。
+
+### 使用 ArrayBuilder 及其子类
+
+要构建 `Int64` Alkaid 数组，我们可以使用
+`alkaid::Int64Builder` 类。在以下示例中，我们构建一个范围为 1 到 8 的数组，其中应保存值 4 的元素为空：
+```c++
+    alkaid::Int64Builder builder;
+    builder.append(1);
+    builder.append(2);
+    builder.append(3);
+    builder.append_null();
+    builder.append(5);
+    builder.append(6);
+    builder.append(7);
+    builder.append(8);
+
+    auto maybe_array = builder.Finish();
+    if (!maybe_array.ok()) {
+       // ... do something on array building failure
+    }
+    std::shared_ptr<alkaid::Array> array = *maybe_array;
+```
+生成的数组（如果要访问其值，可以将其转换为具体的
+
+`alkaid::Int64Array` 子类）由两个
+
+`alkaid::Buffer` 组成。第一个缓冲区保存
+
+空位图，此处由一个字节组成，位为
+
+`1|1|1|1|0|1|1|1`。由于我们使用 [最低有效位 (LSB)
+
+编号](https://en.wikipedia.org/wiki/Bit_numbering)，这表示
+
+数组中的第四个条目为空。第二个缓冲区只是一个包含上述所有值的 `int64_t` 数组。由于第四个条目
+
+为空，因此缓冲区中该位置的值未定义。
+
+以下是访问具体数组内容的方法：
+```c++
+    // Cast the Array to its actual type to access its data
+    auto int64_array = std::static_pointer_cast<alkaid::Int64Array>(array);
+
+    // Get the pointer to the null bitmap
+    const uint8_t* null_bitmap = int64_array->null_bitmap_data();
+
+    // Get the pointer to the actual data
+    const int64_t* data = int64_array->raw_values();
+
+    // Alternatively, given an array index, query its null bit and value directly
+    int64_t index = 2;
+    if (!int64_array->IsNull(index)) {
+       int64_t value = int64_array->Value(index);
+    }
+```
+::: note
+`alkaid::Int64Array` (respectively
+`alkaid::Int64Builder`) is just a
+`typedef`, provided for convenience, of `alkaid::NumericArray<Int64Type>`
+(respectively `alkaid::NumericBuilder<Int64Type>`).
+:::
+
+### 表现
+
+虽然可以像上例一样逐值构建数组，但为了获得最高性能，建议在具体的
+`alkaid::ArrayBuilder` 子类中使用批量
+附加方法（通常名为 `AppendValues`）。
+
+如果您事先知道元素的数量，还建议通过调用
+`~alkaid::ArrayBuilder::Resize` 或
+`~alkaid::ArrayBuilder::Reserve` 方法预先调整工作区域的大小。
+
+以下是重写上述示例以利用
+这些 API 的方法：
+```c++
+    alkaid::Int64Builder builder;
+    // Make place for 8 values in total
+    builder.Reserve(8);
+    // Bulk append the given values (with a null in 4th place as indicated by the
+    // validity vector)
+    std::vector<bool> validity = {true, true, true, false, true, true, true, true};
+    std::vector<int64_t> values = {1, 2, 3, 0, 5, 6, 7, 8};
+    builder.AppendValues(values, validity);
+
+    auto maybe_array = builder.Finish();
+```
+如果您仍然必须逐个附加值，则某些具体构建器
+子类具有标记为“不安全”的方法，这些方法假定工作区域
+已正确预设大小，并提供更高的性能作为交换：
+```c++
+    alkaid::Int64Builder builder;
+    // Make place for 8 values in total
+    builder.Reserve(8);
+    builder.UnsafeAppend(1);
+    builder.UnsafeAppend(2);
+    builder.UnsafeAppend(3);
+    builder.UnsafeAppendNull();
+    builder.UnsafeAppend(5);
+    builder.UnsafeAppend(6);
+    builder.UnsafeAppend(7);
+    builder.UnsafeAppend(8);
+
+    auto maybe_array = builder.Finish();
+```
+## 尺寸限制和建议
+
+某些数组类型在结构上限制为 32 位大小。列表数组（最多可容纳 2\^31 个元素）、字符串数组和二
+进制数组（最多可容纳 2GB 的二进制数据）至少就是这样。在 C++ 实现中，其他一些数组类型最多可容纳 2\^63 个
+元素，但其他 Alkaid 实现对这些数组类型的大小也有 32 位限制。
+
+出于这些原因，建议将大量数据分块为更合理大小的子集。
+
+## 分块数组
+
+
+`alkaid::ChunkedArray` 就像数组一样，是值的逻辑序列；但与简单数组不同，分块数组不需要整个序列在内存中物理上连续。
+此外，分块数组的组成部分不必具有相同的大小，但它们必须都具有相同的数据类型。
+
+分块数组是通过聚合任意数量的数组来构建的。在这里，我们将构建一个具有与上述示例相同的逻辑值的分块数组，但分为两个单独的块：
+
+```c++
+    std::vector<std::shared_ptr<alkaid::Array>> chunks;
+    std::shared_ptr<alkaid::Array> array;
+
+    // Build first chunk
+    alkaid::Int64Builder builder;
+    builder.append(1);
+    builder.append(2);
+    builder.append(3);
+    if (!builder.Finish(&array).ok()) {
+       // ... do something on array building failure
+    }
+    chunks.push_back(std::move(array));
+
+    // Build second chunk
+    builder.Reset();
+    builder.append_null();
+    builder.append(5);
+    builder.append(6);
+    builder.append(7);
+    builder.append(8);
+    if (!builder.Finish(&array).ok()) {
+       // ... do something on array building failure
+    }
+    chunks.push_back(std::move(array));
+
+    auto chunked_array = std::make_shared<alkaid::ChunkedArray>(std::move(chunks));
+
+    assert(chunked_array->num_chunks() == 2);
+    // Logical length in number of values
+    assert(chunked_array->length() == 8);
+    assert(chunked_array->null_count() == 1);
+```
+
+## 切片
+
+与物理内存缓冲区一样，可以对数组和分块数组进行零拷贝切片，以获得引用数据某个逻辑子序列的数组或分块数组。这通过分别
+调用 `alkaid::Array::Slice` 和 `alkaid::ChunkedArray::Slice` 方法来实现。

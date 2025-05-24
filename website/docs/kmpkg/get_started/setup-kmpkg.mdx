@@ -1,0 +1,116 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程：安装`kmpkg`
+
+
+教程指导用户完成kmpkg安装并完成环境变量配置。
+
+## 先决条件
+
+- 一个终端
+- C++ 编译器
+- [CMake](https://cmake.org/download/)
+- [Git](https://git-scm.com/downloads)
+
+:::warning 重要
+
+对于Windows用户来说，Visual Studio的MSVC（Microsoft Visual C++编译器）是C++开发所需的编译器。
+
+:::
+
+## 1 - 设置 kmpkg {#setup-kmpkg}
+
+1. 克隆存储库
+
+    第一步是从 GitHub 克隆 kmpkg 存储库。该存储库包含用于获取 kmpkg 可执行文件的脚本以及由 kmpkg 社区维护的精选开源库注册表。为此，请运行：
+
+     ```shell
+     git clone https://gitee.com/kumo-pub/kmpkg.git
+    ```
+
+    kmpkg 策划的注册表是一组超过 2,000 个开源库。这些库已经过 kmpkg 的持续集成管道的验证，可以协同工作。虽然 kmpkg 存储库不包含这些库的源代码，
+    但它包含用于在系统中构建和安装它们的配方和元数据。
+
+    :::warning 重要
+    部分仓库已经迁移至[GITEE](https://gitee.com),对未迁移至`GITEE`的仓库，注册表功能暂时不可用
+    :::
+
+2. 运行引导脚本
+
+    现在您已经克隆了 kmpkg 存储库，进入到“kmpkg”目录并执行引导脚本：
+
+    <Tabs>
+        <TabItem value="shell" label="bash" default>
+
+        ```console
+
+            cd kmpkg && ./bootstrap-kmpkg.sh
+
+        ```
+
+        </TabItem>
+        <TabItem value="window" label="windows">
+
+        ```console
+
+            cd kmpkg; .\bootstrap-kmpkg.bat
+
+        ```
+
+        </TabItem>
+    </Tabs>
+
+    引导脚本执行先决条件检查并下载 [kmpkg-tool](https://gitee.com/kumo-pub/kmpkg-tool)仓库并编译成二进制。就是这样！ kmpkg 已设置并可供使用。
+
+## 2 - 设置项目 {#setup-project}
+
+1. 配置 `KMPKG_ROOT`, `KMPKG_CMAKE` 环境变量。
+    <Tabs>
+        <TabItem value="shell" label="bash" default>
+            ```bash
+            export KMPKG_ROOT=/path/to/kmpkg
+            export PATH=$KMPKG_ROOT:$PATH
+            export KMPKG_CMAKE=$KMPKG_ROOT/scripts/buildsystems/kmpkg.cmake
+            ```
+
+            :::warning [!注意]
+
+            > 仅使用 `export` 命令设置环境变量
+            > 影响当前 `shell` 会话。为了使这一变化永久存在
+            > 会话，将 `export` 命令添加到 `shell` 的配置文件中
+            > 脚本（例如，`~/.bashrc` 或 `~/.zshrc`）。
+
+            :::
+        </TabItem>
+        <TabItem value="windows" label="PowerShell" default>
+            ```console
+            set "KMPKG_ROOT=C:\path\to\kmpkg"
+            set "KMPKG_CMAKE=%KMPKG_ROOT%\scripts\buildsystems\kmpkg.cmake"
+            set PATH=%KMPKG_ROOT%;%PATH%
+            ```
+
+        :::warning [!注意]
+
+        > 这种方式设置环境变量只影响当前终端
+        > 会话。要使这些更改在所有会话中永久生效，请将它们设置为
+        > Windows 系统环境变量面板。
+
+        :::
+
+        </TabItem>
+    </Tabs>
+
+    设置 `KMPKG_ROOT`,`KMPKG_CMAKE` 告诉 kmpkg 您的 kmpkg 实例所在的位置。
+    将其添加到“PATH”可确保您可以直接从 shell 运行 kmpkg 命令。
+
+## 后续步骤
+
+- [教程：使用 kmpkg 打包库](get-started-packaging.mdx)
+- [kmpkg.json 参考](../reference/kmpkg-json.mdx)
+- [什么是清单模式？](../concepts/manifest-mode.mdx)

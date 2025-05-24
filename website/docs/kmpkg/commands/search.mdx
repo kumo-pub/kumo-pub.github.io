@@ -1,0 +1,42 @@
+---
+date: 01/10/2024
+---
+
+# 命令： kmpkg search
+
+kmpkg 搜索命令的命令行参考。按名称和描述搜索可用的包。
+
+## 摘要
+
+```console
+kmpkg search [options] [query]
+```
+
+## 说明
+
+按名称和说明搜索可用的包。
+
+搜索对所有可用的包名称和说明执行不区分大小写的搜索。 结果以表格格式显示。
+
+## Example
+
+```console
+$ kmpkg search zlib
+miniz                    2.2.0#1          Single C source file zlib-replacement library
+zlib                     1.2.12#1         A compression library
+zlib-ng                  2.0.6            zlib replacement with optimizations for 'next generation' systems
+```
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--x-full-desc`
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+不要截断长说明。
+
+默认情况下，长说明将被截断，以保持表格输出可浏览。

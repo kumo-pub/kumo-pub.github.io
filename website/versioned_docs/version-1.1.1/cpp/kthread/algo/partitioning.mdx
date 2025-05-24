@@ -1,0 +1,105 @@
+
+# 分区算法
+
+分区算法允许应用程序使用不同的调度方法（例如静态分区、动态分区和引导分区）来优化并行算法。
+
+## 为并行算法定义分区
+
+分区器定义在 `Taskflow` 中运行并行算法（例如 `kthread::for_each` 和 `kthread::transform`）时如何对
+迭代进行分区并将其分配给不同的工作器。以下示例展示了如何创建具有不同执行策略的并行迭代任务：
+
+```cpp
+    std::vector<int> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+
+    // create different partitioners
+    kthread::GuidedPartitioner guided_partitioner;
+    kthread::StaticPartitioner static_partitioner;
+    kthread::RandomPartitioner random_partitioner;
+    kthread::DynamicPartitioner dynamic_partitioner;
+
+    // create four parallel-iteration tasks from the four execution policies
+    taskflow.for_each(data.begin(), data.end(), [](int i){}, guided_partitioner);
+    taskflow.for_each(data.begin(), data.end(), [](int i){}, static_partitioner);
+    taskflow.for_each(data.begin(), data.end(), [](int i){}, random_partitioner);
+    taskflow.for_each(data.begin(), data.end(), [](int i){}, dynamic_partitioner);
+```
+每个分区器都有特定的算法，用于将迭代划分为一组块，并将块分配给工作器。块是工作器在执行并行迭代期间将运行的基本
+工作单元。下图说明了三个主要分区器 `kthread::StaticPartitioner`、`kthread::DynamicPartitioner` 和 `kthread::GuidedPartitioner` 的调度图：
+
+import parallel_for_partition_algorithms from '@site/static/img/kthread/parallel_for_partition_algorithms.png';
+
+<img src={parallel_for_partition_algorithms}/>
+
+根据应用程序的不同，分区算法会对性能产生很大影响。例如，如果并行迭代工作负载包含每次迭代的常规工作单元，则 `kthread::StaticPartitioner` 可
+能会提供最佳性能。另一方面，如果每次迭代的工作单元不规则且不平衡，则 `kthread::GuidedPartitioner` 或 `kthread::DynamicPartitioner`
+的性能可能会优于 `kthread::StaticPartitioner`。
+
+:::warning
+注意
+默认情况下，`Taskflow` 中的所有并行算法都使用 `kthread::DefaultPartitioner`，它基于通过 `kthread::GuidedPartitioner` 进行的引导式调度。
+:::
+
+## 定义静态分区器
+
+静态分区器将迭代拆分为 `iter_size/chunk_size` 个块，并按顺序将块分发给工作器。如果没有指定块大小（`chunk_size` 为 `0`），`Taskflow` 会将迭代拆
+分为大小大致相等的块。以下代码创建一个静态分区器，其块大小等于 `100`：
+
+```cpp
+kthread::StaticPartitioner static_partitioner(100);
+```
+
+## 定义动态分区器
+
+动态分区器将迭代拆分为 `iter_size/chunk_size` 个块，并将块分配给工作器，无任何特定顺序。如果没有指定块大小（`chunk_size` 为 0），则 `Taskflow`
+将使用 1 作为分区的最小大小。以下代码创建一个动态分区器，其块大小等于 2：
+```cpp
+kthread::DynamicPartitioner dynamic_partitioner(2);
+```
+
+## 定义引导分区器
+
+引导式分区器动态决定块大小。块的大小与未分配的迭代次数除以线程数成正比，大小将逐渐减小到指定的块大小（默认值为 1）。最后一个块可能小于指
+定的块大小。如果没有指定块大小（`chunk_size` 为 0），则 `Taskflow` 将使用 1 作为分区的最小大小。以下代码创建一个块大小等于 10 的引导式分区器：
+
+```cpp
+kthread::GuidedPartitioner guided_partitioner(10);
+```
+在大多数情况下，引导式分区器由于自适应并行性而能够实现不错的性能，尤其是对于每次迭代的工作负载不规则且不平衡的情况。因此，引导式
+分区器被用作我们的并行算法的默认分区器。
+
+## 为分区器定义闭包包装器
+
+除了分区大小之外，应用程序还可以为分区器指定闭包包装器。闭包包装器允许应用程序使用执行其他任务的自定义函数对象来包装分区任务（即闭包）。例如：
+
+```cpp
+std::atomic<int> count = 0;
+kthread::Taskflow taskflow;
+taskflow.for_each_index(0, 100, 1,
+  [](){
+    printf("%d\n", i);
+  },
+  kthread::StaticPartitioner(0, [](auto&& closure){
+    // do something before invoking the partitioned task
+    // ...
+
+    // invoke the partitioned task
+    closure();
+
+    // do something else after invoking the partitioned task
+    // ...
+  }
+);
+executor.run(taskflow).wait();
+```
+每个分区器都使用一个默认的闭包包装器（`kthread::DefaultClosureWrapper`），它不执行任何操作，只是调用给定的闭包来执行普通的分区任务。
+
+```cpp
+struct DefaultClosureWrapper {
+  template <typename C>
+  void operator()(C&& closure) const { std::forward<C>(closure)(); }
+};
+```
+
+:::info
+更多信息请参见[算法索引](../algo.mdx)
+:::

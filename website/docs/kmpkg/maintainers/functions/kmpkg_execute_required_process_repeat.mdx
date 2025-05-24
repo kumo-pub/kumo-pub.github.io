@@ -1,0 +1,22 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_execute_required_process_repeat
+
+执行进程，直到命令成功或到达 COUNT 为止。
+
+## 使用情况
+
+```cmake
+kmpkg_execute_required_process_repeat(
+    COMMAND <cmd> [<arguments>]
+    COUNT <num>
+    WORKING_DIRECTORY <directory>
+    LOGNAME <name>
+    [ALLOW_IN_DOWNLOAD_MODE]
+)
+```
+
+## Source
+
+[scripts/cmake/kmpkg\_execute\_required\_process\_repeat.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_execute_required_process_repeat.cmake)

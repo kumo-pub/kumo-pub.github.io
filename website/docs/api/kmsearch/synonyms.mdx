@@ -1,0 +1,298 @@
+---
+sidebarDepth: 1
+sitemap:
+  priority: 0.7
+---
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 同义词
+
+同义词是被视为等效的搜索词。例如：将 `sneaker` 的同义词定义为 `shoe` 时，搜索 `sneaker` 将返回包含 `shoe` 或 `sneaker` 的所有记录。
+
+kumosearch 支持两种类型的同义词：
+
+1. **单向同义词**：将 `iphone` 和 `android` 定义为 `智能手机` 的单向同义词将会使搜索 `智能手机` 时返回包含 `iphone` 或 `android` 或两者的文档。
+
+2. **多向同义词**：将 `blazer`、`coat` 和 `jacket` 定义为多向同义词将会使搜索这些单词中的任何一个（例如：`coat`）时，返回包含同义词集中至少一个词的文档（例如：返回带有 `blazer` 或 `coat` 或 `jacket` 的记录）。
+
+:::tip 优先级
+当同时使用 Synonyms 同义词 和 [Overrides 策略](./curation.mdx) 时，首先处理 Overrides，因为这些规则策略可以包含替换查询的指令。然后，同义词将适用于修改后的查询。
+:::
+
+## 创建或更新同义词
+
+### 多向同义词
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+synonym = {
+  "synonyms": ["blazer", "coat", "jacket"]
+}
+
+// Creates/updates a synonym called `coat-synonyms` in the `products` collection
+client.collections('products').synonyms().upsert('coat-synonyms', synonym)
+```
+
+      </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+synonym = {
+  "synonyms": ["blazer", "coat", "jacket"]
+}
+
+# Creates/updates a synonym called `coat-synonyms` in the `products` collection
+client.collections['products'].synonyms.upsert('coat-synonyms', synonym)
+```
+
+    </TabItem>
+      <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl "http://localhost:8868/collections/products/synonyms/coat-synonyms" -X PUT \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+  "synonyms": ["blazer", "coat", "jacket"]
+}'
+```
+
+      </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+<TabItem value="json" label="json" default>
+
+```json
+{
+  "id": "coat-synonyms",
+  "synonyms": ["blazer", "coat", "jacket"]
+}
+```
+
+</TabItem>
+</Tabs>
+
+### 单向同义词
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+synonym = {
+  "root": "smart phone",
+  "synonyms": ["iphone", "android"]
+}
+
+// Creates/updates a synonym called `smart-phone-synonyms` in the `products` collection
+client.collections('products').synonyms().upsert('smart-phone-synonyms', synonym)
+```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+synonym = {
+  "root": "smart phone",
+  "synonyms": ["iphone", "android"]
+}
+
+# Creates/updates a synonym called `smart-phone-synonyms` in the `products` collection
+client.collections('products').synonyms.upsert('smart-phone-synonyms', synonym)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl "http://localhost:8868/collections/products/synonyms/smart-phone-synonyms" -X PUT \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+    "root": "smart phone",
+    "synonyms": ["iphone", "android"]
+}'
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+```json
+{
+  "id":"smart-phone-synonyms",
+  "root":"smart phone",
+  "synonyms": ["iphone", "android"],
+  "locale": "",
+  "symbols_to_index": []
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`PUT ${KUMOSEARCH_HOST}/collections/:collection/synonyms/:id`
+
+### 参数
+| 参数               | 必选  | 描述               |
+|------------------|-----|------------|
+| synonyms         | 是 | 应被视为同义词的单词数组。                                |
+| root             | 否  | 对于单向同义词，表示同义词参数中的单词映射到的根单词。              |
+| locale           | 否  | 同义词的区域设置，留空以使用默认配置。       |
+| symbols_to_index | 否  | 默认情况下，特殊字符会从同义词中删除。使用此属性指定应按原样索引哪些特殊字符。 |
+
+## 检索同义词
+
+可以检索单个同义词。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+client.collections('products').synonyms('coat-synonyms').retrieve()
+```
+
+      </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+client.collections('products').synonyms['coat-synonyms'].retrieve
+```
+
+    </TabItem>
+      <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" "http://localhost:8868/collections/products/synonyms"
+```
+
+      </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+      <TabItem value="json" label="json" default>
+
+```json
+{
+  "id": "coat-synonyms",
+  "root":"",
+  "synonyms": ["blazer", "coat", "jacket"]
+}
+```
+
+      </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/collections/:collection/synonyms/:id`
+
+## 列出所有同义词
+
+列出与给定索引表关联的所有同义词。
+
+注意：默认情况下，返回所有同义词，但您可以使用 `offset` 和 `limit` 参数对列表进行分页。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+client.collections('products').synonyms().retrieve()
+```
+
+      </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+client.collections['products'].synonyms.retrieve()
+```
+
+    </TabItem>
+      <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+"http://localhost:8868/collections/products/synonyms"
+```
+
+      </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+      <TabItem value="json" label="json" default>
+
+```json
+{
+  "synonyms": [
+    {
+      "id": "coat-synonyms",
+      "root": "",
+      "synonyms": ["blazer", "coat", "jacket"]
+    }
+  ]
+}
+```
+
+      </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/collections/:collection/synonyms`
+
+## 删除同义词
+
+删除与索引表关联的同义词。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+client.collections('products').synonyms('coat-synonyms').delete()
+```
+
+      </TabItem>
+      <TabItem value="Python" label="Python" default>
+```py
+client.collections['products'].synonyms['coat-synonyms'].delete()
+```
+
+      </TabItem>
+      <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl "http://localhost:8868/collections/products/synonyms/coat-synonyms" -X DELETE \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+      </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+```json
+{
+  "id": "coat-synonyms"
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`DELETE ${KUMOSEARCH_HOST}/collections/:collection/synonyms/:id`
+

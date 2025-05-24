@@ -1,0 +1,165 @@
+# 快速开始
+要开始使用**doctest**，使用`kmpkg`安装`doctest`
+
+```shell
+kmpkg install doctest
+```
+
+您也可以下载[**最新版本**](https://raw.githubusercontent.com/doctest/doctest/master/doctest/doctest.h)，它
+只是一个标头并将其包含在源文件中（或将此存储库添加为 git 子模块）。
+
+本教程假设您可以直接使用标头： ```#include "doctest.h"``` - 因此它要么与您的测试源文件位于同一文件夹中，要么您已在构建中设置了它的包含路径系统正常。
+
+本教程中不讨论 [TDD](https://en.wikipedia.org/wiki/Test-driven_development)。
+
+## 一个简单的例子
+
+假设我们有一个要测试的```factorial()```函数：
+
+```c++
+int factorial(int number) {
+    return number <= 1 ? number : factorial(number - 1) * number;
+}
+```
+
+带有自注册测试的完整编译示例如下所示：
+
+```c++
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "doctest.h"
+
+int factorial(int number) { return number <= 1 ? number : factorial(number - 1) * number; }
+
+TEST_CASE("testing the factorial function") {
+    CHECK(factorial(1) == 1);
+    CHECK(factorial(2) == 2);
+    CHECK(factorial(3) == 6);
+    CHECK(factorial(10) == 3628800);
+}
+```
+这将编译为响应命令行参数的完整可执行文件。如果您只是不带参数运行它，它将执行所有测试用例（在本例中 - 仅一个），
+报告任何失败，报告通过和失败的测试数量的摘要，并在成功时返回 0，如果失败则返回 1（如果有任何失败，则很有用）你只想要一个是/否的答案：`它有效吗`）。
+
+如果你按照写的那样运行它就会通过。一切都很好。正确的？好吧，这里仍然有一个错误。我们错过了检查是否 ```factorial(0) == 1``` 所以让我们也添加该检查：
+
+```c++
+TEST_CASE("testing the factorial function") {
+    CHECK(factorial(0) == 1);
+    CHECK(factorial(1) == 1);
+    CHECK(factorial(2) == 2);
+    CHECK(factorial(3) == 6);
+    CHECK(factorial(10) == 3628800);
+}
+```
+现在我们遇到了失败 - 类似于：
+
+```
+test.cpp(7) FAILED!
+  CHECK( factorial(0) == 1 )
+with expansion:
+  CHECK( 0 == 1 )
+```
+
+请注意，我们得到了为我们打印的 ``factorial(0)`` 的实际返回值 (0) - 即使我们使用带有 ``==`` 运算符的自然表达式。这让我们立即看到问题所在。
+
+让我们将阶乘函数更改为：
+
+```c++
+int factorial(int number) { return number > 1 ? factorial(number - 1) * number : 1; }
+```
+现在所有测试都通过了。
+
+当然，还有更多问题需要处理。例如，当返回值开始超出 int 的范围时，我们就会遇到问题。
+对于阶乘，这可以很快发生。您可能想要为此类情况添加测试并决定如何处理它们。我们不会在这里这样做。
+
+## 我们在这里做了什么？
+
+尽管这是一个简单的测试，但它足以演示有关如何使用 **doctest** 的一些事情。
+
+1. 我们所做的只是 ```#define``` 一个标识符和 ```#include``` 一个标头，我们就得到了一切 - 甚至是一个能够响应命令的 ```main()``` 实现行参数。
+出于（希望）显而易见的原因，您只能在一个源文件中使用“#define”。一旦您拥有多个包含单元测试的文件，您只需``#include "doctest.h"`` 即可。通常，
+最好有一个专门的实现文件，其中只有 ```#define DOCTEST_CONFIG_IMPLMENT_WITH_MAIN``` 和 ```#include "doctest.h"```。您还可以自己提供您
+自己的 main 和驱动 **doctest** 实现 - 请参阅[**提供您自己的 ```main()```**](main.mdx)。
+
+2. 我们用`TEST_CASE`宏引入测试用例。它需要一个参数 - 一个自由格式的测试名称（有关更多信息，请参阅 [**测试用例和子用例**](testcases.mdx)）。测试名称不必
+是唯一的。您可以通过指定通配符测试名称或标记表达式来运行测试集。有关运行测试的更多信息，请参阅 [**命令行**](commandline.mdx) 文档。
+
+3. 名称只是一个字符串。我们不必声明函数或方法 - 或在任何地方显式注册测试用例。在幕后，系统会为您定义一个具有生成名称的函数，
+并使用静态注册表类自动注册。通过抽象函数名称，我们可以命名我们的测试，而不受标识符名称的限制。
+
+4. 我们使用“CHECK()”宏编写单独的测试断言。我们使用 C++ 语法自然地表达条件，而不是为每种类型的条件
+（等于、小于、大于等）使用单独的宏。在幕后，一个简单的表达式模板捕获表达式的左侧和右侧，以便我们可以在测试报告中显示值。
+本教程中未涵盖其他 [**断言宏**](assertions.mdx) - 但由于这种技术，它们的数量大大减少了。
+
+## 测试用例和子用例 {#test-cases-and-subcases}
+
+大多数测试框架都有基于类的固定机制 - 测试用例映射到类上的方法，并且可以在`setup()`和`teardown()`方法（或C++ 等支持确定性破坏的语言中的构造函数/析构函数）。
+
+虽然 **doctest** 完全支持这种工作方式，但该方法存在一些问题。特别是代码必须分割的方式及其生硬的粒
+度可能会导致问题。您在一组方法中只能有一个设置/拆卸对，但有时您希望每个方法中的设置略有不同，或者您甚至可能需要多个级
+别的设置（我们将在本教程后面澄清这个概念）。正是[**像这样的问题**](http://jamesnewkirk.typepad.com/posts/2007/09/why-you-should-.html)导致
+James Newkirk 领导构建 NUnit 的团队开始再次从头开始构建 [**xUnit**](http://jamesnewkirk.typepad.com/posts/2007/09/announcing-xuni.html))。
+
+**doctest** 采用不同的方法（对于 NUnit 和 xUnit），该方法更自然地适合 C++ 和 C 系列语言。
+
+通过一个例子可以最好地解释这一点：
+
+```c++
+TEST_CASE("vectors can be sized and resized") {
+    std::vector<int> v(5);
+
+    REQUIRE(v.size() == 5);
+    REQUIRE(v.capacity() >= 5);
+
+    SUBCASE("adding to the vector increases its size") {
+        v.push_back(1);
+
+        CHECK(v.size() == 6);
+        CHECK(v.capacity() >= 6);
+    }
+    SUBCASE("reserving increases just the capacity") {
+        v.reserve(6);
+
+        CHECK(v.size() == 5);
+        CHECK(v.capacity() >= 6);
+    }
+}
+```
+
+对于每个“SUBCASE()”，“TEST_CASE()”从头开始执行 - 因此，当我们输入每个子案例时，我们知道大小为 5，
+容量至少为 5。我们强制执行这些要求在顶层带有“REQUIRE()”宏，这样我们就可以对它们充满信心。如果 CHECK() 失败 -
+测试被标记为失败但执行继续 - 但如果 REQUIRE() 失败 - 测试执行停止。
+
+这是有效的，因为`SUBCASE()`宏包含一个 `if` 语句，该语句回调到 **doctest** 以查看是
+否应该执行 subcase。每次通过`TEST_CASE()`运行时都会执行一个叶子案例。其他子情况将被跳过。下次执行下一个子情况，依此类推，直到没有遇到新的子情况。
+
+到目前为止一切顺利 - 这已经是对设置/拆卸方法的改进，因为现在我们看到我们的设置代码内联并使用堆栈。
+当我们开始嵌套子用例时，子用例的威力才真正显现出来，如下例所示：
+
+import doctest_code_line from '@site/static/img/cppbse/doctest_code_line.png';
+
+<img src={doctest_code_line}/>
+
+子用例可以嵌套到任意深度（仅受堆栈大小限制）。每个叶子情况（不包含嵌套子情况的子情况）将在与任何其他叶
+子情况不同的执行路径上执行一次（因此任何叶子情况都不会干扰另一个叶子情况）。父子案例中的致命故障将阻止嵌套子案例运行 - 但这就是想法。
+
+请记住，即使 **doctest** 是 [**线程安全**](faq.mdx#is-doctest-thread-aware) - 使用子用例只能在主测试运行器线程
+中完成，并且所有子案例中生成的线程应该在该子案例结束之前加入，并且当其他带有 doctest 断言的线程仍在运行时，不应输入新的子案例。
+
+## 扩大规模
+
+为了使教程简单，我们将所有代码放在一个文件中。这很好地开始 - 并且使得进入 **doctest** 变得更快更容易。当您开始编写更多实际测试时，这实际上并不是最好的方法。
+要求是以下代码块（[**或等效**](main.mdx)）：
+
+```c++
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "doctest.h"
+```
+_恰好_出现在一个翻译单元（源文件）中。根据测试需要使用尽可能多的附加源文件 - 但分区对于您的工作方式最有意义。每个附加文件只需要 ```#include "doctest.h"``` - 不要重复 ```#define```！
+事实上，将带有“#define”的块放入其自己的源文件中通常是一个好主意。
+
+## 后续步骤
+
+这是一个简短的介绍，旨在帮助您启动并运行 doctest，并指出 doctest 与您可能已经熟悉的其他框架之间的一些关键区别。这将使您已经走得很远，现在您可以深入研究并编写一些测试。
+
+当然，还有更多东西需要学习 - 请参阅不断增长的 [**参考**](overview.mdx#reference) 部分以了解可用的内容。

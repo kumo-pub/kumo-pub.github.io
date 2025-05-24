@@ -1,0 +1,78 @@
+---
+date: 7/16/2024
+---
+
+# 教程： 通用配置项
+
+该页面内容为`kmcmake`通用配置项。
+
+## 通用配置项 {#gen-options}
+
+通用配置项定义于 `kmcmake/kmcmake_module.cmake`文件中，用于管理cmake的常规行为。
+大多数情况下，您不应该直接修改此文件，如果需要更改默认值，可以通过命令行的`-D`方式重新定义
+这些值。
+
+### BUILD_STATIC_LIBRARY {#build-static-library}
+
+配置是否编译生成静态库，这个配置目前已经废弃，默认的方式是
+生成静态库和动态库
+
+### BUILD_SHARED_LIBRARY {#build-share-library}
+
+配置是否编译生成动态库，这个配置目前已经废弃，默认的方式是
+生成静态库和动态库
+
+### VERBOSE_KMCMAKE_BUILD {#verbose-kmcmake}
+
+在执行cmake 配置过程时，是否打印详细信息，用于debug，默认不开启
+
+### VERBOSE_CMAKE_BUILD {#verbose-make}
+
+在执行cmake 构建过程时，是否打印make详细信息，用于debug，默认不开启
+
+### KMCMAKE_USE_CXX11_ABI {#cxx-abi}
+
+是否用c++11 abi，默认开启，出于兼容性，将此增加此配置，有些古老的c++库
+不使用c++11 abi。
+
+:::warning
+谨慎修改此项配置，除非你非常明确它的行为，因为这两个配置是完全不兼容的。<br/><br/>
+例如A库使用 `-DKMCMAKE_USE_CXX11_ABI=OFF`,B库引用A库，B库使用
+`-DKMCMAKE_USE_CXX11_ABI=ON`编译，将出现编译错误。
+:::
+
+### KMCMAKE_BUILD_TEST {#build-test}
+
+是否编译单元测试，默认不加入编译，开发过程中要修改此项配置以编译测试来验证正确性。
+具体是是否将`tests`目录加入编译。
+### KMCMAKE_BUILD_BENCHMARK {#build-benchmark}
+
+是否编译压力测试，默认不加入编译，开发过程中要修改此项配置以编译测试来验证正确性。
+具体是是否将`benchmark`目录加入编译。
+
+### KMCMAKE_BUILD_EXAMPLES {#build-examples}
+
+是否编译示例程序，默认不加入编译，开发过程中要修改此项配置以编译测试来验证正确性。
+具体是是否将`examples`目录加入编译。
+
+### KMCMAKE_ENABLE_ARCH {#enable-arch}
+
+是否开始cpu指令集优化，默认开启 `avx2`。
+
+:::tip
+`avx512*`特性并不是所有的cpu都支持，并且在使用过程中也有不少问题，如果您要开启`avx512*`
+特性，请做好充分验证，并在[c++编译选项](cxx-options.mdx)中配置相应的配置。
+:::
+
+### KMCMAKE_STATUS_PRINT {#print-status}
+
+是否打印kmcmake配置过程的基础信息，默认开启
+
+### KMCMAKE_INSTALL_LIB {#install-lib}
+
+是否指定安装库文件的路径为`lib`,这项配置针对`centos`上安装路径为`lib64`问题，目前是用比较少。
+**建议不要开启**，把工作留给`cmake`去做。
+
+### WITH_DEBUG_SYMBOLS {#with-symbol}
+
+通俗的讲，在编译时是否加入`-g`编译选项。

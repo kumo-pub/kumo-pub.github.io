@@ -1,0 +1,174 @@
+# 测试用例
+
+## 测试用例 {#test-cases}
+
+虽然 **doctest** 完全支持包含测试用例方法的基于类的传统 xUnit 样式，
+但这不是首选样式。相反，**doctest** 提供了一种强大的机制，用于在测试用例中嵌套子用例。有关更详细的讨论和示例，请参阅 [**tutorial**](tutorial.mdx#test-cases-and-subcases)。
+
+测试用例和子用例在实践中非常容易使用：
+
+* **TEST_CASE(** `test name` **)**
+* **SUBCASE(** `subcase name` **)**
+
+`test name` 和 `subcase name` 是自由格式、带引号的字符串。测试名称在 **doctest** 可执行文件中不必是唯一的。它们也应该是字符串文字。
+
+可以借助`TEST_CASE_CLASS()`在 C++17 的类主体内编写测试用例 - 就像`TEST_CASE()`一样使用 - 使测试类的私有部分变得更容易。
+
+请记住，即使 **doctest** 是[**线程安全**](faq.mdx#is-doctest-thread-aware) - 使用子用例只能在主测试运行程序线程中完成。
+
+测试用例也可以参数化 - 请参阅[**文档**](parameterized-tests.mdx)
+
+可以通过使用[**命令行**](commandline.mdx) 来过滤测试用例和子用例
+
+## BDD 风格的测试用例 {#bdd-style-test-cases}
+
+除了**doctest**采用经典的测试用例风格之外，**doctest**还支持一种替代语法，允许将测试编写为“可执行规范”（的早期目标之一[行为驱动开发](http://dannorth.net/introducing-bdd/))。这组宏
+映射到`TEST_CASE`和`SUBCASE`，并带有一些内部支持，使它们更易于使用。
+
+
+* **SCENARIO(** `scenario name` **)**
+
+该宏映射到`TEST_CASE`并以相同的方式工作，只是测试用例名称将以`Scenario：`为前缀
+
+* **SCENARIO_TEMPLATE(** `scenario name`, _type_, `list of types` **)**
+
+该宏映射到``TEST_CASE_TEMPLATE```并以相同的方式工作，除了测试用例名称将以`Scenario:`为前缀
+
+* **SCENARIO_TEMPLATE_DEFINE(** `scenario name`, _type_, _id_ **)**
+
+该宏映射到``TEST_CASE_TEMPLATE_DEFINE```并以相同的方式工作，除了测试用例名称将以`Scenario:`为前缀
+
+
+* **GIVEN(** _something_ **)**
+* **WHEN(** _something_ **)**
+* **THEN(** _something_ **)**
+
+这些宏映射到```SUBCASE```，除了子案例名称是分别以`given:`、`when:`或`then:`为前缀的 _something_。
+
+* **AND_WHEN(** _something_ **)**
+* **AND_THEN(** _something_ **)**
+
+与``WHEN```` 和````THEN```` 类似，只是前缀以`and`开头。它们用于将 WHEN 和 THEN 链接在一起。
+
+当使用这些宏中的任何一个时，控制台报告器会识别它们并格式化测试用例标题，以使Givens、Whens和Thens对齐以帮助可读性。
+
+除了控制台报告器中的附加前缀和格式之外，这些宏的行为与`TEST_CASE`和`SUBCASE`完全相同。因此，没有任何东西可以强制执行这些宏的正确排序 - 这取决于程序员！
+
+请注意，使用 [`--test-case=<filters>`](commandline.mdx) 命令行选项（或 `- -subcase=<filters>`) 您还必须传递前缀 `Scenario:`。
+
+## Test fixtures {#test-fixtures}
+
+尽管 **doctest** 允许您将测试作为测试用例中的子用例分组在一起，但有时使用更传统的测试装置将它们分组仍然很方便。 **doctest** 也完全支持这一点。您将测试夹具定义为一个简单的结构：
+
+```c++
+class UniqueTestsFixture {
+private:
+    static int uniqueID;
+protected:
+    DBConnection conn;
+public:
+    UniqueTestsFixture() : conn(DBConnection::createConnection("myDB")) {}
+protected:
+    int getID() {
+        return ++uniqueID;
+    }
+};
+
+int UniqueTestsFixture::uniqueID = 0;
+
+TEST_CASE_FIXTURE(UniqueTestsFixture, "Create Employee/No Name") {
+    REQUIRE_THROWS(conn.executeSQL("INSERT INTO employee (id, name) VALUES (?, ?)", getID(), ""));
+}
+TEST_CASE_FIXTURE(UniqueTestsFixture, "Create Employee/Normal") {
+    REQUIRE(conn.executeSQL("INSERT INTO employee (id, name) VALUES (?, ?)", getID(), "Joe Bloggs"));
+}
+```
+
+这里的两个测试用例将创建唯一命名的 UniqueTestsFixture 派生类，因此可以访问`getID()`受保护方法和`conn`成员变量。这确保了两个测试用例都能
+够使用相同的方法（DRY 原则）创建 DBConnection，并且创建的任何 ID 都是唯一的，因此测试执行的顺序并不重要。
+
+## Test suites {#test-suites}
+
+测试用例可以分为测试套件。这是通过`TEST_SUITE()`或`TEST_SUITE_BEGIN()`/`TEST_SUITE_END()`完成的。
+
+例如：
+
+```c++
+TEST_CASE("") {} // not part of any test suite
+
+TEST_SUITE("math") {
+    TEST_CASE("") {} // part of the math test suite
+    TEST_CASE("") {} // part of the math test suite
+}
+
+TEST_SUITE_BEGIN("utils");
+
+TEST_CASE("") {} // part of the utils test suite
+
+TEST_SUITE_END();
+
+TEST_CASE("") {} // not part of any test suite
+```
+
+然后可以在过滤器的帮助下执行特定测试套件中的测试用例 - 查看[**命令行**](commandline.mdx)
+
+## 装饰器 {#decorators}
+
+测试用例可以用附加属性`装饰`，如下所示：
+
+```c++
+TEST_CASE("name"
+          * doctest::description("shouldn't take more than 500ms")
+          * doctest::timeout(0.5)) {
+    // asserts
+}
+```
+
+可以同时使用多个装饰器。这些是当前支持的装饰器：
+
+- **`skip(bool = true)`** - 标记要跳过执行的测试用例 - 除非使用 ```--no-skip``` 选项
+- **`no_breaks(bool = true)`** - 测试用例中的断言不会闯入调试器 - 与 `may_fail`/`should_fail`/`expected_failures` 结合使用很有用
+- **`no_output(bool = true)`** - 测试用例中的断言没有输出 - 与 `may_fail`/`should_fail`/`expected_failures` 结合使用很有用
+- **`may_fail(bool = true)`** - 如果任何给定的断言失败（但仍然报告它），则测试不会失败 - 这对于标记正在进行的工作很有用，或者您不想立即修复但仍想在测试中跟踪的已知问题
+- **`should_fail(bool = true)`** - 就像 **```may_fail()````** 但如果通过则测试失败 - 如果您想收到通知，这可能很有用意外或第三方修复
+- **````expected_failures(int)````** - 定义测试用例中预期失败的断言数量 - 当失败断言的数量与声明的预期失败数量不同时报告为失败
+- **`timeout(double)`** - 如果其执行超过此限制（以秒为单位），则测试用例失败 - 但不会终止它 - 这需要子进程支持
+- **`test_suite("name")`** - 可用于测试用例来覆盖（或只是设置）它们所在的测试套件
+- **`description("text")`** - 测试用例的描述
+
+装饰器采用的值是在注册测试用例时（在全局初始化期间）计算的 - 在进入 ```main()``` 之前，而不是在运行它们之前。
+
+装饰器也可以应用于测试套件块，并且该块中的所有测试用例都继承它们：
+
+```c++
+TEST_SUITE("some TS" * doctest::description("all tests will have this")) {
+    TEST_CASE("has a description from the surrounding test suite") {
+        // asserts
+    }
+}
+TEST_SUITE("some TS") {
+    TEST_CASE("no description even though in the same test suite as the one above") {
+        // asserts
+    }
+}
+```
+
+测试用例可以覆盖它们从周围测试套件继承的装饰器：
+
+```c++
+TEST_SUITE("not longer than 500ms" * doctest::timeout(0.5)) {
+    TEST_CASE("500ms limit") {
+        // asserts
+    }
+    TEST_CASE("200ms limit" * doctest::timeout(0.2)) {
+        // asserts
+    }
+}
+```
+
+------
+
+- 查看 [**subcases 和 BDD 示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/subcases.cpp)
+- 查看 [**断言宏示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/assertion_macros.cpp) 以了解如何使用测试套件
+- 在预处理并包含标头后，从每个处理的 cpp 的顶部到底部注册测试，但 cpp 文件之间没有顺序。
+

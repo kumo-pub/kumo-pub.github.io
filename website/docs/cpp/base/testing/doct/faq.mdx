@@ -1,0 +1,181 @@
+## FAQ
+
+- [**doctest 与 Catch 有何不同？**](#how-is-doctest-different-from-catch)
+- [**doctest 与 Google Test 有何不同？**](#how-is-doctest-different-from-google-test)
+- [**如何使用框架获得最佳编译时性能？**](#how-to-get-the-best-compile-time-performance-with-the-framework)
+- [**doctest 线程感知吗？**](#is-doctest-thread-aware)
+- [**是否支持模拟？**](#is-mocking-supported)
+- [**为什么我在静态库中的测试没有注册？**](#why-are-my-tests-in-a-static-library-not-getting-registered)
+- [**为什么比较 C 字符串 (`char*`) 实际上是比较指针？**](#why-is-comparing-c-strings-char-actually-comparing-pointers)
+- [**如何在仅标头库中编写测试？**](#how-to-write-tests-in-header-only-libraries)
+- [**框架是否使用异常？**](#does-the-framework-use-exceptions)
+- [**为什么在包含 doctest 标头时会在 STL 标头中出现编译器错误？**](#why-do-i-get-compiler-errors-in-stl-headers-when-including-the-doctest-header)
+- [**可以在同一个二进制文件（可执行文件/dll）中使用不同版本的框架吗？**](#can-different-versions-of-the-framework-be-used-within-the-same-binary-executabledll)
+- [**为什么 doctest 使用宏？**](#why-is-doctest-using-macros)
+- [**如何使用多个文件？**](#how-to-use-with-multiple-files)
+
+### **doctest 与 Catch 有何不同？** {#how-is-doctest-different-from-catch}
+
+**doctest** 的优点：
+
+- **doctest** 是 [**线程安全**](faq.mdx#is-doctest-thread-aware)
+- 断言可以使用[**测试上下文之外**](assertions.mdx#using-asserts-out-of-a-testing-context)
+- 使用 **doctest** 头文件能相比 [**Catch**](https://github.com/catchorg/Catch2)[**降低20倍的编译时间**](benchmarks.mdx#cost-of-including-the-header)
+- **doctest** 中的断言在编译时间上比 [**Catch**](https://github.com/catchorg/Catch2)
+- **doctest** 执行测试比 [**Catch**](https://github.com/catchorg/Catch2) [**快很多倍**](benchmarks.mdx#runtime-benchmarks)
+- 通过定义 [**`DOCTEST_CONFIG_DISABLE`**](configuration.mdx#doctest_config_disable) 标识符，可以从二进制文件中删除所有与测试相关的内容
+- 包含时不拖动任何标题（除了在实现库的翻译单元中）
+- 即使在 MSVC/GCC/Clang 的 [**最具攻击性**](https://gitee.com/kumo-hub/doctest/tree/master/scripts/cmake/common.cmake#L84) 警告级别上也有 0 个警告
+- 每次提交均在 [**更多编译器**](features.mdx#extremely-portable) 上使用 180 多个版本进行测试 - 并通过 valgrind/sanitizers/analyzers
+- 测试用例可以写在标题中 - 框架仍然只会注册一次测试 - 没有重复
+- 二进制文件（exe/dll）可以使用另一个二进制文件的测试运行程序 - 因此测试最终在单个注册表中 - [**示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/executable_dll_and_plugin/)
+
+除了到目前为止提到的所有内容之外，doctest 还有一些 [**features**](features.mdx#other-features) （例
+如 [**test suites**](testcases.mdx#test-suites) 和 [**decorators* *](testcases.mdx#decorators)) 而 [**Catch**](https://github.com/catchorg/Catch2) 则不然。
+
+缺少的部分：
+
+- 匹配器和生成器
+- 微基准测试支持 - nonius 用于 [**Catch**](https://github.com/catchorg/Catch2)
+- 其他小东西，例如标签 - 可以轻松模拟/迁移 - 见下文
+
+但这些事情（以及更多！）已在[**路线图**](https://github.com/doctest/doctest/issues/600)中计划！
+
+**doctest** 可以被认为是 [**Catch**](https://github.com/catchorg/Catch2) 的一个非常精致、轻便、稳定和干净的子集（或重新实现），但这可能会改变未来随着更多功能的添加。
+
+另请查看[此表](https://github.com/martinmoene/catch-lest-other-comparison)，该表比较 **doctest** / [**Catch**](https://github.com/catchorg/Catch2) / [**以免**](https://github.com/martinmoene/lest)。
+
+将大部分 Catch 测试迁移到 doctest 的一种快速简单的方法是更改​​“TEST_CASE”（如果使用标签）和“SECTION”宏，如下所示：
+
+```c++
+#include "path/to/doctest.h"
+
+#define SECTION(name) DOCTEST_SUBCASE(name)
+
+// only if tags are used: will concatenate them to the test name string literal
+#undef TEST_CASE
+#define TEST_CASE(name, tags) DOCTEST_TEST_CASE(tags " " name)
+
+// catch exposes this by default outside of its namespace
+using doctest::Approx;
+```
+
+### **doctest 与 Google Test 有何不同？** {#how-is-doctest-different-from-google-test}
+
+以下是一些差异：
+
+- 主要的一点是只有 C++ 框架中的 doctest 可以在生产代码旁边使用（编译速度、从二进制文件中删除测试的能力、执行测试/代码/两者的能力、在多个共享对象中进行测试的能力并且仍然是所有这些的单一注册表）
+- doctest 是一个标头 - Google Test 必须构建为单独的静态库并链接。
+- doctest 具有 [**Subcases**](https://github.com/doctest/doctest/blob/master/doc/markdown/tutorial.mdx#test-cases-and-subcases) 的概念，
+这是一个非常重要的概念。与固定装置和类继承相比，在测试之间共享设置和拆卸代码的更干净的方式 - Google Test 非常冗长！
+- doctest 编译得更快并且可能运行得更快（尽管只有当您有数百万个断言时运行时才成为问题）
+- doctest 断言即使在 Windows 上也是线程安全的（Google Test 使用 pthreads，因此线程安全断言仅在 UNIX 上可用）
+- doctest 总体上有一个更简单的 API
+
+但 doctest 也有一些不足的地方：
+
+- 值参数化测试
+- 死亡测试（检查调用某个函数是否不是简单地抛出异常，而是是否导致进程崩溃）
+- doctest 与模拟库有一些集成，但 Google Test 与 Google Mock 完美配合（尽管 doctest 理论上也应该与它配合）
+
+doctest 落后的领域计划在未来进行改进。还有许多其他较小的差异 - 涵盖所有这些差异是不切实际的。
+
+### **如何使用框架获得最佳编译时性能？** {#how-to-get-the-best-compile-time-performance-with-the-framework}
+
+[**`DOCTEST_CONFIG_SUPER_FAST_ASSERTS`**](configuration.mdx#doctest_config_super_fast_asserts) 配置选项产生 [**最快可能**](benchmarks.mdx#cost-of-an-assertion-macro) 编译时间（高达 31-91%）。此外，可以通过使用 [**binary**](assertions.mdx#binary-and-unary-asserts) 断言来跳过表达式分解模板机制。
+
+使用此配置选项只有两个小缺点：
+
+- 每个断言中没有`try/catch`块，因此如果抛出一个表达式，整个测试用例就会结束（但仍然被捕获并报告）。
+- 当断言失败并且存在调试器时 - 框架将在 doctest 函数内部中断，因此用户必须在调用堆栈中向上一级才能查看实际断言在源代码中的位置。
+
+如果您主要处理不太可能抛出异常的表达式并且所有测试通常都会通过（您不需要经常导航到带有附加调试器的失败断言），那么这两件事可以被认为是可以忽略不计的并且完全值得。
+
+### **doctest 线程感知吗？** {#is-doctest-thread-aware}
+
+大多数宏/功能可以在多线程上下文中安全使用：[**assertion**](assertions.mdx) 和 [**logging**](logging.mdx) 宏可以从单个生成的多个线程安全地使用
+测试用例。然而，这并不意味着多个测试用例可以并行运行——测试用例仍然串行运行。 [**Subcases**](tutorial.mdx#test-cases-and-subcases) 也应该仅在测试运行线程中使用，并且
+子案例中生成的所有线程都应该在该子案例结束之前加入，并且没有新的线程应在其中包含 doctest 断言的其他线程仍在运行时输入子案例 - 不遵循这些说明将导
+致崩溃（[**此处**](https://gitee.com/kumo-hub/doctest/tree/examples/master/examples/all_features/concurrency.cpp))。另请注意，当另一个线程的
+断言失败时，一个线程中记录的上下文将不会被使用/打印 - 记录的上下文是线程本地的。
+
+还有一个选项可以从可执行文件运行 [**range**](commandline.mdx) 测试 - 因此可以通过使用不同范围多次调用进程来并行运行测试 - 请参阅 [**示例 python脚本**](https://gitee.com/kumo-hub/doctest/tree/master/examples/range_based_execution.py)。
+
+### **是否支持模拟？** {#is-mocking-supported}
+
+**doctest** 不支持模拟，但应该很容易与第三方库集成，例如：
+
+- [trompeloeil](https://github.com/rollbear/trompeloeil) - 显示集成[此处](https://github.com/rollbear/trompeloeil/blob/master/docs/CookBook.mdx#adapt_doctest)
+- [FakeIt](https://github.com/eranpeer/FakeIt) - 集成可能与 [catch](https://github.com/eranpeer/FakeIt/tree/master/config/catch) 类似，但是这还没有被调查过
+
+通过使用 [**logging**](logging.mdx#messages-which-can-optionally-fail-test-cases) 宏，例如 `ADD_FAIL_AT(file, line, message)`
+
+### **为什么我在静态库中的测试没有注册？** {#why-are-my-tests-in-a-static-library-not-getting-registered}
+
+这是[**具有自注册代码的库中的常见问题**](https://groups.google.com/forum/#!msg/catch-forum/FV0Qo62DvgY/jxEO6c9_q3kJ)，它会影响所有现代编译器所有平台。
+
+问题是，当静态库链接到二进制文件（可执行文件或 dll）时，只有静态库中定义二进制文件所需符号的对象文件才会被拉入（这是链接器/依赖项优化）。
+
+在 CMake 中解决此问题的一种方法是使用对象库而不是静态库 - 如下所示：
+
+```cmake
+add_library(with_tests OBJECT src_1.cpp src_2.cpp src_3.cpp ...)
+
+add_library(dll SHARED $<TARGET_OBJECTS:with_tests> dll_src_1.cpp ...)
+add_executable(exe $<TARGET_OBJECTS:with_tests> exe_src_1.cpp ...)
+```
+
+感谢 [pthom](https://github.com/pthom) 的建议。
+
+作为替代方案，我创建了一个 CMake 函数，强制将静态库中的每个对象文件链接到二进制目标 - 它称
+'为 [**`doctest_force_link_static_lib_in_target()`**](https://gitee.com/kumo-hub/doctest/tree/master/examples/exe_with_static_libs/doctest_force_link_static_lib_in_target.cmake)。'
+它是非侵入性的 - 没有源文件被更改 - 一切都是通过每个源文件的编译器标志完成的。使用它的示例项目可
+以在[**此处**](https://gitee.com/kumo-hub/doctest/tree/master/examples/exe_with_static_libs)找到 - CMakeLists.txt 文件的注释部分。
+
+它在两种情况下不起作用：
+
+- 目标或库使用预编译头 - 请参阅 [**this**](https://github.com/doctest/doctest/issues/21#issuecomment-247001423) 问题了解详细信息
+- 目标或库是导入的目标（预构建）并且不是在当前 cmake 树中构建的
+
+您还可以查看此存储库以获取不同的解决方案：[**pthom/doctest_registerlibrary**](https://github.com/pthom/doctest_registerlibrary)。
+
+MSVC 的编译器特定解决方案是使用 [`/OPT:NOREF`](https://msdn.microsoft.com/en-us/library/bxwfs976.aspx) 链接器标志（感谢
+[lectem](https://github.com/Lectem)用于[报告](https://github.com/doctest/doctest/issues/106)它！）。
+另一种选择是查看 [`/wholearchive`](https://docs.microsoft.com/en-us/cpp/build/reference/wholearchive-include-all-library-object-files?vie=vs-2019)对于 MSVC。
+
+### **为什么比较 C 字符串 (`char*`) 实际上是比较指针？** {#why-is-comparing-c-strings-char-actually-comparing-pointers}
+
+**doctest** 默认将 `char*` 视为普通指针。使用 [**`DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING`**](configuration.mdx#doctest_config_treat_char_star_as_string) 会改变这一点。
+
+### **如何在仅标头库中编写测试？** {#how-to-write-tests-in-header-only-libraries}
+
+有 2 个选项：
+
+- 只需在标头中包含 doctest 标头并编写测试 - doctest 标头应随标头一起提供，并且用户必须在其源文件之一中实现 doctest 运行器。
+- 不要包含 doctest 标头，并使用 `#ifdef DOCTEST_LIBRARY_INCLUDED` 和 `#endif` 保护您的测试用例 - 这样，如果用户之前包含 doctest 标头，您的测试将被编译和注册你的标题（他们还必须在某处实现测试运行程序）。
+
+另请注意，最好在测试用例名称中添加一个标签（如下所示：`TEST_CASE("[the_lib]testing foo")`），以便用户可以轻松地使用`--test-case-exclude=*the_lib*`过滤掉它们如果他们愿意的话。
+
+### **框架是否使用异常？** {#does-the-framework-use-exceptions}
+
+是的 - 但可以禁用它们 - 请参阅 [**`DOCTEST_CONFIG_NO_EXCEPTIONS`**](configuration.mdx#doctest_config_no_exceptions) 配置标识符。
+
+### **为什么在包含 doctest 标头时会在 STL 标头中出现编译器错误？** {#why-do-i-get-compiler-errors-in-stl-headers-when-including-the-doctest-header}
+
+尝试使用 [**`DOCTEST_CONFIG_USE_STD_HEADERS`**](configuration.mdx#doctest_config_use_std_headers) 配置标识符。
+
+### **可以在同一个二进制文件（可执行文件/dll）中使用不同版本的框架吗？** {#can-different-versions-of-the-framework-be-used-within-the-same-binary-executabledll}
+
+目前没有。像 [**stb**](https://github.com/nothings/stb) 这样的单头库将其作为一个选项（所有内容都声明为静态 - 使其具有内部链接），
+但这对于 * 来说不太合逻辑*doctest** - 要点是在项目的任何源文件中编写测试，并仅在一个源文件中实现测试运行器。
+
+### **为什么 doctest 使用宏？** {#why-is-doctest-using-macros}
+
+难道他们不是邪恶的而且不是“现代的”吗？ - 查看 Phil Nash 对这个问
+题的回答 [**这里**](http://accu.org/index.php/journals/2064) （[**Catch**](https://accu.org/index.php/journals/2064) 的创建者/github.com/catchorg/Catch2))。
+
+### **如何使用多个文件？** {#how-to-use-with-multiple-files}
+
+您需要做的就是定义 [**`DOCTEST_CONFIG_IMPLMENT_WITH_MAIN`**](configuration.mdx#doctest_config_implement_with_main)
+或 [**`DOCTEST_CONFIG_IMPLMENT`**](configuration.mdx#doctest_config_implement)仅在包
+含 doctest 标头之前的源文件之一 - 在所有其他源文件中，您只需包含标头并使用框架。两者之间的区别在于，其中一个提供了“main()”入口点 - 有关更多信息，请参阅[`main() 入口点`](main.mdx)。

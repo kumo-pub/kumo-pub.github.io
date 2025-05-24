@@ -1,0 +1,53 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_configure_meson
+
+为项目的调试和发布版本配置 Meson。
+
+## 使用情况
+
+```cmake
+kmpkg_configure_meson(
+    SOURCE_PATH <${SOURCE_PATH}>
+    [NO_PKG_CONFIG]
+    [OPTIONS <-DUSE_THIS_IN_ALL_BUILDS=1>...]
+    [OPTIONS_RELEASE <-DOPTIMIZE=1>...]
+    [OPTIONS_DEBUG <-DDEBUGGABLE=1>...]
+)
+```
+
+## 参数
+
+### SOURCE_PATH
+
+指定包含 `meson.build` 的目录。 按照约定，这通常在端口文件中设置为变量 `SOURCE_PATH`。
+
+### OPTIONS
+
+配置期间传递给 Meson 的其他选项。
+
+### OPTIONS_RELEASE
+
+发布配置期间传递给 Meson 的其他选项。 这些是对 `OPTIONS` 的补充。
+
+### OPTIONS_DEBUG
+
+调试配置期间传递给 Meson 的其他选项。 这些是对 `OPTIONS` 的补充。
+
+### NO_PKG_CONFIG
+
+禁用 `pkg-config` 安装。
+
+## 说明
+
+此命令向 Meson 提供了许多常用参数。 要查看完整列表，请检查源。
+
+## 示例
+
+- [fribidi](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/fribidi/portfile.cmake)
+- [libepoxy](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/libepoxy/portfile.cmake)
+
+## 示例
+
+[scripts/cmake/kmpkg\_configure\_meson.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_configure_meson.cmake)

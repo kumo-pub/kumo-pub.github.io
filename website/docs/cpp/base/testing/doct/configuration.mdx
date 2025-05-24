@@ -1,0 +1,323 @@
+
+# 测试配置
+
+## 配置 {#configuration}
+
+**doctest** 旨在尽可能“正常工作”。它还允许配置如何使用一组标识符构建它。
+
+标识符应该在包含框架头之前定义。
+
+定义“全局”意味着二进制文件的每个源文件（可执行文件/共享对象）。
+
+- [**```DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN```**](#doctest_config_implement_with_main)
+- [**```DOCTEST_CONFIG_IMPLEMENT```**](#doctest_config_implement)
+- [**```DOCTEST_CONFIG_DISABLE```**](#doctest_config_disable)
+- [**```DOCTEST_CONFIG_IMPLEMENTATION_IN_DLL```**](#doctest_config_implementation_in_dll)
+- [**```DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES```**](#doctest_config_no_short_macro_names)
+- [**```DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING```**](#doctest_config_treat_char_star_as_string)
+- [**```DOCTEST_CONFIG_REQUIRE_STRINGIFICATION_FOR_ALL_USED_TYPES```**](#doctest_config_require_stringification_for_all_used_types)
+- [**```DOCTEST_CONFIG_DOUBLE_STRINGIFY```**](#doctest_config_double_stringify)
+- [**```DOCTEST_CONFIG_SUPER_FAST_ASSERTS```**](#doctest_config_super_fast_asserts)
+- [**```DOCTEST_CONFIG_USE_STD_HEADERS```**](#doctest_config_use_std_headers)
+- [**```DOCTEST_CONFIG_VOID_CAST_EXPRESSIONS```**](#doctest_config_void_cast_expressions)
+- [**```DOCTEST_CONFIG_NO_COMPARISON_WARNING_SUPPRESSION```**](#doctest_config_no_comparison_warning_suppression)
+- [**```DOCTEST_CONFIG_OPTIONS_PREFIX```**](#doctest_config_options_prefix)
+- [**```DOCTEST_CONFIG_NO_UNPREFIXED_OPTIONS```**](#doctest_config_no_unprefixed_options)
+- [**```DOCTEST_CONFIG_NO_TRY_CATCH_IN_ASSERTS```**](#doctest_config_no_try_catch_in_asserts)
+- [**```DOCTEST_CONFIG_NO_EXCEPTIONS```**](#doctest_config_no_exceptions)
+- [**```DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS```**](#doctest_config_no_exceptions_but_with_all_asserts)
+- [**```DOCTEST_CONFIG_ASSERTION_PARAMETERS_BY_VALUE```**](#doctest_config_assertion_parameters_by_value)
+- [**```DOCTEST_CONFIG_COLORS_NONE```**](#doctest_config_colors_none)
+- [**```DOCTEST_CONFIG_COLORS_WINDOWS```**](#doctest_config_colors_windows)
+- [**```DOCTEST_CONFIG_COLORS_ANSI```**](#doctest_config_colors_ansi)
+- [**```DOCTEST_CONFIG_WINDOWS_SEH```**](#doctest_config_windows_seh)
+- [**```DOCTEST_CONFIG_NO_WINDOWS_SEH```**](#doctest_config_no_windows_seh)
+- [**```DOCTEST_CONFIG_POSIX_SIGNALS```**](#doctest_config_posix_signals)
+- [**```DOCTEST_CONFIG_NO_POSIX_SIGNALS```**](#doctest_config_no_posix_signals)
+- [**```DOCTEST_CONFIG_INCLUDE_TYPE_TRAITS```**](#doctest_config_include_type_traits)
+- [**```DOCTEST_CONFIG_NO_MULTITHREADING```**](#doctest_config_no_multithreading)
+- [**```DOCTEST_CONFIG_NO_MULTI_LANE_ATOMICS```**](#doctest_config_no_multi_lane_atomics)
+- [**```DOCTEST_CONFIG_ASSERTS_RETURN_VALUES```**](#doctest_config_asserts_return_values)
+- [**```DOCTEST_CONFIG_EVALUATE_ASSERTS_EVEN_WHEN_DISABLED```**](#doctest_config_evaluate_asserts_even_when_disabled)
+- [**```DOCTEST_CONFIG_NO_CONTRADICTING_INLINE```**](#doctest_config_no_contradicting_inline)
+- [**```DOCTEST_CONFIG_NO_INCLUDE_IOSTREAM```**](#doctest_config_no_include_iostream)
+- [**```DOCTEST_CONFIG_HANDLE_EXCEPTION```**](#doctest_config_handle_exception)
+
+对于大多数人来说，唯一需要的配置是告诉 **doctest** 哪个源文件应该托管所有实现代码：
+
+### **```DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN```**
+
+```c++
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "doctest.h"
+```
+
+这应该只在实现库的源文件中定义。它还创建一个`main()`入口点。
+
+### **```DOCTEST_CONFIG_IMPLEMENT```**
+
+如果客户想要[**提供 ```main()``` 函数**](main.mdx)（要么设置具有代码中某些值的选项，要么将框架集成到他们现有的项目代码库中) 应使用此标识符。
+
+这应该只在实现库的源文件中定义。
+
+### **```DOCTEST_CONFIG_DISABLE```**
+
+最重要的配置选项之一 - 所有与测试相关的内容都从二进制文件中删除 - 包括大部分框架实现和在任何地方编写的每个测试用例！这是 **doctest** 最独特的功能之一。
+
+这应该在全球范围内定义。
+
+### **```DOCTEST_CONFIG_IMPLEMENTATION_IN_DLL```**
+
+这将影响 doctest 的公共接口 - 编写测试所需的所有前向声明都将转换为导入符号。这样，测试运行器不必在二进制文件（可执行文件/共享对象）中实现，并且可以从构建和导出它的另一个二进制文件中重用。
+
+要从二进制文件导出测试运行程序，只需使用 [**```DOCTEST_CONFIG_IMPLMENTATION_IN_DLL```**](#doctest_config_implementation_in_dll) 和 [**```DOCTEST_CONFIG_IMPLMENT```**](#doctest_config_implement)
+（或 [* *````DOCTEST_CONFIG_IMPLMENT_WITH_MAIN````**](#doctest_config_implement_with_main) 但其他二进制文件必须链接到测试运行程序实现到的任何源文件中的可执行文件。请注意，
+不应在导出 doctest 测试运行程序的二进制文件的其他源文件中定义此标识符 - 否则会出现链接器冲突 - 具有与同一二进制文件中导入和导出相同的符号。
+查看 [**example**](https://gitee.com/kumo-hub/doctest/tree/master/examples/executable_dll_and_plugin/) - 它展示了如何在 dll 中实现测试运行器（并且有甚至在动态加载的插件中进行测试）。
+
+这应该在导入符号的二进制文件中全局定义。
+
+这应该仅在为导出测试运行程序的二进制文件实现库的源文件中定义。
+
+### **```DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES```**
+
+这将从 **doctest** 中删除所有没有 **```DOCTEST_```** 前缀的宏 - 例如 **```CHECK```**、**```TEST_CASE` ``** 和 **````SUBCASE````**。然后只有完整的宏名称可用 - **````DOCTEST_CHECK````**、**````DOCTEST_TEST_CASE````** 和 **````DOCTEST_SUBCASE````**。用户可以自由地制作自己的这些宏的简短版本 - [**example**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/alternative_macros.cpp)。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING```**
+
+默认情况下，`char*`被视为指针。使用此选项，比较`char*`指针将切换为使用`strcmp()`进行比较，并且在字符串化时将打印字符串而不是指针值。
+
+这应该在全球范围内定义。
+
+### **```DOCTEST_CONFIG_REQUIRE_STRINGIFICATION_FOR_ALL_USED_TYPES```**
+
+默认情况下，如果字符串化不适用于某种类型，则它会简单地打印为`{?}`。通过启用此标志，只要在不提供字符串化的断言中使用类型，编译就会停止。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_DOUBLE_STRINGIFY```**
+
+如果您定义自己的`toString`函数返回某些内容，该函数与`doctest::String`不同，但仍可字符串化，则可以启用此标志以再次对内部字符串化调用的结果进行字符串化。
+
+您还可以自己定义`DOCTEST_STRINGIFY`来覆盖 doctest 的字符串化行为。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_SUPER_FAST_ASSERTS```**
+
+此配置选项使断言宏（处理异常的宏除外）编译[**更快**](benchmarks.mdx#cost-of-an-assertion-macro)！ （31-91% - 取决于类型 - [**正常**](assertions.mdx#expression-decompositing-asserts) 或 [**binary**](assertions.mdx#binary-and-unary-asserts) ）
+
+每个断言都变成一个函数调用 - 唯一的缺点是：如果断言失败并且附加了调试器 - 当它中断时，它将位于内部函数中 - 用户将必须在调用堆栈中向上一级查看实际的断言。
+
+它还意味着 [**```DOCTEST_CONFIG_NO_TRY_CATCH_IN_ASSERTS```**](#doctest_config_no_try_catch_in_asserts) （因此在断言评估期间抛出的异常不会被断言本身捕获，而是被测试框架捕获 - 这意味着测试用例会立即被捕获中止）。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_USE_STD_HEADERS```**
+
+默认情况下，该库提供 ```std::ostream``` 的前向声明，以支持 ```operator<<``` [**stringification**](stringification.mdx) 机制
+（也```std::tuple<>``` 和 ```std::nullptr_t```）。标准禁止这样做（尽管它在所有经过测试的编译器上都可以工作）。但是，如果用户希望 100% 符合标准，则可以使用此配置选项强制包含相关标准标头。
+
+此外，某些具有利基用途的编译器的 STL 实现也可能以不同的方式定义它们 - 那么 STL 标头中将会出现编译错误，并且使用此选项应该可以解决问题。
+
+这应该在全球范围内定义。
+
+### **```DOCTEST_CONFIG_VOID_CAST_EXPRESSIONS```**
+
+这会影响[处理异常的断言](assertions.mdx#exceptions) - 表达式被强制转换为 void 以避免出现问题，例如使用具有 ```[[nodiscard]]``` 属性的函数但其结果不是没检查过。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_NO_COMPARISON_WARNING_SUPPRESSION```**
+
+默认情况下，该库会抑制有关比较有符号和无符号类型等的警告。
+
+- g++/clang ```-Wsign-conversion```
+- g++/clang ```-Wsign-compare```
+- msvc``C4389`` `operator`：有符号/无符号不匹配
+- msvc``C4018`` `表达式`：有符号/无符号不匹配
+
+您可以查看 [**this**](https://github.com/doctest/doctest/issues/16#issuecomment-246803303) 问题，以更好地理解为什么我默认禁止这些警告。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_OPTIONS_PREFIX```**
+
+将其定义为字符串将更改 [**命令行**](commandline.mdx) 选项的前缀，以使用给定的前缀而不是默认的 ``dt-``` 前缀。这对于将测试框架集成到客户端代码库中非常有用，其中像“selftest-``”这样的命令选项前缀对用户来说可能更清楚。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_NO_UNPREFIXED_OPTIONS```**
+
+这将禁用 [**命令行**](commandline.mdx) 选项的短版本，并且只有带有 ```--dt-``` 前缀的版本才会被 **doctest** 解析 - 这是当测试框架集成在客户端代码库中时，可以轻松地与客户端命令行选项处理进行互操作 - 因此不会发生冲突，并且用户可以从选项解析中排除以 ``--dt-``` 开头的所有内容。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_NO_TRY_CATCH_IN_ASSERTS```**
+
+这将从以下位置删除所有“try”/“catch”部分：
+
+- [普通断言](assertions.mdx#expression-decompositing-asserts)
+- [二进制和一元断言](assertions.mdx#binary-and-unary-asserts)
+
+因此，在评估断言中的表达式时抛出的异常将终止当前的测试用例。
+
+这可以用于节省一些编译时间，但要获得更大的影响，请查看 [**```DOCTEST_CONFIG_SUPER_FAST_ASSERTS```**](configuration.mdx#doctest_config_super_fast_asserts)。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_NO_EXCEPTIONS```**
+
+这将从框架中删除所有使用异常的内容 - 如果编译器禁用异常（例如 GCC/Clang 的“-fno-exceptions``”），它也可以自动检测。
+
+发生了什么变化：
+
+- 断言在“try”/“catch”部分中计算表达式的值不再在这样的上下文中计算
+- ```REQUIRE``` 宏消失了（未定义）
+- [异常宏](assertions.mdx#exceptions) 消失了（未定义）
+- ```abort-after``` 选项不会完全起作用，因为异常用于终止测试用例
+
+`REQUIRE`系列断言在失败时使用异常来终止当前测试用例。使用异常而不是简单的``return;``，因为断言不仅可以在测试用例中使用，还可以在测试用例调用的函数中使用。
+
+还有一些 [**logging 宏**](logging.mdx#messages-which-can-optionally-fail-test-cases) 其作用类
+似于 ```REQUIRE``` 断言（终止测试用例） -就像`FAIL()`——开始以不同的方式工作——就像`FAIL_CHECK()`。
+
+[**```DOCTEST_CONFIG_NO_EXCEPTIONS```**](#doctest_config_no_exceptions) implies [**```DOCTEST_CONFIG_NO_TRY_CATCH_IN_ASSERTS```**](#doctest_config_no_try_catch_in_asserts)
+
+如果您希望使用处理异常的断言，并且有时只在没有异常的情况下构建 - 检查 [**```DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS```**](#doctest_config_no_exceptions_but_with_all_asserts) 配置选项。
+
+这应该在全球范围内定义。
+
+### **```DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS```**
+
+在没有异常的情况下构建时（请参阅 [**```DOCTEST_CONFIG_NO_EXCEPTIONS````**](#doctest_config_no_exceptions)） ```REQUIRE``` 断言和有关处理异常的断言都消失了。
+
+但是，如果您希望您的代码使用这些断言，并且仅有时无异常地构建 - 那么使用此配置将会有所帮助。使用它的效果如下：
+
+- ```REQUIRE``` 断言并没有消失 - 但它们的作用类似于 ```CHECK``` 断言 - 当其中一个断言失败时，整个测试用例将被标记为失败，但不会立即退出
+- [处理异常的断言](assertions.mdx#exceptions) 变成了无操作（而不是完全未定义）
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_ASSERTION_PARAMETERS_BY_VALUE```**
+
+此选项强制所有 doctest 断言按值复制给定的表达式，而不是将它们绑定到 const 引用。这可能有助于避免静态常量的 ODR 使用（这可能会导致 g++/clang 的链接器错误）：
+
+```c++
+template<typename T> struct type_traits { static const bool value = false; };
+
+// unless DOCTEST_CONFIG_ASSERTION_PARAMETERS_BY_VALUE is defined the following assertion
+// will lead to a linker error if type_traits<int>::value isn't defined in a translation unit
+CHECK(type_traits<int>::value == false);
+```
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_COLORS_NONE```**
+
+这将删除框架控制台输出中对颜色的支持。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_COLORS_WINDOWS```**
+
+这将强制控制台输出中对颜色的支持使用 Windows API 和标头。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_COLORS_ANSI```**
+
+这将强制控制台输出中对颜色的支持使用 ANSI 转义码。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_WINDOWS_SEH```**
+
+这将在 Windows 上启用 SEH 处理。目前仅在使用 MSVC 编译时启用，因为某些版本的 MinGW 没有必要的 Win32 API 支持。用户可以选择显式启用此功能 - 众所周知，它可以与 MinGW-w64 项目一起使用。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_NO_WINDOWS_SEH```**
+
+当库自动选择它时，这可用于禁用 [**````DOCTEST_CONFIG_WINDOWS_SEH````**](#doctest_config_windows_seh)。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_POSIX_SIGNALS```**
+
+这将允许在 UNIX 下使用信号来处理崩溃。默认开启。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_NO_POSIX_SIGNALS```**
+
+当库自动选择它时，这可用于禁用 **````DOCTEST_CONFIG_POSIX_SIGNALS````**。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_INCLUDE_TYPE_TRAITS```**
+
+这可用于包含 ```<type_traits>``` C++11 标头。这反过来将使 ```Approx``` 帮助器能够与 ```double``` 的强类型定义一起使用 - 检查[this](https://github.com/doctest/doctest/issues /62) 或 [this](https://github.com/doctest/doctest/issues/85) 问题了解更多详细信息。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_NO_MULTITHREADING```**
+
+这可用于禁用所有多线程支持。
+
+加速单线程应用程序。
+
+包括 [**````DOCTEST_CONFIG_NO_MULTI_LANE_ATOMICS```**](#doctest_config_no_multi_lane_atomics)。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+
+### **```DOCTEST_CONFIG_NO_MULTI_LANE_ATOMICS```**
+
+这可用于禁用多通道原子。多通道原子可以加速断言语句的高度并行使用，但对于单线程应用程序来说开销很小。
+
+这应该只在实现库的源文件中定义（仅在那里相关）。
+### **```DOCTEST_CONFIG_ASSERTS_RETURN_VALUES```**
+
+使所有断言宏返回一个布尔值，报告断言是否成功。例如，这可以用于进行`nullptr`检查，以便在失败时不会终止测试用例。
+
+例子：
+```c++
+if (CHECK(somePtr != nullptr))
+    CHECK(somePtr->someMethod() == 42);
+```
+
+这会对性能产生轻微的负面影响，并禁用断言内的某些功能（例如“co_return”）。
+
+当定义了 [**````DOCTEST_CONFIG_DISABLE````**](#doctest_config_disable) 时，所有宏默认返回 ```false```。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+### **```DOCTEST_CONFIG_EVALUATE_ASSERTS_EVEN_WHEN_DISABLED```**
+
+当定义了 [**```DOCTEST_CONFIG_ASSERTS_RETURN_VALUES```**](#doctest_config_asserts_return_values) 和 [**```DOCTEST_CONFIG_DISABLE```**](#doctest_config_disable) 时，此宏将
+导致断言中的条件正确评估（而不是返回`false`），尽管 doctest 的所有开销和功能都被删除了。当在 if 语句中的生产代码中使用断言以便继续评估条件时，这非常有用。
+
+由于所有`THROWS_WITH`断言都依赖于 doctest 功能，当定义 [**```DOCTEST_CONFIG_DISABLE```**](#doctest_config_disable) 时不可用（字符串化），它们仍然会无条件返回``false``。
+
+这可以全局定义，也可以仅在特定源文件中定义。
+
+
+### **```DOCTEST_CONFIG_NO_CONTRADICTING_INLINE```**
+
+doctest 中的某些函数标有`inline`和编译器特定的非内联属性。这样做是因为它们需要是弱符号（内联），以便可以在多个编译单元中定义它们，但它们实际上不应该作为编译器优化进行内联，因为这会降低编译速度。
+
+然而，众所周知，这会导致一些编译器出现一些难以抑制警告的问题。该标志禁用 no-inline 属性的使用，以便在您的构建需要时抑制警告。
+
+### **```DOCTEST_CONFIG_NO_INCLUDE_IOSTREAM```**
+
+此选项禁用任何包含 `<iostream>`、`std::cout` 和 `std::cerr` 的内容。这意味着必须提供“cout”上下文字段。  如果
+定义了`DOCTEST_CONFIG_NO_EXCEPTIONS`，则未处理的异常不会打印到`std::cerr`。
+可以定义 [```DOCTEST_CONFIG_HANDLE_EXCEPTION```](#doctest_config_handle_exception) 来处理这种情况。
+
+### **```DOCTEST_CONFIG_HANDLE_EXCEPTION```**
+
+可以定义此宏函数来处理异常，而不仅仅是打印异常
+到`std::cerr`。
+

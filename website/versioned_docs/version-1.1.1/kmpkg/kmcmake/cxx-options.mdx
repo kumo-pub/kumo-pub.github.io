@@ -1,0 +1,65 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程： 编译选项配置
+
+该页面内容为`kmcmake`编译器配置。
+
+## 编译选项 {#compiler-options}
+
+编译选项的配置在`cmake`中的加载顺序在[依赖项配置](deps.mdx)之后。这使得编译器配置能够收集到足够的信息来判断
+是否增加或者减少某些编译选项。
+
+编译选项的配置文件为`cmake/${project-name}_cxx_config.cmake`。依赖项请在此配置。
+
+### 默认配置
+
+- CMAKE_CXX_STANDARD 17 默认的c++标准为c++17
+- KMCMAKE_ARCH_OPTION c++ cpu指令集选项，默认检测`avx2`的支持，如果支持，默认增加`avx2`选项
+- KMCMAKE_CXX_OPTIONS km系统c++选项。
+
+## 增加或者配置项
+
+将配置项append到KMCMAKE_CXX_OPTIONS变量中
+
+```cmake
+list(APPEND KMCMAKE_CXX_OPTIONS "-fopenmp")
+```
+使用:
+<Tabs>
+    <TabItem value="options-cmake" label="正常使用">
+        ```cmake
+        kmcmake_cc_library(
+            NAMESPACE ${PROJECT_NAME}
+            NAME foo
+            SOURCES
+            foo.cc
+            CXXOPTS
+            ${KMCMAKE_CXX_OPTIONS}
+            PLINKS
+            ${KMCMAKE_DEPS_LINK}
+            PUBLIC
+        )
+        ```
+    </TabItem>
+    <TabItem value="temp-options-cmake" label="临时追加">
+        ```cmake
+        kmcmake_cc_library(
+        NAMESPACE ${PROJECT_NAME}
+        NAME foo
+        SOURCES
+        foo.cc
+        CXXOPTS
+        ${KMCMAKE_CXX_OPTIONS} "-Wno-write-strings"
+        PLINKS
+        ${KMCMAKE_DEPS_LINK}
+        PUBLIC
+        )
+        ```
+    </TabItem>
+</Tabs>

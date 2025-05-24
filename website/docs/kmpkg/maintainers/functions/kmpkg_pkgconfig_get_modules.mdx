@@ -1,0 +1,58 @@
+---
+date: 01/10/2024
+---
+# 函数： x_kmpkg_pkgconfig_get_modules
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+从 pkgconfig 模块检索所需的模块信息
+
+## 使用情况
+
+```cmake
+x_kmpkg_pkgconfig_get_modules(
+    PREFIX <prefix>
+    MODULES <pkgconfig_modules>...
+    [CFLAGS]
+    [LIBS]
+    [LIBRARIES]
+    [LIBRARIES_DIRS]
+    [INCLUDE_DIRS]
+)
+```
+
+## 参数
+
+### PREFIX
+
+供所有输出变量使用的前缀。
+
+### MODULES
+
+要检索其相关信息的 pkgconfig 模块列表。
+
+### LIBS
+
+返回 `"${PKGCONFIG}" --libs` 作为 `<prefix>_LIBS_RELEASE` 和 `<prefix>_LIBS_DEBUG`。
+
+### LIBRARIES
+
+在 `<prefix>_LIBRARIES_RELEASE` 和 `<prefix>_LIBRARIES_DEBUG` 中返回 `"${PKGCONFIG}" --libs-only-l`。
+
+### LIBRARIES_DIRS
+
+在 `<prefix>_LIBRARIES_DIRS_RELEASE` 和 `<prefix>_LIBRARIES_DIRS_DEBUG` 中返回 `"${PKGCONFIG}" --libs-only-L`。
+
+### INCLUDE_DIRS
+
+在 `<prefix>_INCLUDE_DIRS_RELEASE` 和 `<prefix>_INCLUDE_DIRS_DEBUG` 中返回 `"${PKGCONFIG}" --cflags-only-I`。
+
+## 示例
+
+- [qt5-base](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/qt5-base/portfile.cmake)
+
+## Source
+
+[ports/kmpkg-pkgconfig-get-modules/x\_kmpkg\_pkgconfig\_get\_modules.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-pkgconfig-get-modules/x_kmpkg_pkgconfig_get_modules.cmake)

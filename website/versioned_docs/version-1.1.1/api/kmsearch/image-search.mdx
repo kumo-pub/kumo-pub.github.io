@@ -1,0 +1,108 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+
+# 图像搜索
+
+kumosearch 支持以下功能：
+
+1. 根据图像中物品的描述和内容进行图像语义搜索
+2. 图像相似度搜索
+
+这利用了 kumosearch 对 [CLIP ML 模型](https://openai.com/research/clip) 的内置支持。
+
+## 创建一个索引表
+
+我们将创建一个新索引表并使用 `ts/clip-vit-b-p32` CLIP 模型。
+
+这是要使用的 [索引表 schema](./collections.mdx#create-a-collection)：
+
+```json{8-12,16-22}
+{
+  "name": "images",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "image",
+      "type": "image",
+      "store": false
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": [
+          "image"
+        ],
+        "model_config": {
+          "model_name": "ts/clip-vit-b-p32"
+        }
+      }
+    }
+  ]
+}
+```
+
+请注意名为 `image` 的字段使用了新数据类型 `type: image`，它是 BMP、JPG 或 PNG 格式的图像的 Base64 编码字符串。
+
+字段定义中的 `store: false` 属性告诉 kumosearch 仅使用该字段来生成嵌入，然后从文档中丢弃图像而不将其存储在磁盘上。
+
+## 索引带有图像的文档
+
+以下示例展示了[导入](./documents.mdx#index-multiple-documents) 到 kumosearch 中的 JSON 文档格式：
+
+```json
+{
+  "name": "an image with a dog",
+  "image": "<base64 encoded string of the image>"
+}
+```
+
+## 使用语义搜索来搜索图像
+
+现在让我们搜索所有包含动物的图像：
+
+```bash
+curl "http://localhost:8868/multi_search" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+          "searches": [
+            {
+              "collection": "images",
+              "q": "animals",
+              "query_by": "embedding"
+            }
+          ]
+        }'
+```
+
+在后台，kumosearch 使用 `q` 参数的值生成嵌入向量，对这些向量进行最近邻搜索并返回最接近的结果。
+
+## 搜索相似图像
+
+要搜索与特定图像相似的图像，可以使用如下搜索查询：
+
+```bash
+curl "http://localhost:8868/multi_search" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{
+          "searches": [
+            {
+              "collection": "images",
+              "q": "*",
+              "vector_query": "embedding:([], id:123)"
+            }
+          ]
+        }'
+```
+
+这将返回与文档 `id：123` 中的图像相似的所有图像，由 CLIP 模型确定这些相似性。

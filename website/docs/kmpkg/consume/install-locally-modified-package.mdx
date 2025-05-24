@@ -1,0 +1,213 @@
+---
+date: 01/10/2024
+---
+
+# 教程：安装本地修改的依赖项
+
+
+本教程向您展示如何修改 kmpkg 端口并使用覆盖安装它
+
+本教程将指导您使用自定义覆盖修改 kmpkg 端口。我们建议您阅读有关[打包库](../get_started/get-started-packaging.mdx) 在继续之前。
+
+在本教程中，您将学习：
+
+* [创建覆盖端口](#create-an-overlay-port)
+* [获取端口的源代码](#get-the-ports-source-code)
+* [创建临时 Git 注册表](#create-a-temporary-git-registry)
+* [修改必要的文件](#modify-the-necessary-files)
+* [生成补丁文件](#generate-a-patch-file)
+* [修改 `portfile.cmake` 以应用补丁](#modify-portfilecmake-to-apply-the-patch)
+* [安装您的覆盖端口](#install-your-overlay-port)
+
+## Prerequisites
+
+* 一个终端
+* kmpkg
+* [Git](<https://git-scm.com/downloads>)
+* C++编译器
+* 完成[打包教程](../get_started/get-started-packaging.mdx)
+
+## 1 - 创建覆盖端口 {#create-an-overlay-port}
+
+第一步是创建一个 [overlay port](../concepts/overlay-ports.mdx)您要修改的包。
+
+### 创建一个目录来保存您的覆盖端口
+
+可以在您选择的任何文件系统位置创建覆盖端口目录。在本教程的任何步骤中，将“$OVERLAY_LOCATION”替换为您选择的位置。
+
+```bash
+mkdir "$OVERLAY_LOCATION"
+```
+
+### 将端口的内容复制到覆盖端口目录中
+
+在本教程中，您将修改 `kmpkg-sample-library` 端口[打包教程](../get_started/get-started-packaging.mdx)添加动态库支持。
+
+```bash
+cp -R <path/to/kmpkg-sample-library> "$OVERLAY_LOCATION"
+```
+
+## 2 -获取端口的源代码 {#get-the-ports-source-code}
+
+要获取要修改的端口的源代码，请运行以下命令：
+
+`kmpkg install "--overlay-ports=$OVERLAY_LOCATION" kmpkg-sample-library --editable`
+
+输出应包含类似于以下内容的行：
+
+```Console
+-- Using source at path/to/kmpkg/buildtrees/kmpkg-sample-library/src/1.0.0-b54c55c215
+```
+
+这是端口源代码的位置。
+
+## 3 - 创建临时 Git 注册表 {#create-a-temporary-git-registry}
+
+在源代码位置初始化临时 Git 存储库。这是按顺序使用 Git 生成可以在“portfile.cmake”中应用的补丁文件脚本。
+将 `$SOURCE_PATH` 替换为上一步中获取的位置。
+
+```console
+cd "$SOURCE_PATH"
+git init
+git add .
+git commit -m "Initial commit"
+```
+
+## 4 - 修改必要的文件 {#modify-the-necessary-files}
+
+修改如下源码文件，添加动态库支持
+`kmpkg-sample-library`.
+
+`my_sample_lib.h`
+
+```cpp
+#pragma once
+
+#include <string>
+
+#if MYLIB_EXPORTS
+__declspec(dllexport)
+#endif
+std::string greet(const std::string& name);
+```
+
+`CMakeLists.txt`
+
+从“add_library()”调用中删除“STATIC”。
+
+```cmake
+add_library(my_sample_lib my_sample_lib.cpp)
+```
+
+构建为共享库时添加编译定义。
+
+```cmake
+if (BUILD_SHARED_LIBS)
+    target_compile_definitions(my_sample_lib PRIVATE MYLIB_EXPORTS)
+endif()
+```
+
+## 5 -生成补丁文件 {#generate-a-patch-file}
+
+在源码目录下执行以下命令生成补丁文件。
+
+```Console
+git diff > "$OVERLAY_LOCATION/kmpkg-sample-library/add-dynamic-lib-support.patch"
+```
+
+这会在您的覆盖端口中创建一个名为“add-dynamic-lib-support.patch”的文件，内容类似于：
+
+```diff
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2b42f71..b347b53 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -6,11 +6,15 @@ project(my_sample_lib)
+ find_package(fmt CONFIG REQUIRED)
+ 
+ # Add your library
+-add_library(my_sample_lib STATIC my_sample_lib.cpp)
++add_library(my_sample_lib my_sample_lib.cpp)
+ 
+ # Link your library to fmt
+ target_link_libraries(my_sample_lib PRIVATE fmt::fmt)
+ 
++if (BUILD_SHARED_LIBS)
++    target_compile_definitions(my_sample_lib PRIVATE MYLIB_EXPORTS)
++endif()
++
+ # Add include directories
+ target_include_directories(my_sample_lib PUBLIC 
+     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>   # for headers when building
+diff --git a/my_sample_lib.h b/my_sample_lib.h
+index d6d70b8..0b62141 100644
+--- a/my_sample_lib.h
++++ b/my_sample_lib.h
+@@ -2,4 +2,7 @@
+ 
+ #include <string>
+ 
++#if MYLIB_EXPORTS
++__declspec(dllexport)
++#endif
+ std::string greet(const std::string& name);
+```
+
+## 6 - 修改 `portfile.cmake` 以应用补丁 {#modify-portfilecmake-to-apply-the-patch}
+
+更改“portfile.cmake”以删除“ONLY_STATIC_LIBRARY”限制并
+将您的补丁应用到源代码。
+
+`portfile.cmake`
+
+```cmake
+kmpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO Microsoft/kmpkg-docs
+    REF "${VERSION}"
+    SHA512 3f206cc2fe61d9c97c82b30852e1e4e6df299d93f6159edd1e56c644fa03ccc4670f7681e356d0e3db898a74e099a1ec531821df5430a7b14d61c743c5aa8c30
+    HEAD_REF cmake-sample-lib
+    PATCHES
+      "add-dynamic-lib-support.patch"
+)
+
+kmpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+)
+
+kmpkg_cmake_install()
+kmpkg_copy_pdbs()
+kmpkg_cmake_config_fixup(PACKAGE_NAME "my_sample_lib")
+
+file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
+file(
+    INSTALL "${SOURCE_PATH}/LICENSE" 
+    DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" 
+    RENAME copyright
+)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/usage" "${CURRENT_PACKAGES_DIR}/share/${PORT}/usage" COPYONLY)
+
+```
+
+## 7 - 安装您的覆盖端口 {#install-your-overlay-port}
+
+运行以下命令：
+
+`kmpkg install "--overlay-ports=$OVERLAY_LOCATION" kmpkg-sample-library`
+
+确保删除“--editable”标志，以便补丁文件适用于源代码的干净副本。您应该看到一行关于应用补丁的信息文件到输出中的源代码：
+
+```Console
+-- Cleaning sources at D:/Work/kmpkg/buildtrees/kmpkg-sample-library/src/1.0.0-8f646312ed.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source D:/Work/kmpkg/downloads/Microsoft-kmpkg-docs-1.0.0.tar.gz
+-- Applying patch add-dynamic-lib-support.patch
+```
+
+## 后续步骤
+
+就是这样！您已使用补丁安装了本地修改的依赖项
+文件。
+
+以下是接下来要尝试的一些任务：
+
+* [创建自定义 Git 注册表](../produce/publish-to-a-git-registry.mdx)

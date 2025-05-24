@@ -1,0 +1,98 @@
+# 字符串连接
+
+## `turbo::str_cat()` and `turbo::str_append()` 用于字符串连接
+
+大多数有关 C++ 字符串使用的文档都提到，与其他语言不同，C++ 中的字符串是可变的；
+但是，修改字符串的成本可能很高，因为字符串通常包含大量数据，并且许多模式涉及创建临时副本，
+这可能会带来大量开销。始终寻找减少此类临时文件创建的方法。
+
+例如，下面的代码效率很低：
+
+```cpp
+// Inefficient code
+std::string s1 = "A string";
+s1 = s1 + " another string";
+```
+
+上面的赋值运算符创建一个临时字符串，将 `s1` 复制到其中临时字符串，连接该临时字符串，然后将其分配回来
+到`s1`。相反，使用优化的`+=`运算符进行此类连接：
+
+```cpp
+// Efficient code
+s1 += " another string";
+```
+
+好的编译器也许能够优化前面低效的代码。然而， 涉及多个串联的操作通常无法避免临时工：
+
+```cpp
+// Inefficient code
+std::string s1 = "A string";
+std::string another = " and another string";
+s1 += " and some other string" + another;
+```
+
+因此，Turbo 提供了 `turbo::str_cat()` 和 `turbo::str_append()`用于有效连接和附加字符串的函数。 `turbo::str_cat()`
+和 `turbo::str_append()` 通常比 `+=` 等运算符更有效，因为它们不需要创建临时 `std::string` 对象，并且
+它们的内存是在字符串构造期间预先分配的。
+
+```cpp
+// Inefficient code
+std::string s1 = "A string";
+std::string another = " and another string";
+s1 += " and some other string" + another;
+```
+
+```cpp
+// Efficient code
+std::string s1 = "A string";
+std::string another = " and another string";
+turbo::str_append(&s1, " and some other string", another);
+```
+
+因此，您应该养成选择 `turbo::str_cat()` 或 `turbo::str_append()` 优于使用连接运算符。
+
+### `turbo::str_cat()`
+
+`turbo::str_cat()` 将任意数量的字符串或数字合并到一个字符串中，并被设计为从原始 C 字符串、`turbo::string_view`
+元素的混合中构造字符串的最快方法， `std::string` 值以及布尔值和数值。 `str_cat()` 通常对于涉及多个二元运算符的字符串连
+接（例如 `a + b + c` 或 `a += b + c`）更有效，因为它们避免了在字符串构造期间创建临时字符串对象。
+
+```cpp
+// turbo::str_cat() can merge an arbitrary number of strings
+std::string s1;
+s1 = turbo::str_cat("A string ", " another string", "yet another string");
+
+// str_cat() also can mix types, including std::string, string_view, literals,
+// and more.
+std::string s1;
+std::string s2 = "Foo";
+turbo::string_view sv1 = MyFunction();
+s1 = turbo::str_cat(s2, sv1, "a literal");
+```
+
+`str_cat()` 为以下类型提供自动格式化：
+
+*   `std::string`
+*   `turbo::string_view`
+*   String literals
+*   Numeric values (floats, ints)
+*   Boolean values (convert to "0" or "1")
+*   Hex values through use of the `turbo::Hex()` conversion function
+
+浮点值使用与以下相同的格式转换为字符串STL的`std::basic_ostream::operator<<`，即6位精度，使用“e”
+当幅度小于 `0.001` 或大于或等于 `1e+6` 时，格式。
+
+您可以使用以下命令转换为十六进制输出而不是十进制输出
+`turbo::Hex` 类型。为此，请将`Hex(my_int)`作为参数传递给`str_cat()`或
+`str_append()`。您可以使用指定最小十六进制字段宽度
+`turbo::PadSpec` 枚举，因此等价于 `StringPrintf("%04x", my_int)` 是
+`turbo::str_cat(turbo::Hex(my_int,turbo::kZeroPad4))`。
+
+### `turbo::str_append()`
+
+为了清楚起见和提高性能，附加到字符串时不要使用 `turbo::str_cat()`。请改用`turbo::str_append()`。特别是，避免使用以下任何（反）模式：
+```cpp
+str.append(turbo::str_cat(...))
+str += turbo::str_cat(...)
+str = turbo::str_cat(str, ...)
+```

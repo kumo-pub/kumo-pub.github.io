@@ -1,0 +1,133 @@
+
+# 模块算法
+
+`Taskflow` 提供模板方法，让用户创建可重复使用的构建块（称为模块）。用户可以将模块连接在一起以构建更复杂的并行算法。
+
+## 头文件
+
+```cpp
+#include <kthread/algorithm/module.h>
+```
+
+## 什么是模块任务
+
+与可组合任务类似，但在更通用的设置中，模板函数 `kthread::make_module_task` 允许您在可由执行器执行的任务流图上
+创建任务。这提供了一种灵活的方法来封装和重复使用 `Taskflow` 应用程序中的复杂任务逻辑。以下示例演示了如何使用异步任
+务并行创建和启动多个任务流：
+
+```cpp
+kthread::Executor executor;
+
+kthread::Taskflow A;
+kthread::Taskflow B;
+kthread::Taskflow C;
+kthread::Taskflow D;
+
+A.emplace([](){ printf("Taskflow A\n"); });
+B.emplace([](){ printf("Taskflow B\n"); });
+C.emplace([](){ printf("Taskflow C\n"); });
+D.emplace([](){ printf("Taskflow D\n"); });
+
+// launch the four taskflows using asynchronous tasking
+executor.async(kthread::make_module_task(A));
+executor.async(kthread::make_module_task(B));
+executor.async(kthread::make_module_task(C));
+executor.async(kthread::make_module_task(D));
+executor.wait_for_all();
+```
+import ModuleTask1 from '@site/static/img/kthread/module_task_1.png';
+
+<img src={ModuleTask1}  width={400} height={200} />
+
+由于这四个任务流是异步启动的，它们之间没有任何依赖关系，因此我们可以观察到输出消息的任意顺序：
+```console
+# one possible output
+Taskflow B
+Taskflow C
+Taskflow A
+Taskflow D
+
+# another possible output
+Taskflow D
+Taskflow A
+Taskflow B
+Taskflow C
+```
+
+如果需要强制这四个任务流之间的依赖关系，则可以使用依赖异步任务。下面的示例按顺序逐一启动四个任务流：
+```cpp
+kthread::Executor executor;
+
+kthread::Taskflow A;
+kthread::Taskflow B;
+kthread::Taskflow C;
+kthread::Taskflow D;
+
+A.emplace([](){ printf("Taskflow A\n"); });
+B.emplace([](){ printf("Taskflow B\n"); });
+C.emplace([](){ printf("Taskflow C\n"); });
+D.emplace([](){ printf("Taskflow D\n"); });
+
+auto TA = executor.silent_dependent_async(kthread::make_module_task(A));
+auto TB = executor.silent_dependent_async(kthread::make_module_task(B), TA);
+auto TC = executor.silent_dependent_async(kthread::make_module_task(C), TB);
+auto [TD, FD] = executor.dependent_async(kthread::make_module_task(D), TC);
+FD.get();
+```
+import ModuleTask2 from '@site/static/img/kthread/module_task_2.png';
+
+<img src={ModuleTask2} width={400} height={200} />
+
+```console
+# dependent-async tasks enforce a sequential execution of the four taskflows
+Taskflow A
+Taskflow B
+Taskflow C
+Taskflow D
+```
+模块任务生成器 `kthread::make_module_task` 的功能基本类似于 `kthread::composed_of`，但提供了更通用
+的接口，可以在 `Taskflow` 之外使用。具体来说，以下两种方法实现了相同的功能。
+
+```cpp
+// approach 1: composition using composed_of
+kthread::Task m1 = taskflow1.composed_of(taskflow2);
+
+// approach 2: composition using make_module_task
+kthread::Task m1 = taskflow1.emplace(kthread::make_module_task(taskflow2));
+```
+
+:::info
+注意
+与 `kthread::composed_of` 类似，`kthread::make_module_task` 不承担所提供任务流的所有权，而是软引用。您有责任确保封装的任务流在整个执行过程中保持有效。
+:::
+
+## 在自定义图表上创建模块任务
+
+除了封装任务流图之外，您还可以创建模块任务来调度自定义图目标。可调度目标（类型为 T）必须定义方法 `T::graph()`，该方法返回
+对由 `T` 管理的 `kthread::Graph` 对象的引用。以下示例定义了一个可以通过创建模块任务来调度的自定义图：
+
+```cpp
+struct CustomGraph {
+  kthread::Graph graph;
+  CustomGraph() {
+    // use flow builder to inherit all task creation methods in kthread::Taskflow
+    kthread::FlowBuilder builder(graph);
+    kthread::Task task = builder.emplace([](){
+      std::cout << "a task\n";  // static task
+    });
+  }
+  // returns a reference to the graph for taskflow composition
+  Graph& graph() { return graph; }
+};
+
+CustomGraph target;
+executor.async(kthread::make_module_task(target));
+```
+:::info
+注意
+用户有责任确保给定的自定义图表在整个执行过程中保持有效。执行器不承担自定义图表的所有权。
+:::
+
+:::info
+更多信息请参见[算法索引](../algo.mdx)
+:::

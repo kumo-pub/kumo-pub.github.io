@@ -1,0 +1,26 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_buildpath_length_warning
+
+如果用户的 kmpkg 安装路径对于要安装的包来说可能太长，则警告用户。
+
+## 使用情况
+
+```cmake
+kmpkg_buildpath_length_warning(<N>)
+```
+
+## 参数
+
+### `<N>`
+
+如果 `buildtrees` 路径中的字节数大于 `N`，则警告用户。
+
+## 说明
+
+此函数仅发出警告，不能用于判断正确性。
+
+## Source
+
+[scripts/cmake/kmpkg\_buildpath\_length\_warning.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_buildpath_length_warning.cmake)

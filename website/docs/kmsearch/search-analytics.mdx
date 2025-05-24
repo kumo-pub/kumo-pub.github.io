@@ -1,0 +1,37 @@
+# 搜索分析
+
+## 服务端vs客户端
+
+在构建搜索体验时，常见的需求有：
+
+- 最流行的搜索词是什么？
+- 是否有搜索词没有返回任何结果？
+- 是否有特定的搜索词可以添加为同义词以获得更多结果？
+- 转化率最高的搜索词是什么？
+- 哪些搜索词使每次会话的页面访问量更高？
+- 搜索结果中最常返回的项目是什么？
+- 用户人口统计/群体与其搜索行为之间是否存在相关性？
+
+为了解答这些问题，不仅需要搜索数据，还需要了解用户如何与网站或应用程序的不同部分互动的行为数据。 这些数据可通过 **网络/应用分析** 工具捕获，例如 [Amplitude](https://amplitude.com/)、[Google Analytics](https://marketingplatform.google.com/about/analytics/)、[Heap](https://heap.io/)、[Mixpanel](https://mixpanel.com/)、[Plausible](https://plausible.io/)、 [Pendo](https://www.pendo.io/)等。
+
+由于需要用户行为数据的上下文才能全面了解搜索体验的表现，**建议在客户端检测搜索体验**，并将额外的搜索数据以及其他已捕获的数据发送到您现有的分析平台。
+
+## 服务端分析
+
+kumosearch 支持捕获[搜索分析](../api/kmsearch/analytics-query-suggestions.mdx)。
+收集搜索词后，可以按搜索词的计数进行排序，以获得排名靠前的搜索词。
+
+## 客户端分析
+
+#### 即时搜索分析组件
+
+如果您使用 [InstantSearch UI Library](./search-ui-components.md)，它自带的组件可以帮助您捕获搜索数据，并将其发送到您选择的客户端分析工具：
+
+- [`analytics` 组件](https://www.algolia.com/doc/api-reference/widgets/analytics/js/)
+- [`insights` 中间件](https://www.algolia.com/doc/api-reference/widgets/insights/js/)
+<!--
+有关如何在代码中实现此功能的示例，请参阅 [Linux Commit Search](./reference-implementations/linux-commits-search.md) 参考实现。
+-->
+#### 监控自定义搜索界面
+
+您可能需要监听搜索字段的变化（例如，设置1秒的防抖），然后捕获搜索词和显示的搜索结果，并通过使用分析平台的API库发起API调用，来记录搜索事件的发生。

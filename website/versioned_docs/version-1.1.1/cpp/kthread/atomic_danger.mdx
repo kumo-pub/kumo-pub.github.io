@@ -1,0 +1,355 @@
+---
+title: "原子操作的危险"
+layout: docs
+sidenav: side-nav-cpp.html
+type: markdown
+---
+
+# 原子操作的危险
+
+Dmitry Vyukov, Sanjay Ghemawat, Mike Burrows, Jeffrey Yasskin, Kostya
+Serebryany, Hans Boehm, Ashley Hedberg
+
+First written Apr 22, 2014. Updated Jun 23, 2021.
+
+-   [介绍](#introduction)
+-   [现有组件](#existing-components)
+-   [原子操作骗局](#atomic-trickiness)
+-   [性能考量](#performance-considerations)
+-   [测试考量](#testing-considerations)
+-   [错误案例](#bug-examples)
+
+## 介绍 {#introduction}
+
+大多数工程师尝试进行原子操作以尝试生产一些东西无锁机制。此外，程序员喜欢智力难题
+使用原子操作。这两者都导致了巧妙的实现，几乎总是不明智的，而且常常是错误的。涉及原子的算法
+操作极其微妙。例如，发现一个通用的、高效、无锁、单链表算法经过大量研究和
+需要谨慎实施。几乎所有的程序员在执行任务时都会犯错误尝试直接使用原子操作。即使他们没有犯错误，
+结果代码对其他人来说很难维护。
+
+原子操作应该只在少数低级数据结构中使用由几位专家编写，然后经过彻底审查和测试。
+不幸的是，许多人尝试编写无锁代码，而这几乎是总是一个错误。请不要陷入这个陷阱：不要使用原子
+运营。如果你这样做，你就会犯错误，而这些错误会让业主付出代价。
+该代码时间和金钱。
+
+有许多现有的更高级别的组件已经精心制作、审查和测试。如果它们满足您的需要，请使用它们。
+否则，请使用互斥体。
+
+注意：该文档以 C++ 为中心，但类似的论点也适用于其他内容
+语言也是如此。请参阅 [research!rsc](https://research.swtch.com/mm)了解更多信息
+详细讨论硬件、编程语言和 Go 内存模型。
+
+## 现有组件 {#existing-components}
+
+在发明自己的并发组件之前先了解常用的并发组件
+使用原子解决方案。下面的列表可作为指南，但并不详尽。
+[C++ 标准库](https://en.cppreference.com/w/cpp) 等库，
+[Abseil](https://abseil.io/) 和 [Folly](https://github.com/facebook/folly) 全部
+包含相关组件。
+
+-   [std::shared_ptr](https://en.cppreference.com/w/cpp/memory/shared_ptr) and
+    [folly's hazard pointer](https://github.com/facebook/folly/blob/master/folly/synchronization/Hazptr.h)
+    for reference counting
+-   [std::call_once](https://en.cppreference.com/w/cpp/thread/call_once) and
+    [absl::call_once](https://github.com/abseil/abseil-cpp/blob/master/absl/base/call_once.h)
+    for one-time initialization
+- [boost::asio::thread_pool](https://www.boost.org/doc/libs/1_76_0/doc/html/boost_asio/reference/thread_pool.html)
+    for thread pooling
+-   [absl::Notification](https://github.com/abseil/abseil-cpp/blob/master/absl/synchronization/notification.h)
+    for one-time notifications
+-   [std::latch](https://en.cppreference.com/w/cpp/thread/latch),
+    [std::barrier](https://en.cppreference.com/w/cpp/thread/barrier),
+    [absl::Barrier](https://github.com/abseil/abseil-cpp/blob/master/absl/synchronization/barrier.h),
+    and
+    [absl::BlockingCounter](https://github.com/abseil/abseil-cpp/blob/master/absl/synchronization/blocking_counter.h)
+    for barrier synchronization
+-   [std::future](https://en.cppreference.com/w/cpp/thread/future) for creating
+    value promises
+-   [Userspace RCU](https://github.com/urcu/userspace-rcu/blob/master/doc/cds-api.md)
+    for read-copy-update algorithms and lock-free containers
+-   [thread_local](https://en.cppreference.com/w/cpp/language/storage_duration)
+    for better locality
+-   [folly's concurrency library](https://github.com/facebook/folly/tree/master/folly/concurrency)
+    for concurrent storage and queues
+-   [folly::TokenBucket](https://github.com/facebook/folly/blob/master/folly/TokenBucket.h)
+    for rate limiting
+
+## 原子操作骗局 {#atomic-trickiness}
+
+原子操作引入了两种不同的危险：
+
+首先，除非您专门使用维持排序的原子操作所有共享内存访问的语义（特别是`memory_order_seq_cst”`
+操作），编译器和处理器都可以并且将会明显地重新排序内存访问
+[根据 C++ 标准](https://en.cppreference.com/w/cpp/atomic/memory_order)。
+在这些情况下，编程规则变得更加复杂，专家通常会仍然很难准确地确定它们。很多人都觉得特别
+令人惊讶的是，这种重新排序并不总是停留在传统的同步操作，如互斥锁获取。
+
+如果您确实将自己限制为顺序一致的操作，则可以避免
+这个问题，但很可能会发现您的代码现在在 ARM 和 POWER 上运行速度较慢
+与使用互斥体相比。 ARM 和 POWER 是弱有序系统，因此
+需要特殊的CPU加载指令或内存栅栏来实现
+顺序一致性。在像这样的强有序平台上，这不是必需的
+x86。
+
+其次，在一个只有
+- a) 的世界里编写代码是极其困难的
+单独的内存访问是原子的，并且
+- b) 无法实现互斥
+存在较大的代码段。对象生命周期管理在
+并发设置。 [基于 CAS](http://en.wikipedia.org/wiki/Compare-and-swap)
+算法受
+[ABA 问题](http://en.wikipedia.org/wiki/ABA_problem)。意想不到的和
+发生不可再现的线程交错。原子操作的顺序是
+那么整体上就不是原子的了。在进行原子操作之前，您必须
+准备好解决所有这些问题并理解语言记忆模型
+尊重排序、原子性、可见性和数据根。
+
+不要假设 x86 语义。仅当您满足以下条件时，硬件平台保证才重要
+汇编编程。高级语言（C++/Java/Go）编译器可能会崩溃
+你的代码。此外，ARM 和 POWER 提供明显不同且更复杂的
+内存模型；如果您在各种不同的平台上运行，这些也可能会破坏您的代码
+硬件。
+
+让我们考虑两个基于真实代码的示例来演示这两种类型
+与原子操作相关的微妙之处。第一个例子：
+
+```c++
+std::atomic<bool> data_ready = false;
+double data = 0.0;
+
+void Thread1() {
+  data = 1.23;
+  data_ready.store(true, std::memory_order_relaxed);
+}
+
+void Thread2() {
+  if (data_ready.load(std::memory_order_relaxed))
+    CHECK(data == 1.23);
+}
+```
+
+代码显然是正确的：Thread1先初始化数据，然后设置
+Thread2 确保该标志已设置，然后才读取数据。
+可能会出现什么问题？
+
+启用优化后，gcc 将此代码编译为：
+
+```
+% g++ -O2 test.cc -S && cat test.s
+
+Thread1:
+  movabsq $4608218246714312622, %rax # 1. Load the constant into RAX
+  movl    $1, data_ready(%rip)       # 2. Store 1 into data_ready
+  movq    %rax, data(%rip)           # 3. Store RAX register into data
+  ret
+```
+
+如果 Thread2 在 Thread1 的指令 2 和 3 之间执行，则 CHECK 中的
+线程2将会失败。请注意，编译器完全按照我们的要求执行。
+“data_ready”上的操作确实是原子的；他们只是重新排序
+其他内存访问。
+
+另一个例子，这次是隐式的“memory_order_seq_cst”。在这里，我们有一个
+基于无锁堆栈的并发对象池，其算法尝试工作
+以非传统方式解决 ABA 问题：
+
+```c++
+template<typename T>
+class ConcurrentPool {
+ public:
+  ConcurrentPool(size_t size)
+      : head_(0),
+       size_(size),
+       array_(new Node[size]) {
+    for (size_t i = 0; i < size; i++)
+      array_[i].next.store(i + 1);
+    array_[size - 1].next.store(kEnd);
+  }
+
+  T* Get() {
+    while (size_.load() > 1) {
+      size_t head1 = head_.load();
+      size_t next1 = array_[head1].next.exchange(kEnd);
+      if (next1 != kEnd) {
+        if (head_.compare_exchange_strong(head1, next1)) {
+          size_.fetch_sub(1);
+          return &array_[head1].v;
+        } else {
+          array_[head1].next.exchange(next1);
+        }
+      }
+    }
+    return nullptr;
+  }
+
+  void Put(T* v) {
+    Node *n = reinterpret_cast<Node*>(v);
+    size_t i = n - &array_[0];
+    size_t head1;
+    do {
+      head1 = head_.load();
+      n->next.store(head1);
+    } while (!head_.compare_exchange_strong(head1, i));
+    size_.fetch_add(1);
+  }
+
+ private:
+  struct Node {
+    T v;
+    atomic<size_t> next;
+  };
+
+  atomic<size_t> head_;
+  atomic<size_t> size_;
+  unique_ptr<Node[]> array_;
+
+  static const size_t kEnd = -1;
+};
+```
+
+在进一步阅读之前，请尝试找出此代码中的错误。
+
+通过测试和手动代码基本上无法发现该bug
+检查。它是由同步算法的自动检查器发现的。
+导致错误的特定执行：
+
+1. 线程1在`Get()`中读取`head_ = 0`。
+2. 线程0在`Get()`中读取`head_ = 0`。
+3. 线程 0 从堆栈中删除元素 0，“现在 head_ = 1”。
+4. 线程0开始放入元素0。
+5. 线程0读取`head_ = 1`，并将元素0的下一个字段设置为1。
+6. 线程1对元素0的下一个字段执行“exchange”。它读取1
+并写-1。
+7. 线程 2 从堆栈中获取元素 1，现在为 `head_ = 2`。
+8. 线程 0 在 `Put()` 中因 `compare_exchange` 失败，重新读取 `head_ = 2`，并且
+将 2 写入元素 0 的下一个字段。
+9. 线程 0 通过 `Put()` 中的 `compare_exchange` 成功。现在`head_ = 0`。
+10. 线程 1 通过 `Get()` 中的 `compare_exchange` 成功。现在 `head_ = 1`
+（但是 `head_` 必须等于 2！）。
+11. 线程 0 从堆栈中弹出元素 1。
+
+现在线程 0 和 2 都可以处理元素 1。砰！
+
+## 性能考虑因素 {#performance-considerations}
+
+程序员认为互斥锁很昂贵，并且使用原子操作
+会更有效率。但实际上，获取和释放互斥体是
+比缓存未命中便宜；对缓存行为的关注通常是更重要的
+提高绩效的有效方法。此外，无锁数据结构是
+通常比使用互斥体更昂贵。互斥锁允许任意更改
+制作成复杂的数据结构；如果必须在没有
+互斥体，结果可能会占用更多的原子读-修改-写和内存
+栅栏指示，不少。
+
+人们希望在并发量较高时避免互斥争用。减少
+解决并发问题的最佳方法是对锁定的数据结构进行分区以避免互斥
+遏制。例如，构建起来更容易、更高效、更有用
+由许多普通哈希表组成的高并发哈希表，每个哈希表都有自己的
+读写器互斥体，而不是使用原子构建一个无锁哈希表
+运营。
+
+[线程本地](https://en.cppreference.com/w/cpp/language/storage_duration)
+缓存和批量更新集中状态是另一种技术
+通常远远优于集中式无锁算法。例如，
+[tcmalloc](https://github.com/google/tcmalloc)使用它实现了出色的
+扩展，同时仅依赖互斥体进行同步。
+
+[参考计数](https://en.wikipedia.org/wiki/Reference_counting) 可以提供帮助
+在某些情况下显着减小关键部分的大小。即，
+读锁定容器，找到必要的对象，增加引用计数器，
+解锁并返回：
+
+```c++
+V *find(T key) {
+  lock_guard l(mutex);
+  V *v = container.find(key);
+  if (v != nullptr)
+    v->refcount.Acquire();
+  return v;
+  // Work with the object v happens outside of the mutex.
+  // Caller calls v->refcount.Release() when done with the object.
+}
+```
+
+这
+[读取-复制-更新/多版本并发控制](http://en.wikipedia.org/wiki/Multiversion_concurrency_control)
+技术允许人们对主要读取的数据结构实现线性缩放。
+
+## 测试注意事项 {#testing-considerations}
+
+单元测试没有为无锁算法提供足够好的覆盖范围；他们
+探索所有可能的线程交错中可忽略不计的部分。对于一个小
+N=10个原子操作、T=4个线程的同步算法，总共
+可能的线程交错数量为 O(T^(T\*N)) ~= 10^24。记忆顺序
+放宽措施会导致更多的潜在处决。单元测试
+最多可以执行一千次处决。
+
+此外，x86 硬件无法在 POWER 和 ARM 上产生所有可能的执行
+平台。使用特定版本的编译器和标志编译的代码可能不会
+能够使用不同的编译器或标志产生可能的执行。未来
+编译器可能会比当前更积极地重新排序内存访问
+编译器。
+
+人脑不擅长推理并发算法，而这些算法并不擅长推理。
+顺序一致。任何不平凡的无锁算法都需要小心
+多位专家评审，正式检查人员验证，详尽无遗
+至少对不同硬件进行压力测试。
+
+请注意，即使基于互斥锁的算法也可能很复杂（或者锁可以简单地
+忘记了）。使用 [ThreadSanitizer](https://github.com/google/sanitizers) 进行测试
+用于数据竞争和某些类型的死锁。
+
+## 错误示例 {#bug-examples}
+
+以下是基于原子操作的算法中的几个错误的示例。这
+错误是有害的、棘手的，并且多年来一直潜伏在我们的代码库中。
+
+**Linux内核无锁fd查找**
+
+该错误是在
+[2005 年 9 月 9 日](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ab2af1f5005069321c5d130f09cce577b03f43ef)
+作为从自旋锁迁移到 RCU 重新计数的一部分。引入的变化
+代码需要如何在半不一致的狭窄窗口上做出反应的错误
+并发更新暴露的状态。十年后，这个问题被修复了
+[2015 年 7 月 1 日](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5ba97d2832f8)。
+
+**数据平面开发套件的 RTE 环**
+
+该错误存在于 DPDK 的第一个公开版本中，该版本于
+[2013 年 3 月 11 日](http://git.dpdk.org/dpdk/commit/?id=af75078fece3)。有一个
+与多个消费者一起发出零对象出列的错误。这是可能的
+让多个线程成功进行比较和设置操作并观察
+检查前面的 while 循环中的饥饿甚至死锁
+出队。在排队路径上也是可能的。该错误已修复
+[2016 年 3 月 22 日](http://git.dpdk.org/dpdk/commit/?id=d0979646166e740917baaabc4b78ded3482226b7)。
+
+**同步.WaitGroup**
+
+该错误是在
+[2011 年 7 月 18 日](https://github.com/golang/go/commit/ee6e1a3ff77) 作为
+WaitGroup 重写旨在提高可扩展性。改变确实
+提高了性能和可扩展性，但它也取代了简单的基于互斥锁的
+一种基于原子操作的更棘手的算法。该错误发生在
+非常罕见的情况，但会导致任意内存损坏。原来是
+仅发现并修复
+[2014 年 4 月 10 日](https://github.com/golang/go/commit/e9347c781be)。错误是
+由意外的线程交错引起。
+
+**并行GC**
+
+该错误是在
+[2011 年 9 月 30 日](https://github.com/golang/go/commit/d324f2143b2) 仅修复
+于 [2014 年 1 月 15 日](https://github.com/golang/go/commit/b3a3afc9b78)。该错误导致
+过载机器上的任意内存损坏。该错误是由于
+意外的线程交错。
+
+**org.jctools.maps.NonBlockingHashMap**
+
+该错误是之前某个时候引入的
+[2009 年 2 月](https://twitter.com/nitsanw/status/1406871256486580229)。错误
+允许删除操作多次返回相同的项目。根
+原因是失败的 CAS 和后续的原子读取之间不一致
+同一个领域。它被识别于
+[2018 年 1 月 15 日](https://github.com/JCTools/JCTools/issues/205#) 并已修复
+[2018 年 1 月 21 日](https://github.com/JCTools/JCTools/commit/69786bb178f194b7dad5e4dbf84bed41db5af94e)
+经过多次讨论。

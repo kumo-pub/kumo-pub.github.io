@@ -1,0 +1,82 @@
+
+# 特性
+
+## 特点和设计目标
+
+**doctest** 从一开始就被设计为尽可能**轻量级**和**非侵入性**。应保留这些关键特征。
+
+## 独立性 (transparent):
+
+- 通过定义 [**`DOCTEST_CONFIG_DISABLE`**](configuration.mdx#doctest_config_disable) 标识符，可以从二进制可执行文件中删除所有与测试相关的内容
+- 非常小且易于集成 - 单头
+- **极低**编译时间占用 - [**大约 25ms**](benchmarks.mdx#cost-of-including-the-header) 将标头包含在文件中的编译时间开销
+- [**最快可能**](benchmarks.mdx#cost-of-an-assertion-macro) 断言宏 - 50k 断言可以在 30 秒内编译（甚至不到 10 秒）
+- 包含时不拖动任何标题（除了在实现库的翻译单元中）
+- 一切都在`doctest`命名空间中（实现细节位于嵌套的`detail`命名空间中）
+- 所有宏都有前缀 - 默认情况下有些宏也有无前缀版本，但这是可选的 - 请参阅 [**configuration**](configuration.mdx)
+- 即使使用最激进的标志，也有 0 个警告（在所有经过测试的编译器上！！！）
+  - **clang** 的 `-Weverything -迂腐`
+  - `-Wall -Wextra -pedantic` 和 **`>> 超过 35 个 <<`** 其他警告 **未被 **GCC** 的这些标志覆盖！ - 请参阅[**此处**](https://gitee.com/kumo-hub/doctest/tree/master/scripts/cmake/common.cmake#L84)
+  - **MSVC** 的 `/Wall`
+- 无法识别的 [**命令行**](commandline.mdx) 选项不会出错，并支持与客户端命令行解析互操作的前缀
+- 可以设置选项 [**程序**](main.mdx) 并且不处理从命令行传递 `argc`/`argv`
+- 警告本身不会被禁用
+
+## 极其便携 {#extremely-portable}
+
+**其中一些内容已经过时了**
+
+- 符合标准的 **C++11** 代码 - 应该与任何具有 **C++11** 功能的编译器一起使用（使用标签 [**1.2.9**](https://github.com/doctest/doctest/tree/1.2.9) 对于 C++98 及更早版本的编译器)
+- 测试通过 **GCC**: **4.8**, **4.9**, **5**, **6**, **7**, **8**, **9**, **10**, **11**, **12**
+- 测试通过 **Clang**: **3.5**, **3.6**, **3.7**, **3.8**, **3.9**, **4**, **5**, **6**, **7**, **8**, **9**, **10**, **11**, **12**, **13**, **14**, **15** (XCode 10+)
+- 测试通过 **MSVC**: **2015**, **2017**, **2019**, **2022** (32位模式)
+- 每次提交测试 [**GitHub Actions**](https://github.com/doctest/doctest/actions)
+    - 即使在最激进的警告级别上，警告也会作为错误 - 请参阅[**此处**](https://gitee.com/kumo-hub/doctest/tree/master/scripts/cmake/common.cmake#L84)
+    - 在 CI 上进行静态分析 - [**Cppcheck**](http://cppcheck.sourceforge.net/) / [**Clang-Tidy**](https://clang.llvm.org/extra/clang-tidy/) / [**Coverity Scan**](https://scan.coverity.com/) / [**OCLint**](http://oclint.org/) / [**Visual Studio 分析器**](https://docs.microsoft.com/en-us/visualstudio/code-quality/analyzing-c-cpp-code-quality-by-using-code-analysis)
+    - 所有测试的输出都与之前已知的良好运行的参考输出进行比较
+    - 在**调试**/**发布**模式下构建和运行的所有测试
+    - 所有测试都在 **Linux** 下通过 **valgrind** 运行（遗憾的是 [不在 OSX 下](https://github.com/doctest/doctest/issues/11)）
+    - 所有测试均在 **Linux**/**OSX** 下通过 **address**、**UB** 和 **thread** 消毒程序运行
+    - 测试在 UNIX (Linux + OSX) 和 Windows 上的 **300** 多种不同配置中运行
+
+## 其他特性 {#other-features}
+
+- 真的很容易开始 - 它只是 1 个头文件 - 请参阅 [**tutorial**](tutorial.mdx)
+- **非常**轻、无干扰且便携 - 请参阅上面的部分 - 以及 [**基准**](benchmarks.mdx)
+- 提供了一种方法，使用 [**`DOCTEST_CONFIG_DISABLE`**](configuration.mdx#doctest_config_disable) 宏从二进制文件中删除与测试相关的**所有内容**
+- 测试自动注册 - 无需手动将它们添加到集合中
+- [**Subcases**](tutorial.mdx#test-cases-and-subcases) - 共享测试用例的通用设置和拆卸代码的直观方法（替代 [**测试装置**](testcases.mdx#test-fixtures)也受支持）
+- [**模板化测试用例**](parameterized-tests.mdx#templated-test-cases-parameterized-by-type) - 按类型参数化
+- 支持 [**logging macros**](logging.mdx) 来捕获局部变量和字符串 - 作为断言失败时的消息 - 具有惰性字符串化并且尽可能不进行分配！
+- 崩溃处理支持 - 使用 UNIX 信号和 Windows SEH
+- [**线程安全**](faq.mdx#is-doctest-thread-aware) - 断言（和日志记录）可以从单个测试用例生成的多个线程中使用 - [**示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/concurrency.cpp)
+- 可扩展的[**报告器系统**](reporters.mdx)（也可用于实现事件侦听器）
+- 所有平台上所有编译器的输出都是相同的 - 逐字节
+- 二进制文件（exe/dll）可以使用另一个二进制文件的测试运行程序 - 因此测试最终在单个注册表中 - [**示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/executable_dll_and_plugin/)
+- 支持 [**BDD 风格**](testcases.mdx) 测试
+- 一个核心 [**断言宏**](assertions.mdx) 用于比较 - 标准 C++ 运算符用于比较（小于、等于、大于...） - 但完整的表达式被分解并左右记录表达式的值
+- 断言可以使用[**测试上下文之外**](assertions.mdx#using-asserts-out-of-a-testing-context) - [**示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/asserts_used_outside_of_tests.cpp)
+- [**例外**](assertions.mdx#exceptions) 的断言宏 - 如果某些东西应该或不应该抛出
+- 浮点比较支持 - 请参阅 [**`Approx()`**](assertions.mdx#floating-point-comparisons) 帮助器
+- 针对用户类型的 [**stringification**](stringification.mdx) 的强大机制 - 包括 [**exceptions**](stringification.mdx#translated-exceptions)！
+- 测试可以分组在[**测试套件**](testcases.mdx#test-suites)中
+- 测试用例 [**decorators**](testcases.mdx#decorators) 例如 `description` / `skip` / `may_fail` / `should_fail` / `expected_failures` / `超时`
+- 可以无异常和 rtti 使用 - 签出 [**`DOCTEST_CONFIG_NO_EXCEPTIONS`**](configuration.mdx#doctest_config_no_exceptions)
+- 强大的[**命令行**](commandline.mdx)，有很多选项
+- 可以报告测试用例的持续时间
+- 测试可以使用通配符根据其名称/文件/测试套件进行[**过滤**](commandline.mdx)
+- 可以使用通配符并通过指定这些过滤器应工作的嵌套级别来[**filter**](commandline.mdx)子案例
+- 失败可以（可选）闯入 Windows 和 Mac 上的调试器
+- 与 Visual Studio 的输出窗口集成以应对失败的测试
+- 使用 [**`OCTEST_CONFIG_IMPLMENT_WITH_MAIN`**](main.mdx#doctest_config_implement_with_main) 标识符实现库时可以提供 `main()`
+- 可以在标头中编写测试 - 它们仍然只会在可执行文件/共享对象中注册一次
+- [**基于范围**](commandline.mdx) 在二进制文件中执行测试 - 请参阅[**示例 python 脚本**](https://gitee.com/kumo-hub/doctest/tree/master/examples/range_based_execution.py)
+- [**扩展标头**](extensions.mdx) 用于不需要进入主 `doctest.h` 标头的额外功能
+- 控制台中的彩色输出
+- 控制测试执行的顺序
+- 不同的 doctest::Context 可以在程序的单次执行中创建和运行多次
+- 能够查询代码当前是否正在测试中运行 - `doctest::is_running_in_test`
+- tests can be registered in CTest with the use of [`doctest_discover_tests(<target>)` from scripts/cmake/doctest.cmake](https://gitee.com/kumo-hub/doctest/tree/master/scripts/cmake/doctest.cmake)
+
+有一个计划中的功能列表，这些功能都很重要而且很大 - 请参阅[**路线图**](https://github.com/doctest/doctest/issues/600)。
+

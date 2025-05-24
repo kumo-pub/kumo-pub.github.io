@@ -1,0 +1,61 @@
+---
+date: 01/10/2024
+---
+
+# 命令： kmpkg x-add-version
+
+kmpkg x-add-version 命令的参考。更新 kmpkg ports 的版本数据库。
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+## 摘要
+
+```console
+kmpkg x-add-version [port-name] [options] [--all] [--overwrite-version] [--skip-formatting-check] [--skip-version-format-check] [--verbose]
+```
+
+## 说明
+
+`x-add-version` 命令更新 `kmpkg` 端口的[版本数据库](../users/versioning.concepts.mdx#acquiring-port-versions)。 默认情况下，该命令在指定端口上运行。 通过适当的开关，用户可以选择处理所有端口还是更改有关格式设置检查和版本更新的默认行为。
+
+若要使用 命令：
+
+1. 对端口进行更改后，导航到 kmpkg 目录。
+2. 运行 `kmpkg x-add-version <port-name>`，将 `<port-name>` 替换为已编辑的端口名称。
+这将在版本数据库中添加或更新端口的版本条目。
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `[port-name]`
+
+指定要更新的端口的名称。 如果未提供，用户应使用 `--all` 选项处理所有端口。
+
+### `--all`
+
+处理[内置](../maintainers/registries.mdx#builtin-registries) ports 目录中的所有端口。
+
+### `--overwrite-version`
+
+允许覆盖数据库中的现有版本。
+
+如果没有此标志，kmpkg 将拒绝覆盖现有版本。
+
+:::info
+此选项用于在准备包含注册表的版本时进行持续开发。 例如，考虑解决 `foo` 端口中的问题并执行 `kmpkg x-add-version foo`。 要对该端口进行后续修改，请使用 `kmpkg x-add-version foo --overwrite-version` 在包含注册表之前刷新版本条目。
+:::
+
+### `--skip-formatting-check`
+
+跳过对端口清单文件 (`kmpkg.json`) 中格式设置是否正确的检查。 默认情况下，会检查并要求正确的格式。
+
+### `--skip-version-format-check`
+
+跳过版本格式检查。 默认情况下，会检查版本以确保其遵循特定[格式](../users/versioning.mdx#version-schemes)。
+
+### `--verbose`
+
+提供详细的输出，给出有关正在执行的操作的更多详细信息。

@@ -1,0 +1,59 @@
+---
+date: 01/10/2024
+---
+# 教程： 提供您的端口的使用文档
+
+将使用文档添加到 kmpkg 端口的指南.
+
+## 概述
+
+提供端口的使用文档使用户可以轻松地在自己的应用中采用它们项目。我们强烈鼓励在端口目录（`ports/<port
+name>/usage`）描述了与构建系统集成所需的最少步骤。
+
+### 提供使用文件
+
+要提供使用文档，请在端口的“share”中创建一个名为“usage”的文本文件
+安装目录。推荐的方法是调用`configure_file()`函数`portfile.cmake`。
+
+例如：
+
+```cmake
+configure_file("${CMAKE_CURRENT_LIST_DIR}/usage" "${CURRENT_PACKAGES_DIR}/share/${PORT}/usage" COPYONLY)
+```
+
+安装 ports 后，kmpkg 会检测安装到 `${CURRENT_PACKAGES_DIR}/share/${PORT}/usage` 的文件并打印它们的使用说明。
+
+### 内容格式
+
+提供有关如何使用该包的明确说明。内容应该简洁、结构良好，并强调使用该库所需的最低构建系统集成。
+
+清晰简洁地说明如何有效地利用该包。避免用代码片段、命令行指令或让用户不知所措配置详细信息。相反，请使用 [`"documentation"` 属性
+端口的 `kmpkg.json` 文件](../concepts/manifest-mode.mdx)，以便用户可以了解更多信息
+关于你的库。
+
+使用以下模板作为`usage`文件的模式：
+
+带有 CMake 目标的包：
+
+```text
+<port> provides CMake targets:
+
+    <instructions>
+```
+
+仅标头库：
+
+```text
+<port> is header-only and can be used from CMake via:
+
+    <instructions>
+```
+
+#### `usage` 文件示例
+
+```text
+proj provides CMake targets:
+
+    find_package(PROJ CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE PROJ::proj)
+```

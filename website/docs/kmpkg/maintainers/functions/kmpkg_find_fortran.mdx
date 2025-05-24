@@ -1,0 +1,27 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_find_fortran
+
+检查是否可以找到 Fortran 编译器。 仅限 `Windows(x86/x64)`：如果未找到，将切换/启用 `MinGW gfortran` 并返回构建所需的 `cmake` 参数。
+
+## 使用情况
+
+```cmake
+kmpkg_find_fortran(<out_var>)
+```
+
+## 示例
+
+```cmake
+kmpkg_find_fortran(fortran_args)
+# ...
+kmpkg_cmake_configure(...
+    OPTIONS
+        ${fortran_args}
+)
+```
+
+## Source
+
+[scripts/cmake/kmpkg\_find\_fortran.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_find_fortran.cmake)

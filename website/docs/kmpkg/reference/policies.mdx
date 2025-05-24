@@ -1,0 +1,120 @@
+---
+date: 5/10/2024
+---
+# 端口策略
+
+可以在端口中设置的所有策略的参考文档。
+
+端口策略可以在`portfile.cmake`中设置为 `disabled`（默认）或 `enabled` 。例如：
+
+```cmake
+set(KMPKG_POLICY_EMPTY_INCLUDE_FOLDER enabled)
+```
+
+## KMPKG_POLICY_ALLOW_DEBUG_INCLUDE
+
+禁用 kmpkg 对 debug/include 目录的构建后检查，端口不应创建该目录。
+
+## KMPKG_POLICY_ALLOW_DEBUG_SHARE
+
+禁用 kmpkg 对 debug/share 目录的构建后检查，端口不应创建该目录。
+
+## KMPKG_POLICY_ALLOW_DLLS_IN_LIB
+
+禁用 kmpkg 对安装到`lib`目录而不是`bin`目录的 DLL 的构建后检查。
+
+## KMPKG_POLICY_ALLOW_EMPTY_FOLDERS
+
+禁用 kmpkg 对端口创建的空目录的构建后检查。空目录在语义上不被视为端口安装的一部分，并且不能代表多个二进制缓存后端。
+
+## KMPKG_POLICY_ALLOW_EXES_IN_BIN
+
+禁用 kmpkg 对“bin”目录中不应存在的 exe 文件的构建后检查。构建工具应移动到工具目录，可能使用 [`kmpkg_copy_tools`](../maintainers/functions/kmpkg_copy_tools.mdx)。
+
+## KMPKG_POLICY_ALLOW_KERNEL32_FROM_XBOX
+
+当端口请求针对 Xbox 时，禁用 kmpkg 的构建后检查与 kernel32 的链接。与 kernel32 链接的二进制文件无法在 XBox 上运行，因为 XBox 没有 kernel32.dll。
+
+## KMPKG_POLICY_ALLOW_OBSOLETE_MSVCRT
+
+禁用 kmpkg 对旧 C 运行时库的构建后检查。
+
+## KMPKG_POLICY_ALLOW_RESTRICTED_HEADERS
+
+禁用 kmpkg 的构建后检查，以获取通常由操作系统和标准库保留的标头。
+
+## KMPKG_POLICY_CMAKE_HELPER_PORT
+
+标记端口旨在向其他端口提供 CMake 功能，并且依赖端口应加载此端口设置的`kmpkg_port_config.cmake`。
+
+## KMPKG_POLICY_DLLS_IN_STATIC_LIBRARY
+
+当三元组请求静态构建时，禁用 kmpkg 对端口生成的 DLL 的构建后检查。
+
+## KMPKG_POLICY_DLLS_WITHOUT_EXPORTS
+
+禁用 kmpkg 对没有导出的 DLL 的构建后检查。没有导出的 DLL 通常对调用者没有用处。在 Windows 上
+提供良好的动态链接体验需要库定义 DLL 接口。另请参阅维护者指南中的 [`不要添加 CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS`](../contributing/maintainer-guide.mdx#do-not-add-cmake_windows_export_all_symbols)。
+## KMPKG_POLICY_DLLS_WITHOUT_LIBS
+
+禁用 kmpkg 对没有导入库生成的 DLL 的构建后检查。这些 DLL 可能更难使用，因为该 DLL 导出的函数对链接器不可见。
+
+## KMPKG_POLICY_EMPTY_INCLUDE_FOLDER
+
+禁用 kmpkg 对空包含目录的构建后检查。空的包含目录通常意味着标头安装不正确。
+
+## KMPKG_POLICY_EMPTY_PACKAGE
+
+禁用所有构建后检查并防止端口包含在某些包类型的 `kmpkg export` 包中。
+
+## KMPKG_POLICY_MISMATCHED_NUMBER_OF_BINARIES
+
+禁用 kmpkg 对匹配数量的发布和调试二进制文件的构建后检查。
+
+## KMPKG_POLICY_ONLY_RELEASE_CRT
+
+指示移植打算仅安装使用发布 C 运行时库的组件，并且与调试 C 运行时库的链接是一个错误。另请参阅 [`KMPKG_POLICY_SKIP_CRT_LINKAGE_CHECK`](#kmpkg_policy_skip_crt_linkage_check)。
+
+## KMPKG_POLICY_SKIP_ABSOLUTE_PATHS_CHECK
+
+禁用 kmpkg 对已安装文件中嵌入的绝对路径的构建后检查。绝对路径通常会破坏二进制缓存，因为安装的树在不同的 kmpkg 实例中可能有不同的根。
+
+## KMPKG_POLICY_SKIP_ALL_POST_BUILD_CHECKS
+
+禁用所有 kmpkg 的构建后检查。
+
+## KMPKG_POLICY_SKIP_APPCONTAINER_CHECK
+
+禁用 kmpkg 对 appcontainer 位的构建后检查，即使三元组请求针对 UWP 也是如此。
+
+## KMPKG_POLICY_SKIP_ARCHITECTURE_CHECK
+
+禁用 kmpkg 的构建后检查，以检查端口创建的二进制文件是否以三元组请求的体系结构为目标。
+
+## KMPKG_POLICY_SKIP_COPYRIGHT_CHECK
+
+禁用 kmpkg 的构建后检查，检查端口是否安装了旨在包含使用该端口的许可信息的版权文件。
+
+## KMPKG_POLICY_SKIP_CRT_LINKAGE_CHECK
+
+完全禁用 kmpkg 的构建后检查以链接正确的 C 运行时库。
+
+## KMPKG_POLICY_SKIP_DUMPBIN_CHECKS
+
+这个政策没有效果。在旧版本的 kmpkg 中，它旨在通过禁用需要它的构建后检查来解决不提供`dumpbin`实用程序（例如 MinGW）的环境。在 kmpkg 的当前副本中，现在可以直接实现`dumpbin`提供的功能，而无需调用`dumpbin`。
+
+## KMPKG_POLICY_SKIP_LIB_CMAKE_MERGE_CHECK
+
+禁用 kmpkg 对 CMake 配置的构建后检查，以将发布和调试配置合并到单个配置中。这通常是由于忘记调用 [`kmpkg_cmake_config_fixup`](../maintainers/functions/kmpkg_cmake_config_fixup.mdx) 引起的。
+
+## KMPKG_POLICY_SKIP_MISPLACED_REGULAR_FILES_CHECK
+
+禁用 kmpkg 对安装在不适合常规文件的位置的常规文件的构建后检查。搜索的位置应该只包含目录。
+
+## KMPKG_POLICY_SKIP_PKGCONFIG_CHECK
+
+禁用 kmpkg 对安装在正确位置的 pkgconfig (`.pc`) 文件进行构建后检查。 “pkgconf”或“pkg-config”不会发现错误安装的“.pc”，或者在实际未提供时宣传架构独立性。
+
+## KMPKG_POLICY_SKIP_USAGE_INSTALL_CHECK
+
+禁用 kmpkg 的构建后检查是否忘记了使用文本。当端口包含名为`usage`的文件但不存在`${CURRENT_PACKAGES_DIR}/share/${PORT}/usage`时，会触发此事件，表明很可能打算安装某个用法，但没有安装。

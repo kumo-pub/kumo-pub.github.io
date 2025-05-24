@@ -1,0 +1,36 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_configure_qmake
+
+配置基于 qmake 的项目。
+
+## 使用情况
+
+```cmake
+kmpkg_configure_qmake(
+    SOURCE_PATH <pro_file_path>
+    [OPTIONS arg1 [arg2 ...]]
+    [OPTIONS_RELEASE arg1 [arg2 ...]]
+    [OPTIONS_DEBUG arg1 [arg2 ...]]
+    [BUILD_OPTIONS arg1 [arg2 ...]]
+    [BUILD_OPTIONS_RELEASE arg1 [arg2 ...]]
+    [BUILD_OPTIONS_DEBUG arg1 [arg2 ...]]
+)
+```
+
+### SOURCE_PATH
+
+*.pro qmake 项目文件的路径。
+
+### OPTIONS, OPTIONS\_RELEASE, OPTIONS\_DEBUG
+
+在配置步骤中传递给 qmake 的选项。
+
+### BUILD\_OPTIONS, BUILD\_OPTIONS\_RELEASE, BUILD\_OPTIONS\_DEBUG
+
+在构建步骤中传递给 qmake 的选项。
+
+## Source
+
+[scripts/cmake/kmpkg\_configure\_qmake.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_configure_qmake.cmake)

@@ -1,0 +1,71 @@
+
+# 概览
+
+- vamos 是每秒数十亿个字符的 Unicode 验证和转码
+- turbo CRC32 md5 sha1 sha256 sha512
+## 介绍
+
+大多数现代软件都依赖于 [Unicode 标准](https://en.wikipedia.org/wiki/Unicode)。在内存中，`Unicode` 字符串使用
+`UTF-8` 或 `UTF-16` 表示。`UTF-8` 格式是 `Web`（`JSON`、`HTML` 等）上的事实标准，并且已被许多流行的
+编程语言（`Go`、`Zig`、`Rust`、`Swift` 等）采用为默认格式。`UTF-16` 格式是 `Java、C#` 和许多 `Windows` 技术中的标准。
+
+并非所有字节序列都是有效的 Unicode 字符串。在未先验证的情况下使用 `UTF-`8 和 `UTF-16LE` 中的 `Unicode` 字符串是不安全的。
+此外，我们经常需要通过称为 [转码](https://en.wikipedia.org/wiki/Transcoding) 的过程将字符串从一种编码转换为另一种编码。
+出于安全目的，此类转码应该是经过验证的：它应该拒绝转码不正确的字符串。
+
+该库提供快速的 `Unicode` 函数，例如
+
+- ASCII、UTF-8、UTF-16LE/BE 和 UTF-32 验证，带或不带错误识别，
+- Latin1 到 UTF-8 转码，
+- Latin1 到 UTF-16LE/BE 转码
+- Latin1 到 UTF-32 转码
+- UTF-8 到 Latin1 的转码，带或不带验证，带或不带错误标识，
+- UTF-8 到 UTF-16LE/BE 的转码，带或不带验证，带或不带错误标识，
+- UTF-8 到 UTF-32 的转码，带或不带验证，带或不带错误标识，
+- UTF-16LE/BE 到 Latin1 的转码，带或不带验证，带或不带错误标识，
+- UTF-16LE/BE 到 UTF-8 的转码，带或不带验证，带或不带错误标识，
+- UTF-32 to Latin1 transcoding, with or without validation, with and without error identification,
+- UTF-32 到 UTF-8 转码，带或不带验证，带或不带错误识别，
+- UTF-32 到 UTF-16LE/BE 转码，带或不带验证，带或不带错误识别，
+- UTF-16LE/BE 到 UTF-32 转码，带或不带验证，带或不带错误识别，
+- 从 UTF-8 字符串计算 Latin1 等效字符串的大小，
+- 从 UTF-8 字符串计算 UTF-16 等效字符串的大小，
+- 从 UTF-8 字符串计算 UTF-32 等效字符串的大小（相当于 UTF-8 字符计数），
+- 从 UTF-16LE/BE 字符串计算 Latin1 等效字符串的大小，
+- 从 UTF-16LE/BE 字符串计算 UTF-8 等效字符串的大小，
+- 从 UTF-32 字符串计算 UTF-8 或 UTF-16LE 等效字符串的大小，
+- 从 UTF-16LE/BE 字符串计算 UTF-32 等效字符串的大小（相当于 UTF-16 字符计数），
+- UTF-8 和 UTF-16LE/BE 字符计数，
+- UTF-16 字节顺序更改（UTF16-LE/BE 改为 UTF-16-BE/LE），
+- [WHATWG forgiving-base64](https://infra.spec.whatwg.org/#forgiving-base64-decode)（带或不带 URL 编码）改为二进制，
+- 二进制改为 base64（带或不带 URL 编码）。
+
+这些函数使用 SIMD 指令（例如 ARM NEON、SSE、AVX、AVX-512、RISC-V 矢量扩展、LoongSon 等）进行加速。当您的字符串包
+含数百个字符时，我们通常可以以每秒超过十亿个字符的速度对其进行转码。您不仅应该期待英文字符串（ASCII）的高速，还应该期待中
+文、日语、阿拉伯语等的高速。我们可以处理所有字符范围（例如，包括表情符号）。
+
+该库编译后会变成一个只有几百千字节的小型库。我们的函数没有异常，也不会分配内存。我们进行了广泛的测试和基准测试。
+
+我们进行了详尽的测试，包括精心设计的模糊测试设置。该库已在生产系统中使用多年。
+
+## 要求
+
+- 兼容 C++11 的编译器。我们支持 LLVM clang、GCC、Visual Studio。（我们的测试和基准测试工具需要 C++17。）
+- 为了获得高速，您应该拥有最新的 64 位系统（例如，ARM、x64、带有矢量扩展的 RISC-V、龙芯）。
+- 如果您依赖 CMake，则应使用较新的 CMake（至少 3.15;
+- AVX-512 支持需要具有 AVX512-VBMI2 的处理器（Ice Lake 或更高版本、AMD Zen 4 或更高版本）和
+最新的编译器（GCC 8 或更高版本、Visual Studio 2022 或更高版本、LLVM clang 6 或更高版本）。您
+需要一个相应的最新汇编器，例如 gas（2.30+）或 nasm（2.14+）：最新的编译器通常附带最新的汇编器。如
+果将最新的编译器与不兼容/旧的汇编器混合使用（例如，将最新的编译器与旧的 Linux 发行版一起使用时），您可能会在
+构建时收到错误，因为编译器会生成汇编器无法识别的指令：您应该更新汇编器以匹配您的编译器（例如，在 Linux 下
+将 binutils 升级到 2.30 或更高版本）或使用与您的汇编器功能匹配的旧编译器。
+- 要从 RISC-V 系统上的 RISC-V 矢量扩展中受益，您应该专门针对所需的架构进行编译。例如，在使用支持这些扩展的 GCC 或 LLVM 版
+本（如 GCC 14 或更高版本）时，添加 `-march=rv64gcv` 作为编译器标志。命令 `CXXFLAGS=-march=rv64gcv cmake -B build` 可能就足够了。
+- 我们建议 Visual Studio 用户使用 LLVM（ClangCL）进行编译。在 Visual Studio 中使用 LLVM 作为前端可以提供更快的发布构建和更好的运行时性能。
+
+:::info
+kumo体系的c++库都可以通过`kmpkg`安装和集成依赖
+```shell
+kmpkg install vamos
+```
+:::

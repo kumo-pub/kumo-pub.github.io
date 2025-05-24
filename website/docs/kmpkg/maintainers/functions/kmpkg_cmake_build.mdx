@@ -1,0 +1,69 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_cmake_build
+
+构建带有自定义安装目标的 cmake 项目。
+
+通常，CMake 使用目标 `install` 构建二进制文件并将二进制文件复制到 [`CMAKE_INSTALL_PREFIX`](https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html) 中。 在极少数情况下，项目可能应改用更具体的目标。
+
+如果可能，端口应首选调用 [`kmpkg_cmake_install()`](kmpkg_cmake_install.mdx)。
+
+## 使用情况
+
+```cmake
+kmpkg_cmake_build(
+    [TARGET <target>]
+    [LOGFILE_BASE <base>]
+    [DISABLE_PARALLEL]
+    [ADD_BIN_TO_PATH]
+)
+```
+要使用此函数，必须依赖于帮助程序端口 `kmpkg-cmake`：
+
+```json
+"dependencies": [
+  {
+    "name": "kmpkg-cmake",
+    "host": true
+  }
+]
+```
+
+## 参数
+
+`kmpkg_cmake_build()` 支持 `kmpkg_cmake_install()` 的所有支持参数。 有关其参数的详细信息，请参阅  [`kmpkg_cmake_install()`](kmpkg_cmake_install.mdx#parameters)。
+
+### TARGET
+
+要构建的 CMake 目标。
+
+如果未传递此参数，则不会向构建传递任何目标。
+
+### LOGFILE_BASE
+
+日志的备用根目录名。
+
+默认为 `build-${TARGET_TRIPLET}`。 该项不应包含任何路径分隔符。 将生成与模式 `${CURRENT_BUILDTREES_DIR}/${LOGFILE_BASE}-<suffix>.log` 匹配的日志
+
+## 示例
+
+```cmake
+kmpkg_from_github(OUT_SOURCE_PATH source_path ...)
+kmpkg_cmake_configure(
+    SOURCE_PATH "${source_path}"
+    OPTIONS
+        -DBUILD_EXAMPLES=OFF
+        -DBUILD_TESTS=OFF
+)
+kmpkg_cmake_build(TARGET my.install.target)
+```
+
+[搜索 kumo/kmpkg 以获取示例](https://gitee.com/kumo-pub/kmpkg/search?q=kmpkg_cmake_build+path%3A%2Fports)
+
+## 注解
+
+
+## Source
+
+[ports/kmpkg-cmake/kmpkg\_cmake\_build.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-cmake/kmpkg_cmake_build.cmake)

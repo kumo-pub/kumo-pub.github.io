@@ -1,0 +1,87 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_qmake_configure
+
+配置基于 qmake 的项目。
+
+## 使用情况
+
+```cmake
+kmpkg_qmake_configure(
+    SOURCE_PATH <pro_file_path>
+    [QMAKE_OPTIONS arg1 [arg2 ...]]
+    [QMAKE_OPTIONS_RELEASE arg1 [arg2 ...]]
+    [QMAKE_OPTIONS_DEBUG arg1 [arg2 ...]]
+    [OPTIONS arg1 [arg2 ...]]
+    [OPTIONS_RELEASE arg1 [arg2 ...]]
+    [OPTIONS_DEBUG arg1 [arg2 ...]]
+)
+```
+
+要使用此函数，必须依赖于帮助程序端口 `kmpkg-qmake`：
+
+```json
+"dependencies": [
+  {
+    "name": "kmpkg-qmake",
+    "host": true
+  }
+]
+```
+
+## 参数
+
+### SOURCE_PATH
+
+*.pro qmake 项目文件的路径。
+
+### QMAKE_OPTIONS, QMAKE_OPTIONS_RELEASE, QMAKE_OPTIONS_DEBUG
+
+要传递给在 `--` 之前的 qmake 的其他选项。
+
+这些选项通常应该具有窗体 `QMAKE_X=<something>` 或 `CONFIG=<something>`
+
+### OPTIONS, OPTIONS_RELEASE, OPTIONS_DEBUG
+
+要传递给在 `--` 之后的 `qmake` 的其他选项。
+
+## Triplet Parameters
+
+### KMPKG_OSX_DEPLOYMENT_TARGET
+
+确定 `QMAKE_MACOSX_DEPLOYMENT_TARGET`
+
+### KMPKG_QMAKE_COMMAND
+
+qmake 的路径。
+
+默认为 `"${CURRENT_HOST_INSTALLED_DIR}/tools/Qt6/bin/qmake${KMPKG_HOST_EXECUTABLE_SUFFIX}"`。
+
+### KMPKG_QT_CONF_RELEASE
+
+发布模式使用的 `qt.config` 路径。
+
+默认为 `"${CURRENT_INSTALLED_DIR}/tools/Qt6/qt_release.conf"`。
+
+### KMPKG_QT_CONF_DEBUG
+
+调试模式使用的 `qt.config` 路径。
+
+默认为 `"${CURRENT_INSTALLED_DIR}/tools/Qt6/qt_debug.conf"`
+
+### KMPKG_QT_TARGET_MKSPEC
+
+要使用的 Qt mkspec
+
+### KMPKG_QMAKE_OPTIONS_RELEASE
+
+在发布模式下要传递给 `qmake` 的其他选项。
+
+### KMPKG_QMAKE_OPTIONS_DEBUG
+
+在调试模式下要传递给 `qmake` 的其他选项。
+
+## Source
+
+[ports/kmpkg-qmake/kmpkg\_qmake\_configure.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-qmake/kmpkg_qmake_configure.cmake)

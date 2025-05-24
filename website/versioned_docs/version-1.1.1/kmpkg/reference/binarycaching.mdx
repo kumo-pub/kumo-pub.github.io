@@ -1,0 +1,433 @@
+---
+date: 5/2/2024
+---
+# 二进制缓存
+
+二进制缓存配置语法的参考文档。
+
+## 配置语法 {#configuration-syntax}
+
+使用环境变量 KMPKG_BINARY_SOURCES（
+设置为 `<source>;<source>;...`）和命令行选项 [`--binarysource=<source>`](../commands/common-options.mdx#binarysource) 配置二进制缓存。 先是从环境，再是从命令行对选项进行求值。
+可通过将 `--binarysource=clear` 传递为最后一个命令行选项，来彻底禁用二进制缓存。
+
+| 格式                                             | 说明                                                                                                                      |
+|--------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| `clear`                                          | 禁用所有以前的源（包括默认值）                                                                            |
+| `default[,<rw>]`                                 | 添加默认[文件](#files)提供程序                                                                                       |
+| [`files,<absolute path>[,<rw>]`](#files)         | 添加基于文件的位置                                                                                                       |
+| [`nuget,<uri>[,<rw>]`](#nuget)                   | 添加基于 NuGet 的源;等效于 NuGet CLI 的 `-Source` 参数                                                |
+| [`nugetconfig,<path>[,<rw>]`](#nuget)            | 添加基于 NuGet 配置文件的源;等效于 NuGet CLI 的 `-Config` 参数                                  |
+| [`nugettimeout,<seconds>`](#nuget)               | 指定 NuGet 网络操作的超时，等效于 NuGet CLI 的 `-Timeout` 参数。                       |
+| [`http,<url_template>[,<rw>[,<header>]]`](#http) | A添加基于 http 的自定义位置。                                                                                               |
+| [`x-azblob,<baseuri>,<sas>[,<rw>]`](#azblob)     | **实验性：会在没有警告的情况下更改或删除**使用共享访问签名添加 Azure Blob 存储源 |
+| [`x-gcs,<prefix>[,<rw>]`](#gcs)                  | **实验性：会在没有警告的情况下更改或删除**添加 Google 云存储 (GCS) 源。                        |
+| [`x-aws,<prefix>[,<rw>]`](#aws)                  | **实验性：会在没有警告的情况下更改或删除**添加 AWS S3 源。                                            |
+| [`x-aws-config,<parameter>`](#aws)               | **实验性：会在没有警告的情况下更改或删除**配置所有 AWS S3 提供程序。                                  |
+| [`x-cos,<prefix>[,<rw>]`](#cos)                  | **实验性：会在没有警告的情况下更改或删除**添加腾讯云对象存储源。                       |
+| [`x-gha,<rw>]`](#gha)                            | **实验性：会在没有警告的情况下更改或删除**使用 GitHub Actions 缓存作为源。                           |
+| `interactive`                                    | 为 [NuGet](#nuget) 启用交互式凭据管理（用于进行调试；命令行上需要 `--debug`）          |
+
+某些源的 `<rw>` 可选参数控制是否会被咨询下载二进制（默认为 `read`），按需版本是否会上传到远程 (`write`)，或两者兼有 (`readwrite`)。
+
+## 提供程序 {#providers}
+
+### AWS S3 提供程序 {#aws}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```
+x-aws,<prefix>[,<rw>]
+```
+
+使用 AWS CLI 添加 AWS S3 源。 *`<前缀>`*应以 `s3://` 开始，以 `/` 结尾
+```
+x-aws-config,no-sign-request
+```
+
+将 `--no-sign-request` 传递给 AWS CLI。
+
+### Azure Blob 存储提供商 {#azblob}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```
+x-azblob,<baseuri>,<sas>[,<rw>]
+```
+使用共享访问签名验证添加 Azure Blob 存储提供程序。 `<baseuri>` 应包含容器路径。
+
+####  快速入门 {#azblob-quickstart}
+
+首先，需创建 Azure 存储帐户和容器。 请参阅 Azure 存储快速入门文档，了解操作说明。
+
+接下来，需要创建共享访问签名 (SAS)。这一步可以从设置 ->共享访问签名下的存储帐户完成。 此 SAS 将会需要：
+
+- 允许的服务：*`Blob`*
+- 允许的资源类型：*`对象`*
+- 允许的权限：*读取*（如果使用的是 `read`）或*读取*、*创建*（如果使用的是 `write` 或 `readwrite`）
+blob 终结点以及容器必须作为 `<baseuri>` 传递，并且没有 ? 前缀的生成的 SAS 必须作为 `<sas>` 传递。
+
+**示例：**
+
+```
+x-azblob,https://<storagename>.blob.core.windows.net/<containername>,sv=2019-12-12&ss=b&srt=o&sp=rcx&se=2020-12-31T06:20:36Z&st=2020-12-30T22:20:36Z&spr=https&sig=abcd,readwrite
+```
+
+但是，`kmpkg` 会避免在正常操作期间显示 SAS：
+
+1. 如果传递的是 `--debug`，会将其打印
+2. 会将其作为命令行参数传递给子进程，例如 `curl`
+
+Azure Blob 存储包括一项可以删除在给定天数内无人访问的缓存条目的项目，可用于自动管理二进制缓存的大小。
+有关详细信息，请参阅[Microsoft Docs 数据生命周期管理](https://learn.microsoft.com/zh-cn/azure/storage/blobs/lifecycle-management-overview)，
+或在 Azure 门户的存储帐户中查看数据管理 ->生命周期管理。
+
+
+### 腾讯云对象存储提供程序 {#cos}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```
+x-cos,<prefix>[,<rw>]
+```
+
+添加一个 COS 源。 `<prefix>` 应以 `cos://` 开头，以 `/` 结尾。
+
+
+### 文件提供程序 {#files}
+
+```
+files,<absolute path>[,<rw>]
+```
+
+根据[二进制缓存 ID](#abi-hash)，将经过 zip 压缩的存档存储在路径。
+
+### Google Cloud Storage 提供商 {#gcs}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```
+x-gcs,<prefix>[,<rw>]
+```
+
+添加 Google Cloud Storage 提供商。 `<prefix>` 应以 `gs://` 开头，以 `/` 结尾。
+
+
+#### 快速入门 {#gcs-quickstart}
+
+首先，需要创建 Google Cloud Platform 帐户以及存储桶（[GCS 快速入门](https://cloud.google.com/storage/docs/quickstart-gsutil)）。
+
+在本快速入门中，你已将命令行工具配置为 gsutil 使用 Google Cloud 进行身份验证。 kmpkg 将使用此命令行工具，因此请确保它位于可执行文件的搜索路径中。
+示例 1（对对象使用没有常见前缀的存储桶）：
+
+```
+x-gcs,gs://<bucket-name>/,readwrite
+```
+
+示例 2（使用存储桶和对象的前缀）：
+
+```
+x-gcs,gs://<bucket-name>/my-kmpkg-cache/maybe/with/many/slashes/,readwrite
+x-gcs,gs://<bucket-name>/my-kmpkg-cache/maybe/with`,commas/too!/,readwrite
+```
+
+GCS 中的对象前缀可以使用逗号 (`,`)。 请记得在 kmpkg 配置中转义它们，如前面的示例所示。 GCS 没有文件夹（某些 GCS 工具可以模拟文件夹）。 无需创建或操作 kmpkg 缓存使用的前缀。
+
+### GitHub Actions cache {#gha}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```
+x-gha[,<rw>]
+```
+
+将 `GitHub Actions` 缓存添加为提供程序。 此二进制缓存提供程序仅在 `GitHub Actions` 工作流的上下文中有效。 此提供程序需要同时设置 `ACTIONS_CACHE_URL` 和 `ACTIONS_RUNTIME_TOKEN` 环境变量。 以下快速入门部分介绍如何正确设置这两个环境变量。
+
+#### 快速入门 {#gha-quickstart}
+
+kmpkg 需要 Actions 缓存 URL 和运行时令牌才能使用 GitHub Actions 缓存。 为此，应在工作流步骤中将这两个值导出为环境变量，如下所示：
+
+```yaml
+- uses: actions/github-script@v7
+  with:
+    script: |
+      core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+      core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+```
+
+我们在设计时有意将这些值指定为环境变量而不是 kmpkg 命令行参数，因为只能从 GitHub Actions 工作流使用 GitHub Actions 缓存二进制缓存提供程序。
+
+导出环境变量后，可以使用 GitHub Actions 二进制缓存提供程序运行 kmpkg，如下所示：
+
+```yaml
+- name: Install dependencies via kmpkg
+  run: kmpkg install zlib --binarysource="clear;x-gha,readwrite"
+```
+
+### HTTP 提供程序 {#http}
+
+```
+http,<url_template>[,<rw>[,<header>]]
+```
+
+每个二进制缓存操作都映射到 HTTP 谓词：
+
+- 下载 - `GET`
+- 上传 - `PUT`
+- 检查是否存在 - `HEAD`
+
+#### URL 模板
+
+该模板使用大括号表示变量扩展。 可以使用变量`name`、`version`、`sha`和`triplet`。 例如：
+
+`https://cache.example.com/{name}/{version}/{sha}`
+
+#### 标头
+
+:::warning
+此值可能显示在外部进程调用的命令行上，这可能会在环境中产生安全影响。
+:::
+
+通过指定 HTTP [授权标头](https://developer.mozilla.org/docs/Web/HTTP/Headers/Authorization)支持身份验证。 例如：
+
+```
+http,https://cache.example.com/{name}/{version}/{sha},readwrite,Authorization: Bearer BearerTokenValue
+```
+
+### NuGet 提供程序 {#nuget}
+
+使用 `-Source` NuGet CLI 参数添加 NuGet 服务器：
+```
+nuget,<uri>[,<rw>]
+```
+使用带有 `-Config` NuGet CLI 参数的 NuGet 配置文件：
+```
+nugetconfig,<path>[,<rw>]
+```
+配置 NuGet 源的超时：
+```
+nugettimeout,<seconds>
+```
+
+配置文件必须定义一个 `defaultPushSource` 来将包写回到源。
+
+#### 凭据 {#nuget-credentials}
+
+许多 NuGet 服务器需要其他凭据才能访问。 提供凭据的最灵活方法是通过具有自定义 `nuget.config` 文件的 `nugetconfig` 源。 有关详细信息，请参阅使用经过身份验证的源的包。
+
+但是，仍可以使用 NuGet 的内置凭据提供程序或通过自定义环境的默认值 nuget.config 对许多服务器进行身份验证。 可以通过 nuget 客户端调用扩展默认配置，例如：
+
+```bash
+nuget sources add -Name MyRemote -Source https://... -Username $user -Password $pass
+```
+
+然后通过 `nuget,MyRemote,readwrite` 传递给 kmpkg。 可以通过运行 `kmpkg fetch nuget` 来获取 `kmpkg` 使用的 `NuGet` 精确副本的路径，该副本将报告如下内容：
+
+```bash
+$ kmpkg fetch nuget
+/kmpkg/downloads/tools/nuget-5.5.1-linux/nuget.exe
+```
+非 Windows 用户需要通过 `mono /path/to/nuget.exe sources add ...` 单存储库来进行调用。
+
+### `metadata.repository`
+
+生成 `nuget` 包时，`nuget` 和 `nugetconfig` 源提供程序接受某些环境变量。 任何包的 `metadata.repository` 字段都将生成为：
+```xml
+    <repository type="git" url="${KMPKG_NUGET_REPOSITORY}"/>
+```
+
+or
+
+```xml
+    <repository type="git"
+                url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+                branch="${GITHUB_REF}"
+                commit="${GITHUB_SHA}"/>
+```
+
+如果定义了适当的环境变量，则为非空。 这专门用于将 GitHub 包中的包与生成项目相关联，而不是与原始包源相关联。
+
+#### NuGet 缓存
+
+默认情况下不使用 NuGet 的用户范围缓存。 若要将其用于每个基于 nuget 的源，请将[环境变量](../users/config-environment.mdx)`KMPKG_USE_NUGET_CACHE`设置为 true（不区分大小写）或 1。
+
+## 提供商示例
+
+If your CI system of choice is not listed, you are welcome to submit a PR to add it!
+
+###  GitHub 包 {#quickstart-github}
+
+若要将 kmpkg 与 GitHub 包配合使用，建议使用 NuGet [提供程序](#nuget)。
+
+:::info
+2020-09-21：GitHub 的托管代理随附了不支持最新二进制缓存的路径上旧安装的 kmpkg 副本。 这意味着直接调用 bootstrap-kmpkg 或 kmpkg 不使用路径前缀可能会调用意外的 kmpkg 实例。 如果要使用自己的 kmpkg 副本，请执行以下两个步骤，以避免使用自己的 kmpkg 副本时出现问题：
+
+运行等效于使用 `shell: bash` 的 `rm -rf $KMPKG_INSTALLATION_ROOT`。
+始终调用带有 kmpkg、bootstrap-kmpkg、`./kmpkg` 等路径前缀的 `kmpkg/kmpkg` 和 `.\bootstrap-kmpkg.bat`。
+:::
+```yaml
+# actions.yaml
+#
+# In this example, kmpkg has been added as a submodule (`git submodule add https://gitee.com/kumo-pub/kmpkg`).
+env:
+  KMPKG_BINARY_SOURCES: 'clear;nuget,GitHub,readwrite'
+
+matrix:
+  os: ['windows-2019', 'ubuntu-20.04']
+  include:
+    - os: 'windows-2019'
+      triplet: 'x86-windows'
+      mono: ''
+    - os: 'ubuntu-20.04'
+      triplet: 'x64-linux'
+      # To run `nuget.exe` on non-Windows platforms, `mono` must be used.
+      mono: 'mono'
+
+steps:
+  # This step assumes `kmpkg` has been bootstrapped (run `./kmpkg/bootstrap-kmpkg`)
+  - name: 'Setup NuGet Credentials'
+    shell: 'bash'
+    # Replace <OWNER> with your organization name
+    run: |
+      ${{ matrix.mono }} `./kmpkg/kmpkg fetch nuget | tail -n 1` \
+        sources add \
+        -source "https://nuget.pkg.github.com/<OWNER>/index.json" \
+        -storepasswordincleartext \
+        -name "GitHub" \
+        -username "<OWNER>" \
+        -password "${{ secrets.GITHUB_TOKEN }}"
+      ${{ matrix.mono }} `./kmpkg/kmpkg fetch nuget | tail -n 1` \
+        setapikey "${{ secrets.GITHUB_TOKEN }}" \
+        -source "https://nuget.pkg.github.com/<OWNER>/index.json"
+
+  # Omit this step if you're using manifests
+  - name: 'kmpkg package restore'
+    shell: 'bash'
+    run: >
+      ./kmpkg/kmpkg install sqlite3 cpprestsdk --triplet ${{ matrix.triplet }}
+```
+
+如果使用的是[清单](../concepts/manifest-mode.mdx)则可以省略 `kmpkg package restore` 步骤：将会自动作为版本的一部分运行。
+
+有关详细信息，请参阅 [GitHub 包的 NuGet 文档](https://docs.github.com/packages/using-github-packages-with-your-projects-ecosystem/configuring-dotnet-cli-for-use-with-github-packages)。
+
+### Azure DevOps Artifacts {#quickstart-ado}
+
+若要将 kmpkg 与 Azure DevOps Artifacts 配合使用，建议使用 [NuGet 提供程序](#nuget)。
+
+首先，请确保已在 DevOps 帐户上启用 Artifacts。 管理员可通过`项目设置 ->通用 ->概述 ->Azure DevOps 服务>Artifacts` 来启用此功能。
+
+接下来，为项目创建源。 源 URL 将会是一个以 `/nuget/v3/index.json` 结尾的 `https://` 链接。 有关详细信息，请参阅 [Azure DevOps Artifacts 文档](https://learn.microsoft.com/zh-cn/azure/devops/artifacts/get-started-nuget?view=azure-devops&tabs=windows)。
+
+#### 使用管道中的源
+
+```yaml
+# azure-pipelines.yaml
+variables:
+- name: KMPKG_BINARY_SOURCES
+  value: 'clear;nuget,<FEED_URL>,readwrite'
+
+steps:
+# Remember to add this task to allow kmpkg to upload archives via NuGet
+- task: NuGetAuthenticate@0
+```
+
+如果在非 Windows OS 上使用自定义代理，则需要安装 `Mono` 来运行 `nuget.exe（apt install mono-complete、brew install mono` 等）。
+
+#### 在本地使用源
+
+```bash
+# On Linux or OSX
+$ mono `kmpkg fetch nuget | tail -n1` sources add \
+  -name ADO \
+  -Source https://pkgs.dev.azure.com/$ORG/_packaging/$FEEDNAME/nuget/v3/index.json \
+  -Username $USERNAME \
+  -Password $PAT
+$ export KMPKG_BINARY_SOURCES="nuget,ADO,readwrite"
+```
+
+使用个人访问令牌 (PAT) 作为最大安全性的密码。 可以在`用户设置 ->个人访问令牌`或 `https://dev.azure.com/<ORG>/_usersSettings/tokens` 中生成 PAT。
+
+## ABI 哈希 {#abi-hash}
+:::info
+我们会以实施公告的形式提供与 ABI 哈希有关的信息。如有更改，述不另行通知。
+:::
+
+kmpkg 会为每个版本计算 ABI 哈希在确定等效性。 如果两个生成具有相同的 ABI 哈希，kmpkg 会考虑它们相同，并在项目和计算机上重复使用二进制文件。
+
+ABI 哈希考虑以下方面：
+
+- 端口目录中的每个文件
+- 三元组文件内容和名称
+- C++ 编译器可执行文件
+- C 编译器可执行文件
+- 所选的[功能](../concepts/features.mdx)集
+- 每个依赖项的 ABI 哈希
+- `portfile.cmake`（启发式）引用的所有帮助程序函数
+- 使用的 `CMake` 版本
+- 在 [`KMPKG_ENV_PASSTHROUGH`](../users/triplets.mdx#kmpkg_env_passthrough) 中列出任何环境变量的内容
+- 工具链文件的文本内容 ([`KMPKG_CHAINLOAD_TOOLCHAIN_FILE`](../users/triplets.mdx#kmpkg_chainload_toolchain_file))
+- GRDK 工具包（仅针对 Xbox 平台）
+
+尽管有这份扩展列表，还是有可能导致缓存问题，带来不确定性。 如果需要跟踪环境的其他详细信息，可以在批注中生成包含其他信息的三联密码。 该附加信息将包含在 ABI 哈希中，确保唯一通用的二进制。
+ABI 哈希不考虑名为 .DS_Store 的文件。
+计算的 ABI 哈希存储在每个包和当前安装的目录中 `/share/<port>/kmpkg_abi_info.txt` 以供检查。
+
+### zlib 的 ABI 哈希示例
+
+启用[调试输出](../users/binarycaching-troubleshooting.mdx#debug-output)以打印包的完整应用程序二进制接口 (ABI) 哈希。 对于 zlib：
+```
+[DEBUG] Trying to hash <path>\buildtrees\zlib\x86-windows.kmpkg_abi_info.txt
+[DEBUG] <path>\buildtrees\zlib\x86-windows.kmpkg_abi_info.txt has hash bb1c96759ac96102b4b18215db138daedd3eb16c2cd3302ae7bffab2b643eb87
+```
+通过对用于区分二进制包的所有可能的相关信息进行哈希处理来构造包 `zlib` 的 [ABI 哈希](#abi-hash) `bb1c96759ac96102b4b18215db138daedd3eb16c2cd3302ae7bffab2b643eb87`
+
+
+编译器版本是 `ABI` 哈希的一部分，计算结果如下：
+```
+[DEBUG] -- The C compiler identification is MSVC 19.36.32538.0
+[DEBUG] -- The CXX compiler identification is MSVC 19.36.32538.0
+[DEBUG] #COMPILER_HASH#f5d02a6542664cfbd4a38db478133cbb1a18f315
+```
+
+对相关文件、编译器和工具版本信息进行哈希处理，以计算最终的 `ABI` 哈希：
+
+```
+[DEBUG] <abientries for zlib:x86-windows>
+[DEBUG]   0001-Prevent-invalid-inclusions-when-HAVE_-is-set-to-0.patch|750b9542cb55e6328cca01d3ca997f1373b9530afa95e04213168676936e7bfa
+[DEBUG]   0002-skip-building-examples.patch|835ddecfed752e0f49be9b0f8ff7ba76541cb0a150044327316e22ca84f8d0c2
+[DEBUG]   0003-build-static-or-shared-not-both.patch|d6026271dcb3d8fc74b41e235620ae31576a798e77aa411c3af8cd9e948c02b1
+[DEBUG]   0004-android-and-mingw-fixes.patch|37a43eddbcb1b7dde49e7659ae895dfd0ff1df66666c1371ba7d5bfc49d8b438
+[DEBUG]   cmake|3.26.2
+[DEBUG]   features|core
+[DEBUG]   portfile.cmake|ac63047b644fa758860dd7ba48ff9a13b058c6f240b8e8d675b8fbba035976be
+[DEBUG]   ports.cmake|5a8e00cedff0c898b1f90f7d129329d0288801bc9056562b039698caf31ff3f3
+[DEBUG]   post_build_checks|2
+[DEBUG]   powershell|7.3.6
+[DEBUG]   triplet|x86-windows
+[DEBUG]   triplet_abi|3e71dd1d4afa622894ae367adbbb1ecbd42c57c51428a86b675fa1c8cad3a581-36b818778ba6f2c16962495caedb9a7b221d5be4c60de1cd3060f549319a9931-f5d02a6542664cfbd4a38db478133cbb1a18f315
+[DEBUG]   usage|be22662327df993eebc437495add75acb365ab18d37c7e5de735d4ea4f5d3083
+[DEBUG]   kmpkg-cmake|1b3dac4b9b0bcbef227c954b495174863feebe3900b2a6bdef0cd1cf04ca1213
+[DEBUG]   kmpkg-cmake-wrapper.cmake|5d49ef2ee6448479c2aad0e5f732e2676eaba0411860f9bebabe6002d66f57d1
+[DEBUG]   kmpkg.json|bc94e2540efabe36130a806381a001c57194e7de67454ab7ff1e30aa15e6ce23
+[DEBUG]   kmpkg_copy_pdbs|d57e4f196c82dc562a9968c6155073094513c31e2de475694143d3aa47954b1c
+[DEBUG]   kmpkg_fixup_pkgconfig|588d833ff057d3ca99c14616c7ecfb5948b5e2a9e4fc02517dceb8b803473457
+[DEBUG]   kmpkg_from_git|8f27bff0d01c6d15a3e691758df52bfbb0b1b929da45c4ebba02ef76b54b1881
+[DEBUG]   kmpkg_from_github|b743742296a114ea1b18ae99672e02f142c4eb2bef7f57d36c038bedbfb0502f
+[DEBUG]   kmpkg_replace_string|d43c8699ce27e25d47367c970d1c546f6bc36b6df8fb0be0c3986eb5830bd4f1
+[DEBUG] </abientries>
+```
+
+:::info
+`triplet_abi` 项包含三个哈希：`x86-windows` 三元组的文件内容的哈希、`windows.cmake` 工具链的哈希和编译器哈希。 如果决定以其他平台为目标，将会更改这些哈希。
+:::

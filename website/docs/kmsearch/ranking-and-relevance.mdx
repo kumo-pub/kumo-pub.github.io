@@ -1,0 +1,176 @@
+# 排序和相关性
+
+kumosearch 使用一个简单的排序算法对搜索结果进行排名，该算法基于以下一项或多项：
+
+1. 文本匹配分数，作为一个特殊的 `_text_match` 字段公开。
+2. 用户定义的索引数字字段（例如：流行度、评级、分数等）。
+3. 用户定义的索引字符串字段（例如：名称）。
+4. 属性值匹配的条件（例如：提升所有类别为鞋的记录）。
+
+[[toc]]
+
+## 文本匹配分数
+
+文本匹配分数基于以下指标计算：
+
+1. **频率**：搜索查询和文本字段之间相同的tokens数量。包含更多相同tokens的文档排名更高。
+2. **距离**：如果某个查询token未找到，则检查与该查询token距离为 num_typos 的token。距离较小的文档排名更高。
+3. **邻近性**：查询tokens连续出现或间隔出现。查询tokens邻近出现的文档排名更高。
+4. **`query_by` 字段的排序**：与 `query_by` 字段列表中靠前的字段匹配的文档更相关。
+5. **`query_by_weights` 字段中的权重**：与权重较高的字段匹配的文档更相关。
+
+基于上述指标，kumosearch 计算 `_text_match` 分数，用于根据文本相关性对文档进行排名。
+
+## 并列排名
+
+在某些情况下，许多文档可能均包含搜索查询中的精确token，它们的 `_text_match` 分数相同。此时可以使用用户定义的索引数字和字符串字段来解决并列排名。最多可以指定两个此类用户定义字段用于排名。
+
+例如，假设我们搜索 `短篇小说`，如果有多本书包含这些确切的查询词，所有这些文档都有相同的文本匹配分数。
+
+为了解决并列排名，我们可以指定最多两个额外的 `sort_by` 字段。例如：
+
+```
+sort_by=_text_match:desc,average_rating:desc,publication_year:desc
+```
+
+这将按以下顺序对结果进行排序：
+
+1. 所有匹配记录按文本匹配分数排序。
+2. 如果有两个文档的文本匹配分数相同，则按平均评分排序。
+3. 如果仍然存在并列排名，则按出版年份排序。
+
+### 默认排名顺序
+
+如果未在搜索请求中提供 `sort_by` 参数，文档会首先根据 `_text_match` 分数排序，其次是索引表schema中指定的默认排序字段值，最后是文档插入顺序：
+
+```
+sort_by=_text_match:desc,default_sorting_field:desc,document_insertion_order:desc
+```
+
+## 严格排序或硬排序
+
+如果您希望严格按照索引数字或字符串字段（如 `价格`、`名称` 等）对文档进行排序，可以将文本匹配分数标准移至末尾，如下所示：
+
+```
+sort_by=price:desc,_text_match:desc
+```
+
+## 基于相关性和受欢迎度排名 {#rank-by-rel-and-ctr}
+
+如果文档有受欢迎度得分，则可以：
+
+1. 在应用中使用您选择的公式来计算。
+2. 使用kumosearch中的[分析规则](../api/kmsearch/analytics-query-suggestions.mdx#compute-ctr)来计算。
+
+可以让 kumosearch 将您的自定义分数与其计算的文本相关性分数相混合，使更受欢迎的结果（由您的自定义分数定义）排名更高。
+
+实现此目的的搜索参数为：
+
+```
+  sort_by=_text_match(buckets: 10):desc,weighted_score:desc
+```
+
+其中 `weighted_score` 是文档中包含自定义分数的字段。
+
+这将进行以下操作：
+
+1. 获取所有与查询匹配的结果。
+2. 按文本相关性排序（文本匹配分数降序 desc）。
+3. 将结果分为大小相等的 10 个桶（第一个桶包含最相关的结果）。
+4. 强制每个桶内的所有结果都与 `_text_match` 分数相匹配，具有相同的文本匹配分数。
+5. 这将使每个桶内出现并列排名，然后根据 `weighted_score` 打破并列排名并对每个桶内的结果重新排名。
+
+存储桶的数量越多，根据加权分数重新排名的粒度就越细。例如，如果有 100 个结果，使用 `buckets: 50`，则每个桶将包含 2 个结果，桶内结果会根据 `weighted_score` 重新排名。
+
+## 基于相关性和时效性排名
+
+一个常见的需求是将最近发布的结果排名靠前。
+
+要实现这一点，需要将文档发布的 Unix 时间戳存储为 `int64` 类型的字段（例如：`published_at_timestamp`）。
+
+要根据文本相关性和时效性进行排序，可以使用以下 `sort_by` 参数：
+
+```json
+{
+  "sort_by": "_text_match(buckets: 10):desc,published_at_timestamp:desc"
+}
+```
+
+这将进行以下操作：
+
+1. 获取所有与查询匹配的结果。
+2. 根据文本相关性排序（文本匹配分数降序 desc）。
+3. 将结果分为大小相等的 10 个桶（第一个桶包含最相关的结果）。
+4. 强制每个桶内的所有结果具有相同的 `_text_match` 分数。即，第一个桶中的所有结果都具有相同的文本匹配分数，第二个桶中的结果也相同，以此类推。
+5. 这将使每个桶内的结果出现并列排名，然后使用 `published_at_timestamp` 来打破并列并重新排名每个桶内的结果。
+
+桶的数量越多，根据加权分数重新排名的粒度越细。例如，如果有 100 个结果，设置 `buckets: 50`，每个桶将包含 2 个结果，桶内结构会根据 `published_at_timestamp` 重新排名。
+
+## 对精确匹配排名
+
+默认情况下，如果搜索查询逐字匹配特定字段值，kumosearch 会将该文档视为最相关并优先排序。
+
+如果不希望这种行为，可以在[搜索参数](../api/kmsearch/search_api.mdx#search-parameter)时设置 `prioritize_exact_match=false` 来关闭此功能。
+
+## 根据条件排名
+
+您可以使用特殊的 `_eval(<表达式>)` 操作作为 `sort_by` 参数，根据表达式计算结果为 `true` 或 `false` 对文档进行排名。
+
+`_eval()` 内表达式的语法与[filter_by](../api/kmsearch/search_api.mdx#search-parameter)参数相同，所以也称为 `可选过滤`。
+
+例如：
+
+```json
+{
+  "sort_by": "_eval(in_stock:true):desc,popularity:desc"
+}
+```
+
+这将使 `in_stock` 设置为 `true` 的文档排名第一，其次是 `in_stock` 设置为 `false` 的文档。
+
+## 提升或降级记录
+
+可以为符合特定过滤条件的记录提供自定义分数，而不仅仅是按 `真/假` 值排序。
+
+例如，如果有一个 `鞋子` 系列，并且希望将所有 `耐克` 鞋子排在 `阿迪达斯` 鞋子之前，可以这样做：
+
+```json
+{
+  "sort_by": "_eval([ (brand:Nike):3, (brand:Adidas):2 ]):desc"
+}
+```
+
+`_eval` 中可以包含多个表达式，每个表达式都可以像标准 `filter_by` 表达式一样复杂。
+
+## 提升或隐藏结果
+
+可以选择按 ID 固定或隐藏特定记录在特定排名位置：
+
+1. 基于搜索查询，可进行[策略（又名 Curation）](../api/kmsearch/curation.mdx)设置。
+2. 动态使用[pinned_hits 和 hidden_hits](../api/kmsearch/search_api.mdx#ranking-and-sorting-parameters)搜索参数。
+
+例如：如果有人搜索 `电话`，可以设置一个策略，将具有优惠价格的特定产品固定在位置 1。
+
+固定结果的另一个常见用例是电子商务中的营销，商家（或自定义 ML 模型）可能想要策划应彼此相邻出现的确切产品。根据用户正在查看的类别页面，可以使用 `pinned_hits` 参数定义哪些记录应显示在该页面的哪个位置。
+
+如果在 CMS 系统中维护 `Category Page -> pinned_hits` 映射，则可以让内部用户修改它，并让应用程序在呈现特定类别页面时下拉此映射。
+
+## 调整错字容忍度
+
+kumosearch 开箱即用地自动为您处理拼写错误。但在某些用例中，您可能需要关闭拼写错误容忍或调整其灵敏度（例如：零件号、电话号码）
+
+要完全关闭拼写错误容忍度，请在[搜索](../api/kmsearch/search_api.mdx#typo-tolerance-parameters)时设置 `num_typos=0` 和 `typo_tokens_threshold=0` 。
+
+您还可以根据需要将这些值设置得更高，以调整拼写错误容错灵敏度。要根据字长控制拼写错误容忍度，可以使用 `min_len_1typo` 和 `min_len_2typo`[拼写错误参数](../api/kmsearch/search_api.mdx#typo-tolerance-parameters)。
+
+也可以通过为 `num_typos` 指定多个逗号分隔值来调整各个字段的拼写错误容忍度。例如：如果您有 `query_by=name,phone_number,zip_code`，且不希望 `phone_number` 或 `zip_code` 上有拼写错误，则可以设置 `num_typos=2,0,0`。
+
+## 处理没有结果
+
+在某些用例中，如果用户的搜索词与任何文档都不匹配，且您不希望向用户显示 `未找到结果`。
+
+此时，可以让 kumosearch 自动从用户的搜索查询中删除单词/token，一次一个，然后重复搜索以显示接近用户原始查询的结果。
+
+此行为由 `drop_tokens_threshold` 搜索参数控制，默认值为 `1`。这意味着，如果搜索查询仅返回 1 或 0 个结果，kumosearch 将开始删除搜索关键字并重复搜索，直到找到至少 1 个结果。
+
+要关闭此行为，请设置 `drop_tokens_threshold=0`。

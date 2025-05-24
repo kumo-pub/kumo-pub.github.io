@@ -1,0 +1,225 @@
+---
+date: 01/10/2024
+---
+
+# 版本控制故障排除指南
+
+本指南适用于遇到[版本控制](./versioning.mdx)问题的用户。
+
+## 检查端口的版本文件 {#inspect-versions-file}
+:::info
+下面介绍的过程适用于 [kmpkg 注册表](https://gitee.com/kumo-pub/kmpkg)中的端口。 请参阅我们的[注册表文档](../maintainers/registries.mdx#git-registries)，了解如何在自定义注册表中实现版本控制数据库。
+:::
+
+检查特定端口的版本数据库：
+
+1. 导航到 kmpkg/versions 目录。
+2. 找到端口的文件夹：
+    - 查找与端口的第一个字母对应的文件夹。 例如，对于 fmt，打开名为 f- 的文件夹。
+3. 打开端口版本文件：
+    - 找到具有相同端口名称的 JSON 文件。 例如，fmt 版本文件名为 fmt.json.
+
+端口的版本文件包含可用版本的列表，其中包含版本标记及其相应的 [Git 树对象哈希](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects#_tree_objects)等详细信息。 kmpkg 需要此信息来检索特定端口版本。 此列表中包含的版本只能在清单文件中使用。
+
+有关版本控制的更多详细信息，请参阅我们的参考文档：
+
+- [版本控制概念](./versioning.concepts.mdx)
+- [版本控制](./versioning.mdx)
+
+有关使用清单的更多详细信息，请参阅[清单](../concepts/manifest-mode.mdx)
+
+## 原因：请求不存在的包版本 {#non-existent-version}
+
+如果 kmpkg 版本数据库中不存在清单文件中指定的版本，则 kmpkg 无法解析依赖项并且会生成类似于以下内容的错误消息：
+
+```console
+error: no version database entry for fmt at 100.0.0
+Available versions:
+  10.1.1
+  10.1.0
+  10.0.0
+  9.1.0#1
+  9.1.0
+  9.0.0
+  8.1.1#2
+  8.1.1#1
+  ...
+See `kmpkg help versioning` or https://learn.microsoft.com/kmpkg/users/versioning for more information.
+```
+
+若要解决问题，请执行以下操作：
+
+1. 更新版本数据库：
+    - 所需版本可能不在版本数据库的本地副本中。 在这种情况下，请运行 git pull 命令，以将 kmpkg 注册表 更新为最新提交。
+2. 查看可用的版本：
+    - 选择版本数据库中可用的一个版本。
+3. 更新清单文件：
+    - 编辑您的 `kmpkg.json` 文件。
+    - 将指定的版本更改为 kmpkg 存储库中可用的版本。 例如，从 `"version>=": "100.0.0"` 更改为 `"version>=": "10.1.1"`。
+4. 运行 kmpkg 安装：
+    - 在终端或命令提示符下再次执行 `kmpkg install` 命令。
+
+##  原因：跨不同方案指定版本约束 {#version-scheme-conflict}
+
+当依赖项 `kmpkg.json` 文件中指定的版本使用的版本控制方案与 kmpkg 存储库基准版本中使用的版本控制方案不同时，就会发生版本方案冲突。 这会导致错误，因为 kmpkg 无法跨不同方案比较版本。
+
+如果声明的 `version>=` 约束使用的版本方案与基线版本中使用的版本方案不同，则 kmpkg 无法确定哪个版本大于或等于另一个版本。
+
+例如，如果指定：
+
+```json
+{
+  "dependencies": [
+    {
+      "name": "boost-regex",
+      "version>=": "1.75.0"
+    }
+  ]
+}
+```
+
+kmpkg 输出以下错误消息：
+
+```console
+error: version conflict on boost-regex:x64-windows:  required 1.75.0, which cannot be compared with the baseline version 1.83.0.
+
+The versions have incomparable schemes:
+  boost-regex@1.83.0 has scheme relaxed
+  boost-regex@1.75.0 has scheme string
+
+This can be resolved by adding an explicit override to the preferred version. For example:
+
+  "overrides": [
+    { "name": "boost-regex", "version": "1.83.0" }
+  ]
+
+See `kmpkg help versioning` or https://learn.microsoft.com/kmpkg/users/versioning for more information.
+```
+
+解决方法：
+
+1. 使用兼容的版本方案：
+    - 检查 kmpkg 存储库中 versions/b-/boost-regex.json 下面的版本数据库，以查找与基线使用相同版本控制方案的 boost-regex 的版本。
+    - 将 kmpkg.json 中的 version>= 约束更新为使用兼容方案的版本。
+2. 替代为所需版本：
+    - 如果需要一个使用其他版本控制方案的特定 boost-regex 版本，则可以在清单中替代它。
+    - 修改 kmpkg.json 以包含一个指定所需版本的替代节：
+    ```json
+    {
+      "dependencies": [
+        { "name": "boost-regex" }
+      ],
+      "overrides": [
+        { "name": "boost-regex", "version": "1.75.0" }
+      ]
+    }
+    ```
+
+## 原因：浅表克隆中的提交历史记录不足 {#shallow-clone-version-constraint}
+
+使用有限的提交历史记录克隆 kmpkg（浅表克隆）时，它缺少解决特定版本约束或基线所需的提交历史记录。 kmpkg 用于检索特定版本端口的 Git 树对象哈希仅在签出完整提交历史记录时才可用。kmpkg 会检测它何时被克隆到浅表存储库中，并在无法检索端口版本时生成错误消息。
+
+例如，将 `kmpkg.json` 与特定基线配合使用，如下所示：
+
+```json
+{
+  "dependencies": [
+    {
+      "name": "fmt"
+    }
+  ],
+  "overrides": [
+    {
+      "name": "fmt",
+      "version": "7.1.3#1"
+    }
+  ],
+  "builtin-baseline": "bb588985e37484d543fc849d0d79434e0d45bb3c"
+}
+```
+
+将导致以下错误：
+
+```console
+error: failed to execute: "C:\Program Files\Git\cmd\git.exe" "--git-dir=C:\dev\demo\kmpkg\.git" "--work-tree=C:\dev\demo\kmpkg\buildtrees\versioning_\versions\fmt\4f8427eb0bd40da1856d4e67bde39a4fda689d72_26648.tmp" -c core.autocrlf=false read-tree -m -u 4f8427eb0bd40da1856d4e67bde39a4fda689d72
+kmpkg was cloned as a shallow repository in: C:\dev\demo\kmpkg\.git
+Try again with a full kmpkg clone.
+error: git failed with exit code: (128).
+fatal: failed to unpack tree object 4f8427eb0bd40da1856d4e67bde39a4fda689d72
+note: while checking out port fmt with git tree 4f8427eb0bd40da1856d4e67bde39a4fda689d72
+```
+
+此错误表明特定版本的包 fmt 所需的提交 (`4f8427eb0bd40da1856d4e67bde39a4fda689d72`) 在浅表克隆中不可用。
+
+
+解决方法：
+
+1. 转换为完整克隆
+
+    - 此问题的最简单解决方案是转换为完整克隆：
+  
+   ```console
+   git fetch --unshallow
+   ```
+
+2. 使用 GitHub Actions（默认浅表克隆）
+
+    - GitHub Actions 通常默认为浅表克隆。 若要解决此问题，可以修改 GitHub Actions 工作流以执行完整克隆。 使用 kmpkg 之前，请添加以下步骤：
+    ```yaml
+    - name: Convert to Full Clone
+      run: git fetch --unshallow
+    ```
+
+## 原因：意外包含可传递依赖项中的默认功能 {#unexpected-default-features}
+
+使用 kmpkg 管理依赖项时，你可能会发现可传递依赖项已安装默认功能，即使你可能不想要将这些功能用于项目也是如此。 这种情况可能会导致最终版本中出现意外的膨胀或功能。
+
+### 场景
+
+你依赖于库 `Y`，而该库又依赖于库 `X`。 库 `X` 具有要从项目中排除的默认功能，包括 `foo`。 库 `Y` 的顶级清单可能如下：
+```json
+{
+  "name": "my-project",
+  "dependencies": [
+    {
+      "name": "Y",
+      "features": ["featureB"],
+      "default-features": false
+    }
+  ]
+}
+```
+由于 `"default-features": false` 设置，你预计将安装 `X`，而不安装其默认功能。 但是，`X` 仍安装了默认功能 `foo`。
+
+### 原因
+
+仅在顶级清单中考虑 `default-features` 属性。 这意味着，除非在顶级显式禁用，否则仍包含可传递依赖项的默认功能（如此方案中的 `X`）。
+解析库 `Y` 后，kmpkg 不会将 `"default-features": false` 设置传播到可传递依赖项 `X`，从而导致安装 `X` 及其默认功能。
+
+### 解决方法
+
+若要确保安装的可传递依赖项（如 `X`）而未安装其默认功能，需要将其提升为顶级清单中的直接依赖项，并显式禁用其默认功能。 直接使用 `"default-features": false` 修改 `kmpkg.json` 以包含 `X`：
+
+```json
+{
+  "name": "my-project",
+  "dependencies": [
+    {
+      "name": "Y",
+      "features": ["featureB"]
+    },
+    {
+      "name": "X",
+      "default-features": false
+    }
+  ]
+}
+```
+
+此方法可确保安装 `X`，而不安装默认功能，因为现在 `X `是直接依赖项，其中包含一个显式指令来排除默认功能。
+
+有关默认功能工作原理以及如何管理这些功能的详细信息，请参阅[默认功能概念](../concepts/default-features.mdx)文章。
+
+## 问题未在此处列出
+
+如果此处未列出你的问题，请访问我们的[GITEE仓库](https://gitee.com/kumo-pub/kmpkg/issues)以创建新问题。

@@ -1,0 +1,186 @@
+---
+date: 01/10/2024
+---
+# MSBuild 项目中的 kmpkg
+
+将 kmpkg 集成到 MSBuild 或 Visual Studio 项目中。
+
+## 集成方案
+
+### 用户范围内的集成 {#user-wide-integration}
+
+要在 MSBuild 项目中使用 kmpkg，请运行以下命令：
+
+```Console
+kmpkg integrate install
+```
+
+您只需要运行[`kmpkg集成install`](../../commands/integrate.mdx#kmpkg-integrate-install) 第一次执行命令
+启用 MSBuild 集成。这使得 MSBuild 能够集成您现有和未来的所有内容
+项目。
+
+如果您有多个 kmpkg 实例，可以使用“kmpkgintegrateinstall”命令进行更新
+MSBuild 中使用了哪个 kmpkg 实例。使用 [`kmpkg 集成remove`](../../commands/integrate.mdx#kmpkg-integrate-remove) 以在用户范围内删除 MSBuild
+一体化。
+
+此集成方法会自动将 kmpkg 安装的软件包添加到以下项目中
+属性：包括目录、链接目录和链接库。此外，这还创建了一个
+构建后操作，确保将任何所需的 DLL 复制到构建输出文件夹中。这
+适用于使用 Visual Studio 2015 或更高版本的所有解决方案和项目。
+
+对于绝大多数库来说，这就是您需要做的全部事情。然而，一些库执行
+冲突的行为，例如重新定义“main()”。由于您需要为每个项目选择
+如果您想要这些冲突的选项，则必须手动将这些库添加到链接器输入中。
+
+以下是一些需要手动链接的示例（并非详尽列表）：
+
+- Gtest provides `gtest`, `gmock`, `gtest_main`, and `gmock_main`
+- SDL2 provides `SDL2main`
+- SFML provides `sfml-main`
+- Boost.Test provides `boost_test_exec_monitor`
+
+要获取所有已安装软件包的完整列表，请运行 `kmpkg owns manual-link`。
+
+### Import `.props` and `.targets`
+
+kmpkg 还可以通过显式导入来集成到 MSBuild 项目中
+`scripts/buildsystems/kmpkg.props` 和 `scripts/buildsystems/kmpkg.targets` 文件到每个
+`.vcxproj`。通过使用相对路径，这使得 kmpkg 可以被子模块使用，并且
+用户运行`git clone`时自动获取。
+
+将这些添加到解决方案中的每个项目的最简单方法是创建`Directory.Build.props`
+和存储库根目录下的`Directory.Build.targets`文件。
+
+以下示例假设它们位于存储库的根目录中，其子模块为`kumo/kmpkg`位于`kmpkg`。
+
+#### Example `Directory.Build.props`
+
+```xml
+<Project>
+ <Import Project="$(MSBuildThisFileDirectory)kmpkg\scripts\buildsystems\msbuild\kmpkg.props" />
+</Project>
+```
+
+#### Example `Directory.Build.targets`
+
+```xml
+<Project>
+ <Import Project="$(MSBuildThisFileDirectory)kmpkg\scripts\buildsystems\msbuild\kmpkg.targets" />
+</Project>
+```
+
+请参阅自定义您的建造官方 MSBuild 文档部分，了解有关“Directory.Build.targets”的更多信息和
+`目录.Build.props`。
+
+### 链接的 NuGet 包 {#linked-nuget-package}
+
+> [!NOTE]
+> This approach is not recommended for new projects, since it makes them difficult to share
+> with others. For a portable, self-contained NuGet package, see the [`export
+> command`](../../commands/export.mdx).
+
+VS 项目也可以通过 NuGet 包集成。这将修改项目文件，所以我们不建议对开源项目使用这种方法。
+
+```powershell
+PS D:\src\kmpkg> .\kmpkg integrate project
+Created nupkg: D:\src\kmpkg\scripts\buildsystems\kmpkg.D.src.kmpkg.1.0.0.nupkg
+
+With a project open, go to Tools->NuGet Package Manager->Package Manager Console and paste:
+    Install-Package kmpkg.D.src.kmpkg -Source "D:/src/kmpkg/scripts/buildsystems"
+```
+:::warning
+生成的 NuGet 包不包含实际的库。相反，它的作用就像一个
+kmpkg 安装的快捷方式（或符号链接），并将“自动”更新任何更改（安装/删除）到库。您不需要重新生成或更新 NuGet 包。
+:::
+
+## Common Configuration
+
+### `KmpkgEnabled` (Use Kmpkg)
+
+可以将其设置为`false`以显式禁用项目的 kmpkg 集成
+
+### `KmpkgConfiguration` (Kmpkg Configuration)
+
+如果您的配置名称太复杂而 kmpkg 无法正确猜测，您可以分配此名称
+将属性设置为`Release`或`Debug`以明确告诉 kmpkg 您想要哪种库变体
+消耗。
+
+### `KmpkgEnableManifest` (Use Kmpkg Manifest)
+
+该属性必须设置为“true”才能从本地“kmpkg.json”文件中使用。如果设置为
+`false`，任何本地 `kmpkg.json` 文件都将被忽略。
+
+当前默认为`false`，但将来将默认为`true`。
+
+### `KmpkgTriplet` (Triplet) {#kmpkgtriplet}
+
+此属性控制三元组以使用其中的库，例如`x64-windows-static`或
+`arm64-windows`。
+
+如果没有明确设置，kmpkg 将根据您的 Visual Studio 推导出正确的三元组
+设置。 kmpkg 只会推导使用动态库链接和动态 CRT 链接的三元组；
+如果您想要静态依赖项或使用静态 CRT (`/MT`)，则需要设置三元组
+手动。
+
+您可以通过将 MSBuild 详细程度设置为“正常”或更高来查看自动推导的三元组：
+
+*Shortcut: Ctrl+Q "build and run"*
+
+ Tools -> Options -> Projects and Solutions -> Build and Run -> MSBuild project build output
+ verbosity
+
+See also [Triplets](../triplets.mdx)
+
+### `KmpkgHostTriplet` (Host Triplet) {#kmpkghosttriplet}
+
+可以将其设置为自定义三元组以用于解决主机依赖性。
+
+如果未设置，则默认为“本机”三元组 (x64-windows)。
+
+另请参阅[主机依赖项](../host-dependencies.mdx)。
+
+### `KmpkgInstalledDir` (Installed Directory)
+
+此属性定义 kmpkg 将安装和使用库的位置。
+
+在清单模式下，默认为`$(KmpkgManifestRoot)\kmpkg_installed\$(KmpkgTriplet)\`。在
+经典模式，默认为`$(KmpkgRoot)\installed\`。
+
+### `KmpkgApplocalDeps` (App-locally deploy DLLs)
+
+此属性启用或禁用从安装的 kmpkg 检测和复制依赖 DLL 树到项目输出目录。
+
+### `KmpkgXUseBuiltInApplocalDeps` (Use built-in app-local deployment)
+
+启用此属性后，将使用 kmpkg 的实验性内置应用程序本地 DLL 部署
+应用程序本地部署 DLL 时的实现。该属性将被删除且无效当内置实现不再是实验性的时。
+
+当 `$(KmpkgApplocalDeps)` 为 `false` 时，此属性无效。
+
+## Manifest mode configuration
+
+使用[清单](../../concepts/manifest-mode.mdx)
+([`kmpkg.json`](../../reference/kmpkg-json.mdx)) 使用 MSBuild，首先您需要
+使用上述集成方法之一。然后，在您的上方添加一个 kmpkg.json
+项目文件（例如在源存储库的根目录中）并设置属性将`KmpkgEnableManifest`设置为`true`。您可以通过 IDE 设置此属性
+**项目属性** > **Kmpkg** > **使用 Kmpkg 清单**。您可能需要
+重新加载 IDE 以查看 kmpkg 属性页。
+
+kmpkg 将在项目构建期间运行，并将所有列出的依赖项安装到
+`kmpkg_installed/$(KmpkgTriplet)/` 与 `kmpkg.json` 文件相邻；然后这些库将
+自动包含并链接到您的 MSBuild 项目。
+
+### Known issues
+
+- Visual Studio 2015 无法正确跟踪对`kmpkg.json`的编辑，并且
+`kmpkg-configuration.json` 文件，除非编辑了 `.cpp`，否则不会响应更改。
+
+### `KmpkgAdditionalInstallOptions` (Additional Options) {#kmpkg-additional-install-options}
+
+使用清单时，此选项指定要传递给底层的附加命令行标志
+kmpkg 工具调用。这可用于访问尚未公开的功能另一种选择。
+
+### `KmpkgManifestInstall` (Install Kmpkg Dependencies)
+
+该属性可以设置为“false”以在项目期间禁用自动依赖关系恢复
+建造。必须通过 kmpkg 命令行单独手动恢复依赖关系。

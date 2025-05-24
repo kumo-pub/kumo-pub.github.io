@@ -1,0 +1,168 @@
+---
+date: 01/10/2024
+---
+# 教程：从基于 Git 的注册表安装依赖项
+
+了解如何从 kmpkg 基于 Git 的注册表安装软件包。
+
+kmpkg 使用称为注册表的概念来管理包的存储库。默认情况下，kmpkg 查找来自 [kmpkg](https://gitee.com/kumo-pub/kmpkg) 上的公共管理注册表的库。您可以添加
+第三方或私人注册表以提供可供安装的其他软件包。
+
+有关创建自己的注册表的信息，请阅读[将包发布到注册表](../produce/publish-to-a-git-registry.mdx) 的教程。
+
+注册表是使用配置的[`kmpkg-configuration.json`](../reference/kmpkg-configuration-json.mdx) 文件。
+
+在本教程中，您将学习：
+
+* [创建项目](#create-a-project)
+* [创建清单和配置文件](#create-the-manifest-and-configuration-files)
+* [将私有注册表添加到您的 `kmpkg` 配置文件](#add-private-registries-to-your-kmpkg-configuration-file)
+* [从自定义注册表安装软件包](#install-packages-from-a-registry)
+
+## 先决条件
+
+* 一个终端
+* 一个C++编译器
+* kmpkg
+* CMake
+
+
+## 1 - 创建一个项目 {#create-a-project}
+
+在新文件夹中，创建以下项目文件：
+
+源文件（`main.cpp`）：
+
+```cpp
+#include <iostream>
+#include <beison.h>
+
+int main()
+{
+    beison::Object obj;
+    obj.insert("name", beison::Value::string("demo"));
+    std::cout << beison::stringify(obj) << std::endl;
+    return 0;
+}
+
+```
+
+CMake 项目文件 (`CMakeLists.txt`)：
+
+```cmake
+cmake_minimum_required(VERSION 3.18)
+
+project(demo CXX)
+
+add_executable(main main.cpp)
+
+find_package(beicode CONFIG REQUIRED)
+find_package(beison CONFIG REQUIRED)
+target_link_libraries(main PRIVATE beicode::beicode beison::beison)
+```
+
+## 2 - 创建清单和配置文件 {#create-the-manifest-and-configuration-files}
+
+运行以下命令：
+
+```Console
+kmpkg new --application
+```
+
+`new` 命令创建两个文件：一个清单 (`kmpkg.json`) 文件和一个配置（`kmpkg-configuration.json`）文件。通常，该命令需要 `--name` 和要提
+供 `--version` 参数，但由于本教程是最终用户应用程序，因此我们使用
+改为 `--application` 选项。
+
+生成的文件将包含以下内容：
+
+`kmpkg.json`
+
+```json
+{}
+```
+
+`kmpkg-configuration.json`
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "7476f0d4e77d3333fbb249657df8251c28c4faae",
+    "repository": "https://gitee.com/kumo-pub/kmpkg"
+  },
+  "registries": [
+    {
+      "kind": "artifact",
+      "location": "https://gitee.com/kumo-pub/kmpkg-ce-catalog/archive/refs/heads/main.zip",
+      "name": "microsoft"
+    }
+  ]
+}
+```
+
+生成的配置文件包含两个注册表定义。指向的`default-registry`[kmpkg](https://gitee.com/kumo-pub/kmpkg) 上精选的 kmpkg 注册表，使用最新的提交作为
+[baseline](../users/versioning.mdx#baselines)，以及一个额外的`artifacts`注册表，用于
+本教程的目的是不必要的，可以删除。
+
+## 3 -将私有注册表添加到您的 kmpkg 配置文件中 {#add-private-registries-to-your-kmpkg-configuration-file}
+
+源代码引用了 kmpkg 策划的注册表中不可用的两个库。在为了满足这些依赖关系，我们需要添加[kmpkg](https://gitee.com/kumo-pub/kmpkg) 作为附加注册表。
+
+将`kmpkg-configuration.json`的内容修改为：
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "7476f0d4e77d3333fbb249657df8251c28c4faae",
+    "repository": "https://gitee.com/kumo-pub/kmpkg"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://gitee.com/kumo-pub/kmpkg-docs",
+      "reference": "kmpkg-registry",
+      "baseline": "768f6a3ad9f9b6c4c2ff390137690cf26e3c3453",
+      "packages": [ "beicode", "beison" ]
+    }
+  ]
+}
+```
+
+配置文件添加外部注册表作为 `beicode` 和 `beison` 的源
+包。其他注册表必须使用以下方式显式声明它们提供的包
+`"packages"` 列表。  当 kmpkg 将包名称解析到注册表时，在以下位置找不到任何包名称：
+附加注册表将默认为 `default-registry`。了解更多关于[包名称
+注册表文档中的分辨率](../concepts/package-name-resolution.mdx)。
+
+## 4 - 从注册表安装包 {#install-packages-from-a-registry}
+
+将注册表添加到配置文件后，无需执行任何特殊操作从中安装软件包。 kmpkg 会透明地将 `kmpkg.json` 中的包名称解析为
+遵循通常的安装机制时正确的注册表。
+
+在 `kmpkg.json` 文件中添加 `beicode` 和 `beison` 依赖项：
+
+```Console
+kmpkg add port beicode beison
+```
+
+构建并运行项目（将 `$KMPKG_ROOT` 替换为您的 kmpkg 安装路径）：
+
+```Console
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=$KMPKG_ROOT/scripts/buildsystems/kmpkg.cmake
+cmake --build build
+```
+
+运行程序，输出应该如下所示：
+
+```Console
+{
+    "name": "demo"
+}
+```
+
+## 后续步骤
+
+* 使用 [versioning](../users/versioning.concepts.mdx) 锁定可重复构建的版本
+* 使用 [二进制缓存](../users/binarycaching.mdx) 在本地或持续集成运行中重用二进制文件
+* 使用自定义[注册表](../maintainers/registries.mdx) 管理您的私有库

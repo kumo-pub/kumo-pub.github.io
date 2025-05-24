@@ -1,0 +1,47 @@
+---
+date: 01/30/2024
+---
+# 函数： kmpkg_check_linkage
+
+断言端口可用的库和 CRT 链接选项。
+
+## 使用情况
+
+```cmake
+kmpkg_check_linkage(
+    [ONLY_STATIC_LIBRARY | ONLY_DYNAMIC_LIBRARY]
+    [ONLY_STATIC_CRT | ONLY_DYNAMIC_CRT]
+)
+```
+
+## 参数
+
+### ONLY_STATIC_LIBRARY
+
+指示此端口只能使用静态库链接生成。
+
+如果用户请求动态构建，`ONLY_STATIC_LIBRARY` 将导致打印一则说明，而不是致命错误。
+
+### ONLY_DYNAMIC_LIBRARY
+
+指示此端口只能使用动态/共享库链接生成。
+
+### ONLY_STATIC_CRT
+
+指示此端口只能使用静态 CRT 链接生成。
+
+### ONLY_DYNAMIC_CRT
+
+指示此端口只能使用动态/共享 CRT 链接生成。
+
+## 说明
+
+此命令将更改 `KMPKG_LIBRARY_LINKAGE` 的设置或失败，具体取决于用户请求的内容与库支持的内容。
+
+## 示例
+
+- [abseil](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/abseil/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_check\_linkage.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_check_linkage.cmake)

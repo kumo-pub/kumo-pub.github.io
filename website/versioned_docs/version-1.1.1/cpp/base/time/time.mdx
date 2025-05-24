@@ -1,0 +1,556 @@
+
+
+# 时间与日历
+
+这个 Turbo `time` 库包含保存时间值的抽象，两者就*绝对时间*和*历法时间*而言。时间库由以下部分组成
+以下组件：
+
+* `time.h` 保存绝对时间（和持续时间）的抽象，以及辅助函数用于构造、解析和转换这些类型的函数。此外，
+该头文件包含对时区的支持，允许您在之间进行映射绝对时代和文明时代。
+* `civil_time.h` 包含历法时间的抽象，以及辅助函数构造、解析和转换这些类型
+* `clock.h` 包含使用系统创建时间对象的实用函数钟
+
+这些抽象和实用函数记录如下。
+
+## 基本概念 {#fundamental-concepts}
+
+有两种表示时间的方法：*绝对时间*和*历法时间*。绝对时间唯一且普遍地代表时间中的特定瞬间。
+每个事件都在特定的绝对时间发生，世界上每个人都会就事件发生的绝对时间达成一致。 `time_t`是众所周知的绝对时间类型。想想尼尔·阿姆斯特朗第一次将左脚踏上月球的那一刻。他第一次这样做只有一次。
+一小时后，他没有再为西边一个时区的观众做这件事。世界上每个人都会就该事件发生的`绝对时间`达成一致。
+
+另一方面，并不是每个人都会同意实现这一巨大飞跃的“历法时间”。历法时间表示为“六个单独的字段”，分别表示年、月、日、小时、分钟和秒（又名 YMDHMS）。
+这六个字段代表一些地方政府定义的时间。
+您的历法时间与挂在墙上的时钟呆伯特上显示的值相匹配办公桌上的日历。
+您居住在全国各地的朋友可能会同时在其远方日历上显示不同的历法时间，并且
+钟。
+例如，如果您住在纽约，那么您会在 1969 年 7 月 20 日晚上 10:56 目睹尼尔·阿姆斯特朗的一小步，而您在旧金山的朋友在晚上 7:56 看到同样的事情，
+而您在悉尼的笔友则看到了同样的事情1969 年 7 月 21 日中午 12:56 吃午饭时看到的。你们都同意事件的绝对时间，但对历法时间有不同意见。
+
+时区是地缘政治区域，在该区域内共享绝对时间和历法时间之间的转换规则。时区的地理性质在其标识符中很明显，例如`America/New_York`、`America/Los_Angeles`和`Australia/Sydney`。时区的规则包括
+例如该地区相对于 UTC 时间标准的偏移、夏令时调整和短缩写字符串。由于这些规则可能会根据该地区地方政府的意愿而改变，因此时区历史上曾有过仅适用于特定时期的不同规则。时区非常复杂，这就是为什么您应该始终让时间库为您进行时区计算。
+
+时区定义了绝对时间和历法时间之间的关系。给定绝对时间或历法时间和时区，您可以计算另一个时间，如下例所示和图 1 所示。
+
+```
+Civil Time = F(Absolute Time, Time Zone)
+Absolute Time = F'(Civil Time, Time Zone)
+```
+import time_concepts from '@site/static/img/cppbse/time_concepts.png';
+
+<img src={time_concepts}/>
+
+到目前为止所描述的概念——绝对时间、历法时间和时区——是通用概念，同样适用于`所有编程语言`，因为它们描述了现实世界中的时间。
+不同的编程语言和库可能会使用不同的类甚至有时甚至不同的名称来对这些概念进行不同的建模，但这些基本概念和关系仍然存在。
+
+## turbo::Time 时间构造
+
+Turbo time 库包含几个映射到上述概念的核心类：
+
+* 绝对时间由 `turbo::Time` 类表示。 （参见[time.h](https://gitee.com/kumo-pub/turbo/blob/master/turbo/times/time.h)。）这是一个小的、类似整数的类型，应该传递按值计算，并使用算术运算符和描述性命名的函数进行计算。 `turbo::Time` 可以使用转换函数与其他绝对时间表示形式相互转换，也可以在 `turbo::TimeZone` 的帮助下与历法时间表示形式相互转换。
+* 历法时间由六个单独的整数表示，指定应按值传递的 `turbo::Civil*` 对象的年、月、日、小时、分钟和秒。 （请参阅 [civil_time.h](https://gitee.com/kumo-pub/turbo/blob/master/turbo/times/civil_time.h)。）这些整数值可以指定为历法时间构造函数的参数（例如 `turbo::CivilYear` 或 `turbo::CivilSecond`，或从格式化的时间字符串解析。
+* 时区由 `turbo::TimeZone` 类表示。 （参见 [time.h](https://gitee.com/kumo-pub/turbo/blob/master/turbo/times/time.h)。）这种大部分不透明的值类型通过值传递给其他 Turbo time然后将执行与绝对时间或历法时间之间必要的转换的函数。 Turbo 时间库本身代表您执行所有时区算术，从而几乎消除了代码中的偏移计算错误。
+
+尚未讨论的一个重要辅助概念是固定长度的时间跨度，它由`turbo::Duration`类表示。这种小型的类整数类型应该按值传递，并使用普通的类整数算术运算符进行计算。
+Turbo 时间库包含多个用于与其他持续时间类型相互转换以及执行浮点运算的函数。持续时间是单位安全的，这使得它们成为接受超时或任何其他固定长度时间跨度的接口的理想类型。
+
+图 2 说明了主要的 `Turbo Time` 类型并显示了它们如何匹配
+上述基本时间概念。
+
+`![Turbo Time Classes](images/turbo-time-classes.png)` Figure 2
+
+## 绝对时间与 `turbo::Time`
+
+`turbo::Time` 表示一个特定的时刻，作为从某个起点（纪元）开始的某种粒度（分辨率）的时钟滴答计数。
+`turbo::Time` 应该按值传递，而不是 const 引用。提供算术运算符来自然地表达时间计算。
+
+:::info
+注意：虽然`turbo::Time`分辨率保证至少低至纳秒，但实际上它可能会更好。不管这一事实如何，时间分辨率和纪元都是实现细节，您不应该依赖它们。
+:::
+
+在大多数可用时间尺度（即至少一纳秒的精度，范围+/-1000亿年）。时间尺度之间的转换是通过截断（向负无穷大）到最近的可表示点来执行的。
+
+`turbo::Time` 假设一分钟有 60 秒，这意味着必须"smeared"底层时间尺度以消除闰秒。请参阅 https://developers.google.com/time/smear。
+
+### 构建 `turbo::Time`
+
+可以直接构造一个 `turbo::Time` 实例：
+
+```cpp
+// Construct an turbo::Time from the system clock. (See clock.h)
+turbo::Time t1 = turbo::Time::current_time();
+
+// Default construction produces an absolute time of the UNIX epoch
+turbo::Time t2 = turbo::Time();
+
+// For clarity, prefer constructing such times directly
+turbo::Time t3 = turbo::Time::unix_epoch();
+```
+
+`turbo::Time` 值通常是从其他值类型创建的。 Turbo 时间库包含许多接受其他时间表示形式的`turbo::Time::from_*()`工厂函数。
+
+```cpp
+// Construct an turbo::Time from a time_t. time() returns the number of seconds
+// since the UNIX epoch.
+time_t tt = time(NULL);
+turbo::Time t1 = turbo::Time::from_time_t(tt);
+
+// Construct an turbo::Time from a std::chrono time
+auto tp = std::chrono::system_clock::from_time_t(123);
+turbo::Time t2 = turbo::Time::from_chrono(tp);
+
+// Construct an turbo::Time using a conversion function. (Assume MyCustomTime()
+// returns microseconds since the UNIX epoch.)
+int64_t unix_micros = MyCustomTime();
+turbo::Time t3 = turbo::Time::from_unix_micros(unix_micros);
+
+// Construct an turbo::Time from a civil time and time zone
+// (See below for more information on these types)
+turbo::TimeZone nyc;
+// TimeZone::load may fail so it's always better to check for success.
+if (!turbo::TimeZone::load("America/New_York", &nyc)) {
+  // handle error case
+}
+// My flight leaves NYC on Jan 2, 2017 at 03:04:05
+turbo::CivilSecond ct(2017, 1, 2, 3, 4, 5);
+turbo::Time takeoff = turbo::Time::from_civil(ct, nyc);
+```
+
+`turbo::Time` 获取将来或者过去的时间。 Turbo 时间库包含许多接受其他时间表示形式的`turbo::Time::future_*()`工厂函数。
+
+```
+    static constexpr Time future_infinite();
+
+    static Time future_time(Duration d);
+
+    static int64_t future_nanoseconds(int64_t ns);
+
+    static int64_t future_microseconds(int64_t us);
+
+    static int64_t future_milliseconds(int64_t ms);
+
+    static int64_t future_seconds(int64_t s);
+
+    static constexpr Time past_infinite();
+
+    static Time past_time(Duration d);
+
+    static int64_t past_nanoseconds(int64_t ns);
+
+    static int64_t past_microseconds(int64_t us);
+
+    static int64_t past_milliseconds(int64_t ms);
+
+    static int64_t past_seconds(int64_t s);
+```
+通过`turbo::Time`获取当前的`nano second`,`micro second`
+
+```cpp
+        static Time current_time();
+
+        static int64_t current_nanoseconds();
+
+        static T current_microseconds();
+
+        static T current_milliseconds();
+
+        static T current_seconds();
+```
+
+### 格式化 `turbo::Time`
+
+提供格式化和解析函数用于与字符串之间的转换。 `FormatTime()` 允许您获取绝对时间和时区并返回表示该时间的字符串。 （请参阅下面的[时区](#time-zones)。）
+
+```cpp
+// Construct an turbo::Time from the system clock.
+turbo::Time t1 = turbo::Time::current_time();
+
+// When formatting a time, a time zone should be passed.
+turbo::TimeZone utc =  turbo::UTCTimeZone();
+std::cout << turbo::Time::format_time(t1, utc);
+// Outputs, e.g. "2018-08-06T23:35:32.637472794+00:00"
+
+// The stream operator for turbo::Time uses turbo::Time::format_time(), using the
+// turbo::TimeZone::local(). Prefer calling turbo::Time::format_time() directly using an
+// explicit time zone, as done above.
+std::cout << t1 << "\n";
+// Outputs e.g. "2018-08-06T17:35:32.637472794-04:00"
+```
+
+## Time Durations {#time-durations}
+
+`turbo::Duration` 表示有符号的、固定长度的时间跨度。 `Duration`是使用特定于单元的工厂函数生成的，或者是从另一个`turbo::Time`中减去一个`turbo::Time`的结果。
+持续时间的行为类似于单位安全整数，并且它们支持所有自然的类似整数的算术运算。算术溢出并在+/-无穷大处饱和。 `Duration`应该按值传递，而不是常量引用。
+
+工厂函数 `Duration::anoseconds()`、`Duration::microseconds()`、
+`Duration::milliseconds()`、`Duration::seconds()`、`Duration::minutes()`、`Duration::hours()` 和 `Duration::infinite_duration()` 允许创建 constexpr `Duration ` 价值观
+
+```cpp
+constexpr turbo::Duration ten_ns = turbo::Duration::nanoseconds(10);
+constexpr turbo::Duration min = turbo::Duration::minutes(1);
+constexpr turbo::Duration hour = turbo::Duration::hours(1);
+turbo::Duration dur = 60 * min;  // dur == hour
+turbo::Duration half_sec = turbo::Duration::milliseconds(500);
+turbo::Duration quarter_sec = 0.25 * turbo::Duration::seconds(1);
+```
+
+使用除法运算符可以轻松地将`Duration`值转换为整数单位。
+
+```cpp
+constexpr turbo::Duration dur = turbo::Milliseconds(1500);
+int64_t ns = dur / turbo::Duration::nanoseconds(1);   // ns == 1500000000
+int64_t ms = dur / turbo::Duration::milliseconds(1);  // ms == 1500
+int64_t sec = dur / turbo::Duration::seconds(1);      // sec == 1 (subseconds truncated)
+int64_t min = dur / turbo::Duration::minutes(1);      // min == 0
+```
+
+此外，Turbo 时间库提供了帮助函数，用于将持续时间值转换为`int64_t`或`double`值：
+
+* `Duration::to_int64_nanoseconds()` and `Duration::to_double_nanoseconds()`
+* `Duration::to_int64_microseconds()` and `Duration::to_double_microseconds()`
+* `Duration::to_int64_milliseconds()` and `Duration::to_double-milliseconds()`
+* `Duration::to_int64_seconds()` and `Duration::to_double-seconds()`
+* `Duration::to_int64_minutes()` and `Duration::to_double_minutes()`
+* `Duration::to_int64_hours()` and `Duration::to_double_hours()`
+
+```cpp
+turbo::Duration d = turbo::Duration::milliseconds(1500);
+int64_t isec = turbo::Duration::to_int64_seconds(d);        // isec == 1
+
+turbo::Duration d = turbo::Duration::milliseconds(1500);
+double dsec = turbo::Duration::to_double_seconds(d);        // dsec == 1.5
+```
+
+## 历法时间 {#civil-times}
+
+“历法时间”一词是指法律认可的人类尺度时间，由“YYYY-MM-DD hh:mm:ss”六个字段表示。
+“日期”也许是历法时间最常见的例子。现代历法时间遵循公历，是一个独立于时区的概念：例如“2016-06-01 12:00:00”的
+历法时间与时区无关。换句话说，历法时间并不映射到一个独特的时间点；而是映射到一个唯一的时间点。历法时间必须*通过*时区映射到绝对时间。
+
+由于历法时间是大多数人所认为的“时间”，因此通常将绝对时间映射到历法时间以呈现给用户。 Turbo时间库允许您从绝对时间构建此类历法时间；有
+关此类功能，请参阅 [time.h](https://gitee.com/kumo-pub/turbo/blob/master/turbo/times/time.h)。
+
+该库提供了六个用于构造历法时间对象的类，并提供了几个用于对历法时间对象进行舍入、迭代和执行算术运算的辅助函数，
+同时避免了夏令时 (DST) 等复杂情况：
+
+* `turbo::CivilSecond`
+* `turbo::CivilMinute`
+* `turbo::CivilHour`
+* `turbo::CivilDay`
+* `turbo::CivilMonth`
+* `turbo::CivilYear`
+
+更喜欢按值传递这些 `turbo::Civil*` 类型，而不是 const 引用。
+
+这些历法时间类型中的每一个都是简单的值类型，具有相同的构造接口和每个历法时间字段（年、月、日、小时、分钟和秒，又名 YMDHMS）
+的相同的六个访问器。这些类的区别仅在于对齐方式，对齐方式由类型名称指示并指定算术运算的字段。
+
+### Civil Time 构建 {#civil-time-construction}
+
+每个历法时间类型都可以通过两种方式构造：直接向构造函数传递最多六个表示 YMDHMS 字段的整数，或者从不同对齐的历法时间类型复制 YMDHMS 字段。
+省略的字段被分配其最小有效值。时、分、秒将设置为 0，月和日将设置为 1。由于没有最小年份，因此默认为 1970 年。
+
+```cpp
+turbo::CivilDay default_value;               // 1970-01-01 00:00:00
+
+// Construct a civil-time object for a specific day
+turbo::CivilDay a(2015, 2, 3);               // 2015-02-03 00:00:00
+turbo::CivilDay b(2015, 2, 3, 4, 5, 6);      // 2015-02-03 00:00:00
+turbo::CivilDay c(2015);                     // 2015-01-01 00:00:00
+
+// Construct a civil-time object for a specific second
+turbo::CivilSecond ss(2015, 2, 3, 4, 5, 6);  // 2015-02-03 04:05:06
+turbo::CivilMinute mm(ss);                   // 2015-02-03 04:05:00
+turbo::CivilHour hh(mm);                     // 2015-02-03 04:00:00
+turbo::CivilDay d(hh);                       // 2015-02-03 00:00:00
+turbo::CivilMonth m(d);                      // 2015-02-01 00:00:00
+turbo::CivilYear y(m);                       // 2015-01-01 00:00:00
+
+m = turbo::CivilMonth(y);                    // 2015-01-01 00:00:00
+d = turbo::CivilDay(m);                      // 2015-01-01 00:00:00
+hh = turbo::CivilHour(d);                    // 2015-01-01 00:00:00
+mm = turbo::CivilMinute(hh);                 // 2015-01-01 00:00:00
+ss = turbo::CivilSecond(mm);                 // 2015-01-01 00:00:00
+```
+
+:::info 注意
+超出范围的字段将被标准化（例如，10 月 32 日 -> 11 月 1 日），以便所有历法时间对象都表示有效值。有关详细信息，请参阅下面的[标准化](#normalization)。
+:::
+
+### 历法时间校准 {#civil-time-alignment}
+
+每个历法时间类在规范化后都与类名称中指示的历法时间字段对齐。通过将所有下级字段设置为其最小有效值来执行对齐（如上所述）。
+以下示例说明了六种类型中的每一种如何对齐表示 2015 年 11 月 22 日下午 12:34:56 的字段。
+（注意：此处使用的字符串格式并不重要；它只是显示六个 YMDHMS 字段的简写方式。）
+
+```cpp
+turbo::CivilSecond   : 2015-11-22 12:34:56
+turbo::CivilMinute   : 2015-11-22 12:34:00
+turbo::CivilHour     : 2015-11-22 12:00:00
+turbo::CivilDay      : 2015-11-22 00:00:00
+turbo::CivilMonth    : 2015-11-01 00:00:00
+turbo::CivilYear     : 2015-01-01 00:00:00
+```
+每个历法时间类型都在与其对齐的字段上执行算术运算。这意味着，向 `turbo::CivilDay` 加 1 会增加日字段（根据需要标准化），
+而从 `turbo::CivilMonth` 中减去 7 对月份字段进行操作（根据需要标准化）。所有算术都会产生有效的历法时间。差异需要两个相似对齐的
+历法时间对象，并以对象对齐的单位返回标量答案。例如，两个 `turbo::CivilHour` 对象之间的差异将以民用小时为单位给出答案。
+
+### 历法时间换算 {#civil-time-conversions}
+
+民用对象的对齐方式不能更改，但该对象可以用于构造具有不同对齐方式的新对象。
+这被称为“重新调整”。当重新对齐到具有相同或更高精度的类型时（例如，“turbo::CivilDay”->“turbo::CivilSecond”），
+可以隐式执行转换，因为不会丢失任何信息。但是，如果信息可以被丢弃（例如，`turbo::CivilSecond` -> `turbo::CivilDay`），
+则转换必须在调用站点显式进行。
+
+```cpp
+void UseDay(turbo::CivilDay day);
+
+turbo::CivilSecond cs;
+UseDay(cs);                  // Won't compile because data may be discarded
+UseDay(turbo::CivilDay(cs));  // OK: explicit conversion
+
+turbo::CivilDay cd;
+UseDay(cd);                  // OK: no conversion needed
+
+turbo::CivilMonth cm;
+UseDay(cm);                  // OK: implicit conversion to turbo::CivilDay
+```
+
+### 历法时间标准化 {#normalization}
+
+标准化采用无效值并调整它们以产生有效值。在历法时间库中，传递给`Civil*`构造函数的整数参数可能超出范围，在这种情况下，
+它们通过将溢出携带到较粗粒度的字段中来规范化，以生成有效的历法时间对象。这种规范化可以对构造函数参数进行自然算术，而无需担心字段的范围。
+
+```cpp
+// Out-of-range; normalized to 2016-11-01
+turbo::CivilDay d(2016, 10, 32);
+
+// Out-of-range, negative: normalized to 2016-10-30T23
+turbo::CivilHour h1(2016, 10, 31, -1);
+
+// Normalization is cumulative: normalized to 2016-10-30T23
+turbo::CivilHour h2(2016, 10, 32, -25);
+```
+
+NOTE: If normalization is undesired, you can signal an error by comparing the constructor arguments to the normalized values returned by the YMDHMS properties.
+:::info
+如果不需要标准化，您可以通过将构造函数参数与 YMDHMS 属性返回的标准化值进行比较来发出错误信号。
+:::
+
+### 历法时间比较 {#civil-time-comparisons}
+
+历法时间对象之间的比较考虑所有六个 YMDHMS 字段，无论类型的对齐如何。允许对不同对齐的历法时间类型进行比较。
+
+```cpp
+turbo::CivilDay feb_3(2015, 2, 3);  // 2015-02-03 00:00:00
+turbo::CivilDay mar_4(2015, 3, 4);  // 2015-03-04 00:00:00
+
+// feb_3 < mar_4
+// turbo::CivilYear(feb_3) == turbo::CivilYear(mar_4)
+
+turbo::CivilSecond feb_3_noon(2015, 2, 3, 12, 0, 0);  // 2015-02-03 12:00:00
+
+// feb_3 < feb_3_noon
+// feb_3 == turbo::CivilDay(feb_3_noon)
+
+// Iterates all the days of February 2015.
+for (turbo::CivilDay d(2015, 2, 1); d < turbo::CivilMonth(2015, 3); ++d) {
+  // ...
+}
+```
+
+### 历法时间算术 {#civil-time-arithmetic}
+
+历法时间类型支持自然算术运算符，例如加法、减法和差值。算术运算在类型名称中指示的历法时间字段上进行。
+差分运算符需要具有相同对齐方式的参数，并以对齐方式的单位返回答案。
+
+```cpp
+turbo::CivilDay a(2015, 2, 3);
+++a;                              // 2015-02-04 00:00:00
+--a;                              // 2015-02-03 00:00:00
+turbo::CivilDay b = a + 1;         // 2015-02-04 00:00:00
+turbo::CivilDay c = 1 + b;         // 2015-02-05 00:00:00
+int n = c - a;                    // n = 2 (civil days)
+int m = c - turbo::CivilMonth(c);  // Won't compile: different types.
+```
+
+### 历法时间读取 {#civil-time-accessors}
+
+每个历法时间类型都有用于所有六个历法时间字段的访问器：
+year, month, day, hour, minute, and second.
+
+* `year()` returning a `civil_year_t` value
+* `month()` returning an `int`
+* `day()` returning an `int`
+* `hour()` returning an `int`
+* `minute()` returning an `int`
+* `second()` returning an `int`
+
+回想一下，低于类型对齐的字段将被设置为最小值有效值。
+
+```cpp
+turbo::CivilDay d(2015, 6, 28);
+// d.year() == 2015
+// d.month() == 6
+// d.day() == 28
+// d.hour() == 0
+// d.minute() == 0
+// d.second() == 0
+```
+
+## 时区 {#time-zones}
+
+`turbo::TimeZone` 是一个不透明的小型值类型类，表示地缘政治区域，其中使用特定规则在绝对时间和历法时间之间进行转换。
+`turbo::TimeZone` 值使用 IANA 时区数据库中的 TZ 标识符命名，
+例如“America/Los_Angeles”或“Australia/Sydney”，并且可以从 `turbo::TimeZone::load()` 工厂函数加载。
+
+:::warning
+注意：“PST”和“EDT”等字符串**不是**有效的 TZ 标识符。
+:::
+
+```cpp
+turbo::TimeZone lax;
+
+// Because TimeZone::load() may fail, it is always safer to load time zones
+// checking its return value:
+if (!turbo::TimeZone::load("America/Los_Angeles", &lax)) {
+  // Handle failure
+}
+```
+
+更喜欢按值传递 `turbo::TimeZone` 而不是 const 引用。
+
+Turbo 时间库还包括几个方便的函数构建时区：
+
+* `turbo::UTCTimeZone()`
+* `turbo::FixedTimeZone()` 构造一个时区作为 UTC 的偏移量（专业提示：如果可能，请避免使用此功能。此函数用于旧版 API）。
+* `turbo::LocalTimeZone()` 从“本地”时区（如果已知）构建时区（如果不知道则默认为 UTC）。 **更愿意使用明确的时区**。
+
+```cpp
+turbo::TimeZone utc = turbo::TimeZone::utc();
+
+// Constructing a time zone from a fixed UTC-offset may be necessary when
+// working with legacy APIs that aren't really timezone-aware. Modern code
+// should avoid this as much as possible.
+turbo::TimeZone pst = turbo::FixedTimeZone(-8 * 60 * 60);
+
+// Similarly, using a local time zone, rather than explicitly loading a
+// particular time zone, should be done with caution, because you don't know
+// which time zone will actually be returned.
+turbo::TimeZone loc = turbo::LocalTimeZone();
+```
+
+有关时区的更多背景信息，请参阅 [IANA 时区数据库](http://www.iana.org/time-zones) 和 [关于时区定义的维基百科文章](https://en.wikipedia.org/wiki/Tz_database)
+
+## 绝对时间和历法时间之间的转换 {#converting-between-absolute-and-civil-times}
+
+`turbo::TimeZone` 用于在 `turbo::Time` 值和 Turbo 历法时间值之间进行转换。在这两种情况下，
+您都使用`turbo::TimeZone::At()`成员函数。还存在用于在绝对时间和历法时间之间进行转换的辅助函数。
+
+请参阅[将绝对时间转换为历法时间](#absolute-to-civil) 和 [将历法时间转换为绝对时间](#civil-to-absolute) 用于使用`turbo::TimeZone::at()`在这些时间值之间进行转换。
+
+### 将绝对时间转换为历法时间 {#absolute-to-civil}
+
+Turbo 时间库包含一组将 `turbo::Time` 和 `turbo::TimeZone` 转换为历法时间的函数：
+
+* `ToCivilSecond()`
+* `ToCivilMinute()`
+* `ToCivilHour()`
+* `ToCivilDay()`
+* `ToCivilMonth()`
+* `ToCivilYear()`
+
+```cpp
+turbo::Time t = ...;
+turbo::TimeZone tz = ...;
+const turbo::CivilDay cd = turbo::ToCivilDay(t, tz);
+```
+
+如果您需要的不仅仅是历法时间，`TimeZone::at(Time)`会返回有关转换的其他信息。如果输入时间是无限的，则输出的民用秒将根据需要设置为`CivilSecond::max()”或“CivilSecond::min()`，并且亚秒将是无限的。
+
+```cpp
+// Load the Los Angeles TimeZone
+turbo::TimeZone lax;
+if (!turbo::TimeZone::load("America/Los_Angeles", &lax)) {
+  // handle error case
+}
+
+// Determine the civil-time within the Los Angeles time zone for the UNIX Epoch.
+const turbo::TimeZone::CivilInfo epoch_info = lax.at(turbo::Time::unix_epoch());
+// epoch_info.cs == 1969-12-31 16:00:00
+// epoch_info.subsecond == turbo::ZeroDuration()
+// epoch_info.offset == -28800
+// epoch_info.is_dst == false
+// epoch_info.abbr == "PST"
+```
+
+### 将历法时间转换为绝对时间 {#civil-to-absolute}
+
+将历法时间转换为绝对时间需要更加小心，因为某些历法时间可能无法映射到实际或唯一的绝对时间。例如，
+夏令时 (DST) 转换会跳过或重复历法时间；在美国，2011年3月13日02:15是从未发生过的历法时间，
+而2011年11月6日01:15是发生过两次的历法时间。对此类时间的请求没有明确定义。
+
+Turbo 时间库包含一个“FromCivil()”函数，可以将任何对齐的历法时间转换为绝对时间。该函数返回明确的绝对时间，但对转换做出某些假设：
+
+* 如果历法时间映射到唯一时间，则返回该时间。
+* 如果给定时区的历法时间重复，则返回较早的时间。
+* 如果在给定时区中跳过了历法时间，则返回过渡时间。
+
+这意味着对于任何两个文明时代`ct1`和`ct2`，其中`ct1 < ct2`，即`FromCivil(ct1) <= FromCivil(ct2)`。 （当两个不存在的历法时间映射到相同的过渡时间时，会发生相同的情况。）
+
+```cpp
+turbo::CivilSecond cs = ...;
+turbo::TimeZone tz = ...;
+turbo::Time t = turbo::FromCivil(cs, tz);
+```
+如果`FromCivil()`未返回非唯一输入所需的答案，则`TimeZone::at(CivilSecond)`将返回一个`turbo::TimeZone::TimeInfo`结构，其中包含多个时间值和有关转换的更完整信息:
+
+
+* `TimeInfo.pre` 使用时区的转换前 UTC 偏移量保存绝对时间。
+* `TimeInfo.post` 使用时区的转换后 UTC 偏移量保存绝对时间。
+* `TimeInfo.trans` 保存过渡不连续性本身的绝对时间。
+* `TimeInfo.kind`，指示转换的上下文，作为以下值之一的枚举：
+    * `UNIQUE`表示请求的历法时间在转换期间未发生。
+    * `REPEATED`表示请求的历法时间出现两次。在这种情况下，`pre`和`post`字段都将转换为请求的历法时间。
+    * `SKIPPED`表示请求的民事时间根本没有发生。在这种情况下，`pre`和`post`字段都不会转换为请求的历法时间。相反，这两个时间是使用过渡周围的 UTC 偏移量来计算的。这些是不存在的历法时间最有可能的替代方案。
+
+示例:
+
+```cpp
+// NOTE: the examples below denote resulting absolute times (`pre`, `post`, and
+// `trans` values) using the convention of a civil time + utc offset.
+
+// Midnight on January 1 is a unique civil time in the Los Angeles time zone.
+const auto jan01 = lax.At(turbo::CivilSecond(2011, 1, 1, 0, 0, 0));
+// jan01.kind == TimeZone::TimeInfo::UNIQUE
+// jan01.pre    is 2011-01-01 00:00:00 -0800
+// jan01.trans  is 2011-01-01 00:00:00 -0800
+// jan01.post   is 2011-01-01 00:00:00 -0800
+
+// 2:15 AM on March 13, 2011 is a time which was skipped in the Los Angeles
+// time zone during the DST transition when time would "spring forward."
+const auto mar13 = lax.At(turbo::CivilSecond(2011, 3, 13, 2, 15, 0));
+// mar13.kind == TimeZone::TimeInfo::SKIPPED
+// mar13.pre   is 2011-03-13 03:15:00 -0700
+// mar13.trans is 2011-03-13 03:00:00 -0700
+// mar13.post  is 2011-03-13 01:15:00 -0800
+
+// 1:15 AM on November 6, 2011 is a time that was repeated in the Los Angeles
+// time zone during the DST transition when time would "fall back."
+const auto nov06 = lax.At(turbo::CivilSecond(2011, 11, 6, 1, 15, 0));
+// nov06.kind == TimeZone::TimeInfo::REPEATED
+// nov06.pre   is 2011-11-06 01:15:00 -0700
+// nov06.trans is 2011-11-06 01:00:00 -0800
+// nov06.post  is 2011-11-06 01:15:00 -0800
+```
+
+## 适当的时间卫生 {#proper-time-hygiene}
+
+*   在任何地方使用 Turbo 时间库类型；包括在您的界面中！
+*   在系统边界与其他类型进行转换——仅在系统内使用 Turbo Time 类型。
+*   **永远不要**在计算中使用时区偏移。让 Turbo 时间库来做到这一点！
+*   更喜欢明确的时区名称。不要假设“当地时间”。
+*   明确代码的时区要求。
+*   如果可能，请使您的代码与时区无关。如果做不到这一点，最好选择 UTC。
+*   在时间字符串中包含偏移量（`%z`）。首选 RFC3339/ISO8601 格式（例如，
+    `turbo::RFC3339_full`)
+*   使用`turbo::Time::format_time`格式化时间字符串，使用`turbo::Time::parse_time`解析时间字符串。

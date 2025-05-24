@@ -1,0 +1,510 @@
+---
+date: 08/10/2024
+---
+
+# 格式化输出
+
+`kumo`集成了两个自定义格式化库，`fmt`和`turbo::str_format()`。
+
+`str_format` 库是 `printf()` 系列的类型安全替代品`<cstdio>`标准库头中的字符串格式化例程。这
+`str_format` 库提供了 `printf()` 类型的大部分功能字符串格式化和许多额外的好处：
+
+* 类型安全，包括对 `std::string` 的本机支持和
+`std::string_view`
+* 独立于标准库的可靠行为
+* 支持 POSIX 位置扩展
+* 原生支持 Turbo 类型，例如 `turbo::Cord` 并可扩展为
+支持其他类型。
+* 比原生 `printf` 函数快得多（通常快 2 到 3 倍）
+* 可流式传输至各种现有接收器
+* 可扩展至定制水槽
+
+此外，该库还包括 `printf()`、`fprintf()` 和`snprintf()`。
+
+## `fmt`格式化输出
+
+安装：
+
+```shell
+kmpkg install fmt
+```
+使用参阅[fmt 官方文档](https://fmt.dev/11.0/),[github](https://github.com/fmtlib/fmt),[gitee镜像](https://gitee.com/kumo-hub/fmt)
+
+## 基本用法
+
+主要的`str_format()`函数是一个返回字符串的可变参数模板给定一个`printf()`样式的*格式字符串*和零个或多个附加参数。
+像`sprintf()`一样使用它。
+
+格式字符串通常由普通字符数据和一个或更多格式转换说明符（由“%”字符表示）。普通的
+字符数据原封不动地返回到结果字符串中，而每个转换规范执行`str_format()`的其他类型替换
+论据。
+
+`str_format()` 出错时返回空字符串，并标记为
+`TURBO_MUST_USE_RESULT`。
+
+示例:
+
+```cpp
+#include "turbo/strings/str_format.h"
+
+std::string s = turbo::str_format("Welcome to %s, Number %d!", "The Village", 6);
+EXPECT_EQ("Welcome to The Village, Number 6!", s);
+```
+
+`str_format()` 格式字符串通常应声明为 `constexpr`\*；作为结果，如果您需要将其作为变量提供，请使用 `std::string_view`
+而不是 `std::string`：
+
+```cpp
+// Won't compile, not constexpr (and the `std::string` can't be declared
+// constexpr).
+std::string format_string = "Welcome to %s, Number %d!";
+std::string s = turbo::str_format(format_string, "The Village", 6);
+
+// This will compile.
+constexpr std::string_view kFormatString = "Welcome to %s, Number %d!";
+std::string s = turbo::str_format(kFormatString, "The Village", 6);
+```
+
+要求格式字符串为`constexpr`允许编译时检查格式字符串。
+
+:::info
+格式字符串必须声明为`constexpr`或动态声明
+使用 `turbo::parsed_format` 类型进行格式化。看
+下面的[高级格式](#advanced)。
+:::
+
+### 转换说明符
+
+`str_format` 库主要遵循 POSIX 语法，如在[POSIX `printf()` 系列规范][1]，它指定了
+格式转换说明符。 （下面注明了例外情况。）
+
+格式转换说明符是以下形式的字符串：
+
+* `%` 字符
+* 形式为`n$`的可选位置说明符，其中`n`是非负正值。 （例如`3$`、`10$`等）。请注意，`str_format`完全支持位置修饰符；它们是 POSIX 扩展，而不是标准`printf`表示法的一部分。
+* 一组可选的对齐和填充标志：
+* `-` 使结果左对齐。 （默认为右对齐。）
+* `+` 强制在正结果前面加上加号。 （减号总是在前面。）
+* ` `（空格）在带符号转换的结果前面添加空格。 （`+` 优先于空格）。
+* `#` 对某些说明符使用另一种转换形式。 （例如，在十六进制转换上使用`“#”`将在十六进制字符串结果前面添加`“0x”`或`“0X”`。）
+* `“0”`（零）用于填充整数和浮点转换的前导零。 （如果明确指定精度，则忽略整数的零填充。）如果使用`“-”`，则忽略此标志。
+* 形式为`n`的可选整数值，用于指定结果的最小宽度，或 <code>*<i>variable</i></code> 使用`int`类型的变量来指定此值。
+*  可选精度值，指定为`.n`，其中`n`是整数值，或<code>.*<i>variable</i></code>使用`int`类型的变量来指定这个值。
+* 长度修饰符，用于修改数据类型的长度。在 `str_format()` 中，这些值在很大程度上被忽略（并且不需要，因为 `str_format()` 是类型安全的），但允许向后兼容：
+* `hh`、`h`、`l`、`ll`、`L`、`j`、`z`、`t`、`q` 有一种情况，长度修饰符具有可见的效果：如果请求的类型是`c`，`l`修饰符会导致提供的参数被视为`wchar_t`而不是`char`。 （如果提供的参数已经是`wchar_t`类型，则会自动发生。）
+* 类型说明符：
+* `c` 表示字符值。这些将被视为`char`，除非提供的类型为`wchar_t`或存在`l`修饰符，在这种情况下，它们将被视为`wchar_t`并转换为编码为 UTF-8 的多字节字符串。
+* `s` 表示字符串值。宽字符串（`std::wstring`、`std::wstring_view`）将转换为编码为 UTF-8 的多字节字符串。
+* `d` 或 `i` 表示整数值，包括枚举类型值
+* `o` 用于将无符号整数（包括枚举类型值）转换为八进制值
+* `x` 或 `X` 用于将无符号整数（包括枚举类型值）转换为十六进制值
+* `u` 表示无符号整数值
+* `f` 或 `F` 将浮点值转换为十进制表示法
+* `e` 或 `E` 用于将浮点值转换为指数表示法
+* `a` 或 `A` 将浮点值转换为十六进制指数表示法
+* `g` 或 `G` 用于根据精度将浮点值转换为十进制或指数表示法
+* `p` 表示指针地址值
+* `n` 表示写出到此点写入的字符数的特殊情况。
+* `v` 表示使用推导类型的默认格式的值。这些推导类型包括此处表示的许多原始类型以及包含适当扩展的用户定义类型。 （请参阅下面的[用户定义格式](#user-defined-formats)。）
+:::info
+注意：`printf`函数系列中的`n`说明符是不安全的。仅当在安全范围内捕获此类值时，“str_format()”才允许使用“%n”
+`FormatCountCapture` 类。请参阅下面的示例。
+:::
+
+:::info
+注意：`v` 说明符（代表“值”）是类型说明符，不存在于`POSIX` 规范。 `%v` 将根据值的推导类型来格式化值。
+`v` 使用 `d` 表示有符号整数值，`u` 表示无符号整数值，`g` 表示浮点值，并将布尔值格式化为“true”/“false”（而不是
+对于使用“d”格式化的布尔值，为“1”或“0”）。不支持 `const char*`；
+请使用 `std::string` 和 `string_view`。由于以下原因，也不支持“char”类型的歧义。该说明符不支持修饰符。
+:::
+
+示例:
+
+```cpp
+// Characters
+turbo::str_format("%c", 'a') -> "a"
+turbo::str_format("%c", 32)  -> " "
+turbo::str_format("%c", 100) -> "d"
+turbo::str_format("%lc", 0x2002) -> (Locale-dependent)  // E.g. U+2002 as UTF-8
+
+// Strings
+turbo::str_format("%s", "Hello!") -> "Hello!"
+
+// Decimals
+turbo::str_format("%d", 1)    -> "1"
+turbo::str_format("%02d", 1)  -> "01"       // Zero-padding
+turbo::str_format("%-2d", 1)  -> "1 "       // Left justification
+turbo::str_format("%0+3d", 1) -> "+01"      // + specifier part of width
+
+// Octals
+turbo::str_format("%o", 16)   -> "20"
+turbo::str_format("%o", 016)  -> "16"       // literal octal
+turbo::str_format("%#o", 016) -> "016"      // alternative form
+
+// Hex
+turbo::str_format("%x", 16)      -> "10"
+turbo::str_format("%x", 0x16)    -> "16"
+turbo::str_format("%#x", 0x16)   -> "0x16"    // alternative form
+turbo::str_format("%X", 10)      -> "A"       // Upper-case
+turbo::str_format("%#06x", 0x16) -> "0x0016"  // "0x" counts as part of the width
+
+// Unsigned Integers
+turbo::str_format("%u", 16) -> "16"
+turbo::str_format("%u", -16) -> "4294967280"
+
+// Big Integers
+// Length modifiers are unnecessary, and are ignored
+turbo::str_format("%d", 100'000'000'000'000) -> "100000000000000"
+turbo::str_format("%lld", 100'000'000'000'000) -> "100000000000000"
+
+// Floating Point
+// Default precision of %f conversion is 6
+turbo::str_format("%f", 1.6)       -> "1.600000" // Width includes decimal pt.
+turbo::str_format("%05.2f", 1.6)   -> "01.60"
+turbo::str_format("%.1f", 1.63232) -> "1.6"      // Rounding down
+turbo::str_format("%.3f", 1.63451) -> "1.635"    // Rounding up
+turbo::str_format("%*.*f", 5, 2, 1.63451) -> " 1.63"  // Same as "%5.2f"
+
+// Exponential Notation
+// Default precision of a %e conversion is 6
+// Default precision of exponent is 2
+// Default sign of exponent is +
+turbo::str_format("%e", 1.6)    -> "1.600000e+00"
+turbo::str_format("%1.1e", 1.6) -> "1.6e+00"
+
+// Hex Exponents
+turbo::str_format("%a", 3.14159) -> "0x1.921f9f01b866ep+1"
+
+// Floating Point to Exponential Notation
+turbo::str_format("%g", 31415900000) -> "3.14159e+10"
+
+// Pointer conversion
+int* ptr = 9;
+turbo::str_format("%p", ptr) -> "0x7ffdeb6ad2a4";
+
+// Positional Modifiers
+std::string s = turbo::str_format("%2$s, %3$s, %1$s!", "vici", "veni", "vidi");
+EXPECT_EQ(s, "veni, vidi, vici!");
+
+// Character Count Capturing
+int n = 0;
+std::string s = turbo::str_format(
+    "%s%d%n", "hello", 123, turbo::FormatCountCapture(&n));
+EXPECT_EQ(8, n);
+
+// %v
+std::string s = "hello";
+unsigned int x = 16;
+turbo::str_format("%v", s)    -> "hello"
+turbo::str_format("%v", 1)    -> "1"
+turbo::str_format("%v", x)    -> "16"
+turbo::str_format("%v", 1.6)  -> "1.6"
+turbo::str_format("%v", true) -> "true"
+```
+
+### Type Support
+
+`str_format()` 本质上支持所有这些基本 C++ 类型：
+
+*   Characters:
+*   `char`
+*   `signed char`
+*   `unsigned char`
+*   `wchar_t`
+*   Strings:
+*   `std::string`
+*   `std::wstring`
+*   `std::string_view` (if available)
+*   `std::wstring_view` (if available)
+*   Integers:
+*   `int`
+*   `short`
+*   `unsigned short`
+*   `unsigned`
+*   `long`
+*   `unsigned long`
+*   `long long`
+*   `unsigned long long`
+*   Floating-point:
+*   `float`
+*   `double`
+*   `long double`
+
+与 printf 系列函数不同，str_format() 不依赖调用者将参数的确切类型编码到格式字符串中。 （使用 `printf()`
+必须使用长度修饰符和转换说明符仔细完成此操作 -例如`%llu`编码类型`unsigned long long`。）在`str_format`中
+库，格式转换指定了更广泛的 C++ 概念类别而不是确切的类型。例如，`%s`绑定到任何类似字符串的参数，
+所以 `std::string`、`std::wstring`、`std::string_view`、`const char*` 和
+`const wchar_t*` 都被接受。同样，“%d”接受任何类似整数的论证等
+
+## 高级格式 {#advanced}
+
+可以格式化非常频繁使用或对性能至关重要的字符串使用 `turbo::ParsedFormat` 指定。 `turbo::ParsedFormat` 代表一个
+预解析的`turbo::FormatSpec`，其中模板参数指定了一组转换说明符。
+
+在 C++14 中，这些转换说明符仅限于单个字符值（例如`d`);在 C++17 或更高版本中，您还可以指定一个或多个
+`turbo::FormatConversionCharSet` 枚举（例如 `turbo::FormatConversionCharSet::d`
+或 `turbo::FormatConversionCharSet::d | Turbo::FormatConversionCharSet::x` 使用按位或组合。
+
+一些枚举指定整个转换组：
+
+*   `turbo::FormatConversionCharSet::kIntegral` = `d | i | u | o | x | X`
+*   `turbo::FormatConversionCharSet::kFloating` = `a | e | f | g | A | E | F | G`
+*   `turbo::FormatConversionCharSet::kNumeric` = `kIntegral | kFloating`
+*   `turbo::FormatConversionCharSet::kString` = `s`
+*   `turbo::FormatConversionCharSet::kPointer` = `p`
+
+这些类型说明符将在编译时进行检查。这个做法很多比每次使用时重新解析 `const char*` 格式更快。
+
+```cpp
+// Verified at compile time.
+static const auto* const format_string =
+    new turbo::ParsedFormat<'s','d'>("Welcome to %s, Number %d!");
+turbo::str_format(*format_string, "TheVillage", 6);
+
+// Verified at runtime.
+auto format_runtime = turbo::ParsedFormat<'d'>::New(format_string);
+if (format_runtime) {
+  value = turbo::str_format(*format_runtime, i);
+} else {
+  ... error case ...
+}
+
+// C++17 allows extended formats to support multiple conversion characters per
+// argument, specified via a combination of `FormatConversionCharSet` enums.
+using MyFormat = turbo::ParsedFormat<turbo::FormatConversionCharSet::d |
+                                    turbo::FormatConversionCharSet::x>;
+MyFormat GetFormat(bool use_hex) {
+  if (use_hex) return MyFormat("foo %x bar");
+  return MyFormat("foo %d bar");
+}
+
+```
+
+预编译格式也可以用作通过 API 传递格式的方式以类型安全的方式定义边界。格式对象对类型信息进行编码
+在其模板参数中以允许编译时检查格式功能。
+
+示例:
+
+```cpp
+// Note: this example only compiles in C++17 and above.
+class MyValue {
+ public:
+  // MyValueFormat can be constructed from a %d or a %x format and can be
+  // used with any argument type that can be formatted with %d or %x.
+  using MyValueFormat = turbo::ParsedFormat<turbo::FormatConversionCharSet::d |
+                                           turbo::FormatConversionCharSet::x>;
+  const MyValueFormat& GetFormat(int radix) const {
+    return radix == RADIX_HEX ? format_x_ : format_d_;
+  }
+ private:
+   const MyValueFormat format_d_{"%6d"};
+   const MyValueFormat format_x_{"%8x"};
+};
+
+std::string PrintIt(const MyValue& foo) {
+  return turbo::StringF(foo.GetFormat(mode), my_int_value_);
+}
+```
+
+## PrintF 替代品
+
+除了`std::sprintf()`之类的`str_format()`函数之外，`str_format.h`
+还提供了许多 `std::printf()` 的直接替代品，`std::fprintf()` 和 `std::snprintf()`：
+
+*   `turbo::PrintF()`
+*   `turbo::FPrintF()`
+*   `turbo::SNPrintF()`
+
+这些函数都类似于 C 内置函数。特别是，他们采用相同的参数，返回具有相同语义的`int`，并且可以设置`错误`。使用这些函数就像使用任何 printf 变体一样。
+
+示例:
+
+```cpp
+turbo::PrintF("Trying to request TITLE: %s USER: %s\n", title, user);
+```
+
+## 追加到字符串
+
+`turbo::str_append_format()` 函数允许您执行类似 `printf` 的操作格式化为现有的“&dest”字符串，并将格式化的字符串附加到其中。
+`str_append_format()` 返回 `*dest` 以方便链接。
+
+示例:
+
+```cpp
+std::string& turbo::str_append_format(&dest, format, ...)
+```
+
+## 写入流
+
+`turbo::StreamFormat()` 返回一个可以有效地流式传输到的对象`std::ostream`，例如 I/O 或文件。
+:::warning
+注意：返回的对象必须立即使用。也就是说，不要将其保留在
+一个`auto`变量。
+:::
+
+示例:
+
+```cpp
+//  Stream to standard output
+std::cout << turbo::StreamFormat("name: %-20.4s: quota: %7.3f", name, quota);
+
+// Stream to a file
+if (FILE* file_handle = fopen("myfile.txt", "w"); file_handle != nullptr) {
+  int result =
+      turbo::FPrintF(file_handle, "%s", "C:\\Windows\\System32\\");
+  return result;
+}
+```
+
+## 用户定义的格式 {#user-defined-formats}
+
+`str_format` 库提供了用于格式化的自定义实用程序使用`str_format()`的用户定义类型。与大多数类型扩展一样，您应该
+拥有您想要扩展的类型。
+
+> Tip: For types you don't own you can use `turbo::FormatStreamed()` to format
+> types that have an `operator<<` but no intrinsic type support within
+> `str_format()`.
+>
+> ```cpp
+> turbo::PrintF("My Foo: %s\n", turbo::FormatStreamed(foo));
+> ```
+
+有两种格式化用户定义类型的方法：
+
+* `turbo_stringify()` 使用 `v` 类型说明符提供更简单的用户 API，除了使用“str_format()”之外，还可以使用`turbo::str_cat()`，`turbo::substitute()`、日志。
+* `turbo_format_convert()` 更具可定制性，允许用户更好地控制类型说明符和用于格式化其类型的附加修饰符。
+
+We'll cover both of these approaches below.
+
+### `turbo_stringify()`
+
+要使类型支持 `turbo_stringify()` 扩展点，请定义一个合适的该类型的`turbo_stringify()`函数模板如下所述。对于一个
+类类型`turbo_stringify()`应定义为`friend`函数模板。对于枚举类型`E`，在命名空间范围内定义`turbo_stringify()`
+与`E`相同的命名空间，以便可以通过参数相关的查找找到它（ADL）。
+
+`turbo_stringify()` 重载应具有以下签名：
+
+```cpp
+template <typename Sink>
+void turbo_stringify(Sink& sink, const UserDefinedType& value);
+```
+
+`turbo_stringify()` 仅支持与类型说明符 `%v` 一起使用，它使用用于格式化目的的类型推导。
+
+用户定义类型中的示例用法如下所示：
+
+```cpp
+struct Point {
+
+  ...
+  // str_format support is added to the Point class through an turbo_stringify()
+  // friend declaration.
+  template <typename Sink>
+  friend void turbo_stringify(Sink& sink, const Point& p) {
+    turbo::Format(&sink, "(%d, %d)", p.x, p.y);
+  }
+
+  int x;
+  int y;
+}
+```
+
+然后格式化 `Point` 就可以简单地使用 `%v` 类型说明符：
+
+```cpp
+// str_format has built-in support for types extended with turbo_stringify
+turbo::str_format("The point is %v", p);
+// turbo_stringify also automatically includes support for turbo::StrCat and
+// turbo::Substitute()
+turbo::StrCat("The point is ", p);
+turbo::Substitute("The point is $0", p);
+```
+
+此外，`turbo_stringify()`本身可以在自己的格式中使用`%v`执行此类型推导的字符串。我们上面的`Point`可以格式化为例如 `"(%v, %v)"`，并将 `int` 值推导为 `%d`。
+
+### `turbo_format_convert()`
+
+要使用`turbo_format_convert()`将格式扩展为您的自定义类型，请提供`turbo_format_convert()` 重载为同一函数中的自由（非成员）函数
+该类型的文件和命名空间，通常作为`friend`定义。这`str_format` 库将在格式化时检查此类重载使用`str_format()`的用户定义类型。
+
+`turbo_format_convert()` 重载应具有以下签名：
+
+```cpp
+turbo::FormatConvertResult<...> turbo_format_convert(
+    const X& value,
+    const turbo::FormatConversionSpec& conversion_spec,
+    turbo::FormatSink *output_sink);
+```
+
+* `turbo::FormatConvertResult` 返回值保存对此自定义类型有效的 `turbo::FormatConversionCharSet` 值集。返回值为“true”表示转换成功；如果返回 false，str_format() 将生成一个空字符串，并且该结果将传播到 FormatUntyped()。
+* `turbo::FormatConversionSpec` 保存处理时从用户字符串中提取的字段。有关此格式的完整文档，请参阅上面的“转换说明符”。
+* `turbo::FormatSink` 保存构建时的格式化字符串。
+
+`turbo::FormatConversionSpec` 类还有许多成员函数来检查返回的转换字符规范：
+
+* `conversion_char()` 返回此格式操作的基本转换字符。
+* `width()` 和 ` precision()` 表示转换操作应该调整结果的宽度或精度。
+* `is_basic()` 表示转换中不包含任何额外的转换标志，包括任何用于修改宽度或精度的标志。此方法对于通过快速路径优化转化非常有用。* `has_left_flag()` 通过在格式字符串中使用“-”字符来指示结果是否左对齐。例如。 `“%-s”`
+* `has_show_pos_flag()` 指示是否通过在格式字符串中使用`+`字符在格式字符串中此转换字符的结果前面添加符号列，即使结果为正。例如。 `%+d`
+* `has_sign_col_flag()` 指示是否通过在格式字符串中使用空格字符 (' ') 将强制符号列添加到此转换字符的结果中。例如。 `"%i"`* `has_alt_flag()` 指示是否将`替代`格式应用于此转换字符的结果。例如。 `%#h`
+* `has_zero_flag()` 指示是否应通过在格式字符串中使用“0”字符在此转换字符的结果前面添加零而不是空格。例如。 `%0f`
+这些成员函数可用于选择如何处理转换源格式字符串中遇到的操作。
+
+用户定义类型中的示例用法如下所示：
+
+```cpp
+struct Point {
+
+  ...
+  // str_format support is added to the Point class through an
+  // turbo_format_convert() friend declaration.
+  //
+  // FormatConvertResult indicates that this formatting extension will accept
+  // kIntegral ( d | i | u | o | x | X) or kString (s) specifiers. Successful
+  // conversions will return `true`.
+  friend turbo::FormatConvertResult<turbo::FormatConversionCharSet::kString |
+                                   turbo::FormatConversionCharSet::kIntegral>
+  turbo_format_convert(const Point& p,
+                    const turbo::FormatConversionSpec& spec,
+                    turbo::FormatSink* s) {
+    if (spec.conversion_char() == turbo::FormatConversionChar::s) {
+      // If the conversion char is %s, produce output of the form "x=1 y=2"
+      turbo::Format(s, "x=%vy=%v", p.x, p.y);
+    } else {
+      // If the conversion char is integral (%i, %d ...) , produce output of the
+      // form "1,2". Note that no padding will occur here.
+      turbo::Format(s, "%v,%v", p.x, p.y);
+    }
+    return {true};
+  }
+
+  int x;
+  int y;
+};
+```
+
+## 定义接受器
+
+```cpp
+bool turbo::Format(&dest, format, ...)
+```
+
+与 `turbo::str_append_format` 类似，但输出是任意目的地支持`RawSink`接口的对象。为了实现这个接口，
+为您的接收器对象提供 `turbo_format_flush()` 的重载：
+
+```cpp
+void turbo_format_flush(MySink* dest, std::string_view part);
+```
+
+其中`dest`是传递给`turbo::format()`的指针。这通常是
+通过提供可由 ADL 找到的免费函数来完成。
+
+该库已经为使用类型的接收器提供了内置支持`std::string`、`std::ostream` 和 `turbo::Cord` 以及 `turbo::format()`。
+
+:::info
+请记住，只有类型所有者才应该编写这样的扩展。一个
+`MySink`类型的重载应该**仅**在标头中声明声明`MySink`，并与`MySink`位于同一命名空间中。如果某个特定类型
+不支持此扩展请要求所有者编写一个，或制作您自己的支持它的包装类型。
+:::
+
+[1]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/fprintf.html

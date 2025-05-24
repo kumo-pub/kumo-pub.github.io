@@ -1,0 +1,537 @@
+---
+sidebarDepth: 1
+sitemap:
+  priority: 0.7
+---
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# API 密钥  
+
+kumosearch 支持创建具有精细访问控制的 API 密钥。您可以限制每个索引表、每个操作、每个记录甚至每个字段级别或这些级别的混合的访问。
+
+阅读这篇 [开发手册文章](../../kmsearch/data-access-control.mdx)，详细了解如何管理 kumosearch 中的数据访问。
+
+:::warning
+我们将使用您启动 kumosearch 时使用的初始引导密钥（通过 `--api-key`）来创建其他密钥。 **强烈建议**不要直接在生产应用程序中使用引导 API 密钥。相应地，建议为生产应用程序生成一个适当范围的 API 密钥。
+:::
+
+## 创建 API 密钥 {#create-api-key}
+
+### 管理员密钥
+
+首先，我们创建一个允许执行所有操作的 API 密钥，即它实际上是一个管理密钥，相当于您启动 kumosearch 时使用的密钥（通过 `--api-key`）。
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript">
+
+```js
+key = client.keys().create({
+  'description': 'Admin key.',
+  'actions': ['*'],
+  'collections': ['*']
+})
+```
+
+  </TabItem>
+      <TabItem value="Python" label="Python">
+
+```py
+key = client.keys.create({
+  "description": "Admin key.",
+  "actions": ["*"],
+  "collections": ["*"]
+})
+
+```
+
+      </TabItem>
+      <TabItem value="Shell" label="Shell">
+
+```bash
+curl 'http://localhost:8868/keys' \
+    -X POST \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -H 'Content-Type: application/json' \
+    -d '{"description":"Admin key.","actions": ["*"], "collections": ["*"]}'
+```
+
+      </TabItem>
+</Tabs>
+
+通过将 `actions` 和 `collections` 设置为通配符 `['*']`范围，可以创建一个通用访问权限的管理密钥。但是，通常应该避免创建范围如此广泛的密钥。
+
+:::warning
+生成的密钥仅在创建期间提供一次。需要将此密钥小心地存放在安全的地方。
+:::
+
+### 仅限搜索 API 密钥 {#search-only-api-key}
+
+现在让我们看看如何创建仅搜索密钥，该密钥的范围限制为仅搜索操作，并且仅适用于特定索引表。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+client.keys().create({
+  'description': 'Search-only companies key.',
+  'actions': ['documents:search'],
+  'collections': ['companies']
+})
+```
+
+      </TabItem>
+      <TabItem value="Python" label="Python">
+```py
+client.keys.create({
+  "description": "Search-only companies key.",
+  "actions": ["documents:search"],
+  "collections": ["companies"]
+})
+```
+
+      </TabItem>
+      <TabItem value="Shell" label="Shell">
+
+```bash
+curl 'http://localhost:8868/keys' \
+    -X POST \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -H 'Content-Type: application/json' \
+    -d '{"description":"Search-only companies key.","actions": ["documents:search"], "collections": ["companies"]}'
+```
+
+      </TabItem>
+</Tabs>
+
+通过将 `actions` 范围设置为 `["documents:search"]` 并将 `collections` 范围设置为 `["companies"]`，我们可以生成一个仅允许对 `companies` 索引表进行搜索的密钥。
+
+#### 响应示例
+
+<Tabs>
+      <TabItem value="json" label="json">
+
+```json
+{
+  "actions": [
+    "*"
+  ],
+  "collections": [
+    "*"
+  ],
+  "description": "Admin key.",
+  "expires_at": 64723363199,
+  "id": 1,
+  "value": "k8pX5hD0793d8YQC5aD1aEPd7VleSuGP"
+}
+```
+
+      </TabItem>
+</Tabs>
+
+索引表名称可以包含正则表达式。例如，如果您有多个以 `org_` 开头的索引表，并且希望所有这些索引表共享一个公共密钥，可以这样定义权限：
+
+```json
+{
+  "description": "Key for searching org collections.",
+  "actions": [
+    "documents:search"
+  ],
+  "collections": [
+    "org_.*"
+  ]
+}
+```
+
+#### 定义
+
+`POST ${KUMOSEARCH_HOST}/keys`
+
+### 参数 {#parameters}
+
+| 参数  | 必选 | 描述                 |
+|:------------|:---------|:-------------------|
+| actions     | 是      | 允许的操作列表。请参阅下表了解可能的值。            |
+| collections | 是      | 该密钥范围内的索引表列表。支持正则表达式。例如：`coll.*` 将匹配名称中包含 `coll` 的所有索引表。        |
+| description | 是      | 用于识别密钥用途的内部描述。              |
+| value       | 否       | 默认情况下，如果未指定此参数，kumosearch 会自动为您生成一个随机密钥。如果您需要使用特定字符串作为密钥，则可以在创建密钥时使用此参数提及它。 |
+| expires_at  | 否       | [Unix 时间戳](https://www.epochconverter.com/) 直到密钥有效。           |
+| autodelete  | 否       | 自动清除过期的密钥。每小时清除一次。默认值：`false`。        |
+
+### 示例操作 actions {#operator-sample-actions}
+
+这是一个示例操作列表。
+
+一般来说，您可以使用 `resource:verb` 模式来指示操作，其中 `verb` 可以是 `create`、`delete`、`get`、`list`、`search` 或 `*`。
+
+#### 索引表操作 actions 
+
+| 操作              | 描述 |
+|:---------------------|:--------------|
+| `collections:create` | 允许创建索引表。       |
+| `collections:delete` | 允许删除索引表。       |
+| `collections:get`    | 允许获取单个索引表的schema。     |
+| `collections:list`   | 允许列出所有索引表的schema。     |
+| `collections:*`      | 允许各种与索引表相关的操作。 |
+
+#### 文档操作 actions 
+
+| 操作            | 描述|
+|:-------------------|:------------|
+| `documents:search` | 只允许搜索文档。   |
+| `documents:get`    | 允许获取单个文档。   |
+| `documents:create` | 允许创建文档。     |
+| `documents:upsert` | 允许更新插入文档。   |
+| `documents:update` | 允许更新文档。     |
+| `documents:delete` | 允许删除文档。     |
+| `documents:import` | 允许批量导入文档。   |
+| `documents:export` | 允许批量导出文档。   |
+| `documents:*`      | 允许所有文档操作。   |
+
+#### 别名操作 actions 
+
+| 操作           | 描述 |
+|:-----------------|:------------|
+| `aliases:list`   | 允许获取所有别名。   |
+| `aliases:get`    | 允许检索单个别名。    |
+| `aliases:create` | 允许创建别名。     |
+| `aliases:delete` | 允许删除别名。     |
+| `aliases:*`      | 允许所有别名操作。   |
+
+#### 同义词动作 actions 
+
+| 操作            | 描述 |
+|:------------------|:------------|
+| `synonyms:list`   | 允许获取所有同义词。  |
+| `synonyms:get`    | 允许检索单个同义词。   |
+| `synonyms:create` | 允许创建同义词。    |
+| `synonyms:delete` | 允许删除同义词。    |
+| `synonyms:*`      | 允许所有同义词操作。  |
+
+#### 覆盖操作 actions 
+
+| 操作             | 描述 |
+|:-------------------|:------------|
+| `overrides:list`   | 允许获取所有覆盖。   |
+| `overrides:get`    | 允许检索单个覆盖。    |
+| `overrides:create` | 允许创建覆盖。     |
+| `overrides:delete` | 允许删除覆盖。     |
+| `overrides:*`      | 允许所有覆盖操作。   |
+
+#### 停用词操作 actions 
+
+| 操作             | 描述 |
+|:-------------------|:------------|
+| `stopwords:list`   | 允许获取所有停用词集。 |
+| `stopwords:get`    | 允许检索单个停用词集。  |
+| `stopwords:create` | 允许创建停用词集。   |
+| `stopwords:delete` | 允许删除停用词集。   |
+| `stopwords:*`      | 允许所有停用词操作。  |
+
+#### 密钥操作 actions 
+
+| 操作        | 描述      |
+|:--------------|:-----------------|
+| `keys:list`   | 允许获取所有密钥的元数据。  |
+| `keys:get`    | 允许获取单个密钥的元数据。      |
+| `keys:create` | 允许创建 API 密钥。     |
+| `keys:delete` | 允许删除 API 密钥。     |
+| `keys:*`      | 允许所有 API 密钥相关操作。 |
+
+#### 其他操作 actions 
+
+| 操作              | 描述     |
+|:--------------------|:----------------|
+| `metrics.json:list` | 允许访问指标端点。       |
+| `stats.json:list`   | 允许访问统计端点。       |
+| `debug:list`        | 允许访问 `/debug` 端点。 |
+| `*`                 | 允许所有操作。         |
+
+## 检索 API 密钥
+
+检索密钥（有关的元数据）。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+key = client.keys(1).retrieve()
+```
+
+      </TabItem>
+      <TabItem value="Python" label="Python">
+
+```py
+key = client.keys[1].retrieve()
+```
+
+      </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl 'http://localhost:8868/keys/1' \
+    -X GET \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+      <TabItem value="json" label="json">
+
+```json
+{
+  "actions": [
+    "documents:search"
+  ],
+  "collections": [
+    "*"
+  ],
+  "description": "Search-only key.",
+  "expires_at": 64723363199,
+  "id": 1,
+  "value_prefix": "vxpx"
+}
+```
+
+      </TabItem>
+</Tabs>
+
+请注意，当您检索密钥时，仅返回密钥前缀。出于安全原因，只有创建端点会返回完整的 API 密钥。
+
+#### 定义
+
+`GET ${KUMOSEARCH_HOST}/keys/:id`
+
+## 列出所有密钥
+
+检索所有密钥（有关元数据）。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+client.keys().retrieve()
+```
+
+    </TabItem>
+    <TabItem value="Python" label="Python">
+
+```py
+client.keys.retrieve()
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl 'http://localhost:8868/keys' \
+    -X GET \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs >
+<TabItem value="json" label="json">
+
+```json
+{
+  "keys": [
+    {
+      "actions": [
+        "documents:search"
+      ],
+      "collections": [
+        "users"
+      ],
+      "description": "Search-only key.",
+      "expires_at": 64723363199,
+      "id": 1,
+      "value_prefix": "iKBT"
+    },
+    {
+      "actions": [
+        "documents:search"
+      ],
+      "collections": [
+        "users"
+      ],
+      "description": "Search-only key.",
+      "expires_at": 64723363199,
+      "id": 2,
+      "value_prefix": "wst8"
+    }
+  ]
+}
+```
+
+</TabItem>
+</Tabs>
+
+请注意，当您检索密钥时，仅返回密钥前缀。出于安全原因，只有创建端点会返回完整的 API 密钥。
+
+#### 定义
+
+`GET ${KUMOSEARCH_HOST}/keys/`
+
+## 删除 API 密钥
+
+删除给定 ID 的 API 密钥。
+
+<Tabs >
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+key = client.keys(1).delete()
+```
+
+      </TabItem>
+    <TabItem value="Python" label="Python">
+
+```py
+key = client.keys[1].delete()
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl 'http://localhost:8868/keys/1' \
+    -X DELETE \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "id": 1
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+
+`DELETE ${KUMOSEARCH_HOST}/keys/:id`
+
+## 生成范围搜索 API 密钥 {#generate-scope-api-key}
+
+您可以生成带有嵌入搜索参数的范围搜索 API 密钥。这在一些场景中很有用：
+
+1. 多租户场景：在单个 kumosearch 索引表中存储多个用户/客户的数据（也称为多租户）。通过在 API 密钥中嵌入 `filter_by` 参数，仅允许用户访问属于他们的数据子集。
+2. 参数控制：可以嵌入任何 [搜索参数](search_api.mdx#search-parameter)（例如：`exclude_fields` 或 `limit_hits`），以防止用户在客户端修改这些参数。
+
+在使用范围搜索 API 密钥进行搜索 API 调用时，kumosearch 将自动应用嵌入的参数，用户无法修改它们。
+
+### 示例
+
+假设我们将多个用户的数据存储在单个索引表中。
+
+1. 首先，需要向索引表中的每个文档添加一个名为 `accessible_to_user_ids` 的数组字段，列出有权访问该文档的所有用户ID。
+2. 然后，当用户 `user_id：1` 登陆时，在后端服务器上为他们生成一个唯一的范围搜索API密钥，并嵌入过滤器 `filter_by：accessible_to_user_ids：= 1`。
+
+当您使用此范围搜索 API 密钥进行搜索 API 调用时，kumosearch 将自动应用 `filter_by` 参数，确保用户仅能搜索 `accessible_to_user_ids` 字段中列出了自己的 `user_id` 的文档。
+
+如果您不希望用户看到有权访问文档的 `users_ids` 的整个列表，可以在作用域 API 密钥中嵌入 `exclude_fields:accessible_to_user_ids` ，这样响应中将不返回该字段。
+
+### 基于角色的访问 `<Badge text="Advanced"/>`
+
+考虑另一种场景，其中一个组织拥有许多用户，并且用户可能有一个或多个角色（例如：管理员、销售、支持等）。您可以将组织内的所有记录/文档存储在单个索引表中，并通过 API 密钥仅允许特定用户搜索其所在组织的数据及其角色所授予的数据子集。
+
+1. 首先，向索引表中的每个文档添加一个名为 `accessible_to_organization_id` 的字段。
+1. 向每个文档添加另一个名为 `accessible_to_roles` 的数组字段，并添加该组织内有权访问该文档的所有角色。
+1. 使用 [API Keys](./api-keys.mdx) 端点为每个组织生成父搜索 API 密钥。
+1. 现在，当属于 `organization_id: 1` 且角色为 `sales` 和` marketing` 的用户登录时，使用该组织的父搜索 API 密钥和嵌入式过滤器 `filter_by: accessible_to_organization_id:=1 && accessible_to_roles:=[sales,marketing]` 生成一个范围 API 密钥。
+
+当您使用此范围搜索 API 密钥进行搜索 API 调用时，kumosearch 将自动应用 `filter_by` 参数，确保用户仅能访问符合 `organization_id` 和 `role(s)` 的文档文件。
+
+当用户离开组织时，为了提高安全性，您可以撤销该组织的父搜索 API 密钥并生成一个新密钥，并使用它为将来登录的用户生成范围搜索 API 密钥。
+
+::: tip
+一旦父搜索 API 密钥被撤销，所有使用该密钥生成的范围 API 密钥都会自动失效。
+:::
+
+### 用法
+
+生成范围搜索 API 密钥时，无需对 kumosearch 服务器进行任何调用。
+
+您可以使用之前生成的**仅限搜索**API 密钥，创建 HMAC（基于哈希的消息认证码） 摘要参数，并将其用作 API 密钥。我们的客户端库可以处理这个逻辑，但您也可以从命令行生成范围搜索 API 密钥。
+
+::: tip
+范围搜索 API 密钥只能从仅拥有 `documents:search` 权限的父 API 密钥生成，且不具备其他任何权限。
+:::
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+```js
+// Make sure that the parent search key you use to generate a scoped search key 
+//  has no other permissions besides `documents:search`
+
+keyWithSearchPermissions = 'RN23GFr1s6jQ9kgSNg2O7fYcAUXU7127'
+client.keys().generateScopedSearchKey(keyWithSearchPermissions, {'filter_by': 'company_id:124', 'expires_at': 1906054106})
+```
+
+      </TabItem>
+    <TabItem value="Python" label="Python">
+
+```py
+# Make sure that the parent search key you use to generate a scoped search key 
+#  has no other permissions besides `documents:search`
+
+key_with_search_permissions = 'RN23GFr1s6jQ9kgSNg2O7fYcAUXU7127'
+client.keys.generate_scoped_search_key(key_with_search_permissions, {"filter_by": "company_id:124", "expires_at": 1906054106})
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+# Make sure that the parent search key you use to generate a scoped search key 
+#  has no other permissions besides `documents:search`
+
+KEY_WITH_SEARCH_PERMISSIONS="RN23GFr1s6jQ9kgSNg2O7fYcAUXU7127"
+EMBEDDED_SEARCH_PARAMETERS_JSON='{"filter_by":"company_id:124","expires_at":1906054106}'
+
+digest=$(echo -n $EMBEDDED_SEARCH_PARAMETERS_JSON | openssl dgst -sha256 -hmac $KEY_WITH_SEARCH_PERMISSIONS -binary | base64 -w0)
+
+scoped_api_key=$(echo -n "${digest}${KEY_WITH_SEARCH_PERMISSIONS:0:4}${EMBEDDED_SEARCH_PARAMETERS_JSON}" | base64 -w0)
+
+echo $scoped_api_key
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```
+OW9DYWZGS1Q1RGdSbmo0S1QrOWxhbk9PL2kxbTU1eXA3bCthdmE5eXJKRT1STjIzeyJmaWx0ZXJfYnkiOiJjb21wYW55X2lkOjEyNCIsImV4cGlyZXNfYXQiOjE5MDYwNTQxMDZ9
+```
+
+    </TabItem>
+</Tabs>
+
+您还可以为范围搜索 API 密钥设置自定义 `expires_at`。范围搜素 API 密钥的过期时间应短于生成该密钥所用的父 API 密钥的过期时间。
+
+:::warning
+如果索引表中有一些文档仅供特定用户访问，请务必避免在客户端暴露主搜索密钥，因为暴露主搜索密钥会允许用户查询所有文档，而不受您嵌入的搜索参数和过滤器的限制。
+:::

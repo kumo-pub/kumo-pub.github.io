@@ -1,0 +1,90 @@
+# 连接字符串中的元素
+
+## `turbo::str_join()` 连接字符串中的元素
+
+尽管在一些类似的用例中与 `turbo::str_cat()` 类似，`turbo::str_join()` 提供了一个更强大的实用程序来连接一系列
+元素，定义分隔符字符串，并将结果格式化为字符串。
+
+
+通过使用 `std::begin()` 和 `std::end()` 传递容器来指定范围迭代器，特定于容器的“begin()”和“end()”迭代器，
+大括号初始化的 `std::initializer_list` 或异构的 `std::tuple`对象。分隔符字符串被指定为“std::string_view”。
+
+因为默认格式化程序使用 `turbo::AlphaNum` 类，`turbo::str_join()` 与 `turbo::str_cat()` 一样，可以开箱即用
+字符串、整数、浮点数、双精度数等的集合。
+
+### 示例
+
+```cpp
+std::vector<std::string> v = {"foo", "bar", "baz"};
+std::string s = turbo::str_join(v, "-");
+// Produces the string "foo-bar-baz"
+
+// Joins the values in the given `std::initializer_list<>` specified using
+// brace initialization. This pattern also works with an initializer_list
+// of ints or `std::string_view` -- any `AlphaNum`-compatible type.
+std::string s = turbo::str_join({"foo", "bar", "baz"}, "-");
+// Produces the string "foo-bar-baz"
+
+// Joins a collection of ints. This pattern also works with floats,
+// doubles, int64s -- any `turbo::str_cat()`-compatible type.
+std::vector<int> v = {1, 2, 3, -4};
+std::string s = turbo::str_join(v, "-");
+// Produces the string "1-2-3--4"
+
+// Joins a collection of pointer-to-int. By default, pointers are
+// dereferenced and the pointee is formatted using the default format for
+// that type; such dereferencing occurs for all levels of indirection, so
+// this pattern works just as well for `std::vector<int**>` as for
+// `std::vector<int*>`.
+int x = 1, y = 2, z = 3;
+std::vector<int*> v = {&x, &y, &z};
+std::string s = turbo::str_join(v, "-");
+// Produces the string "1-2-3"
+
+// Dereferencing of `std::unique_ptr<>` is also supported:
+std::vector<std::unique_ptr<int>> v
+v.push_back(turbo::make_unique<int>(1));
+v.push_back(turbo::make_unique<int>(2));
+v.push_back(turbo::make_unique<int>(3));
+std::string s = turbo::str_join(v, "-");
+// Produces the string "1-2-3"
+
+// Joins a `std::map`, with each key-value pair separated by an equals
+// sign. This pattern would also work with, say, a
+// `std::vector<std::pair<>>`.
+std::map<std::string, int> m = {{"a", 1}, {"b", 2}, {"c", 3}};
+std::string s = turbo::str_join(m, ",", turbo::PairFormatter("="));
+// Produces the string "a=1,b=2,c=3"
+```
+
+### Join 格式符
+
+`turbo::str_join()` 使用`Formatters`来格式化要连接的元素（并且
+如果未指定格式化程序，则默认为`AlphaNumFormatter()`。格式化程序
+是一个函数对象，负责将其参数格式化为字符串并将其附加到给定的输出字符串。格式化程序可以实现为
+函数对象、lambda 或普通函数。您可以提供自己的格式化程序使 `turbo::str_join()` 能够处理任意类型。
+
+以下是一个自定义格式化程序的示例，它仅使用`std::to_string()` 将整数格式化为字符串：
+
+```cpp
+struct MyFormatter {
+  void operator()(std::string* out, int i) const {
+    out->append(std::to_string(i));
+  }
+};
+```
+
+您可以通过传递它的实例作为最终的来使用上面的格式化程序`turbo::str_join()` 的参数：
+
+```cpp
+std::vector<int> v = {1, 2, 3, 4};
+std::string s = turbo::str_join(v, "-", MyFormatter());
+// Produces the string "1-2-3-4"
+```
+
+`str_join()` API 中提供了以下标准格式化程序：
+
+* `AlphaNumFormatter()` （默认）
+* `StreamFormatter()` 使用 `<<` 运算符格式化其参数。
+* `PairFormatter()` 通过在对的 `.first` 和 `.second` 成员之间放置给定的分隔符来格式化 `std::pair`。
+* `DereferenceFormatter()` 通过取消引用来格式化其参数，然后应用给定的格式化程序。此格式化程序对于格式化指向 T 的指针的容器很有用。当连接协议缓冲区中的重复字段时，通常会出现这种模式。

@@ -1,0 +1,487 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 搜索策略Curation
+
+有时您可能需要推广某些文档，或者从查询的结果集中排除某些文档。
+
+使用搜索策略，可以实现推广、包含或排除给定查询的特定文档。
+
+:::tip 优先级
+当同时使用同义词 [Synonyms](./synonyms.mdx) 和搜索策略 Overrides 规则时，首先处理 Overrides 规则，因为 Overrides 规则可以包含替换查询的指令。然后同义词再适用于修改后的查询。
+:::
+
+## 创建或更新搜索策略
+
+### 包含或排除文档
+
+在下面的例子中，我们将：
+
+1. 使用 `includes` 包含条件，将id为 `422` 和 `54` 的文档放置在第一和第二位置。
+2. 使用 `excludes` 排除条件，从结果中删除 ID 为 `287` 的文档。
+
+kumosearch 允许同时使用包含和排除，或仅使用其中之一进行管理。
+
+请注意我们将这些搜索策略应用于查询 `apple` 的精确匹配。相反，如果我们想匹配所有包含单词 `apple` 的查询，我们将使用 `contains` 匹配。
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript">
+
+```js
+override = {
+  "rule": {
+    "query": "apple",
+    "match": "exact"
+  },
+  "includes": [
+    {"id": "422", "position": 1},
+    {"id": "54", "position": 2}
+  ],
+  "excludes": [
+    {"id": "287"}
+  ]
+}
+
+// Creates/updates an override called `customize-apple` in the `companies` collection
+client.collections('companies').overrides().upsert('customize-apple', override)
+```
+
+  </TabItem>
+    <TabItem value="Python" label="Python">
+
+```py
+override = {
+  "rule": {
+    "query": "apple",
+    "match": "exact"
+  },
+  "includes": [
+    {"id": "422", "position": 1},
+    {"id": "54", "position": 2}
+  ],
+  "excludes": [
+    {"id": "287"}
+  ]
+}
+
+# Creates/updates an override called `customize-apple` in the `companies` collection
+client.collections['companies'].overrides.upsert('customize-apple', override)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/collections/companies/overrides/customize-apple" -X PUT \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+  "rule": {
+    "query": "apple",
+    "match": "exact"
+  },
+  "includes": [
+    {"id": "422", "position": 1},
+    {"id": "54", "position": 2}
+  ],
+  "excludes": [
+    {"id": "287"}
+  ]
+}'
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "id": "customize-apple",
+  "excludes": [
+    {
+      "id": "287"
+    }
+  ],
+  "includes": [
+    {
+      "id": "422",
+      "position": 1
+    },
+    {
+      "id": "54",
+      "position": 2
+    }
+  ],
+  "rule": {
+    "match": "exact",
+    "query": "apple"
+  }
+}
+```
+
+    </TabItem>
+</Tabs>
+
+### 为规则添加标签
+
+您可以为搜索策略规则添加标签，然后通过直接引用标签名称触发管理。
+
+```json
+{
+    "overrides": [
+        {
+            "id": "tagging-example",
+            "includes": [{"id": "1348","position": 1}],
+            "rule": {
+                "match": "exact",
+                "query": "iphone pro",
+                "tags": ["apple", "iphone"]
+            }
+        }
+    ]
+}
+```
+现在，当我们搜索索引表时，可以通过 `override_tags` 参数直接传递一个或多个标签，触发与标签匹配的策略规则：
+
+```json
+{
+   "override_tags": "apple,iphone"
+}
+```
+
+**规则标签的附加说明**
+
+如果 `override1` 被标记为 `tagA,tagB`，`override2` 仅被标记为 `tagA`，而 `override3` 未被标记：
+
+1. 如果搜索设置 `override_tags` 为 `tagA`，则只考虑包含 `tagA` 的搜索策略规则（`override1` 和 `override2`），按照通常的逻辑进行处理，即先按搜索策略名称的字母顺序排列，并在 `stop_processing` 为 `false` 时处理多个规则。
+2. 如果搜索设置 `override_tags` 为 `tagA,tagB`，则首先评估同时包含 `tagA` 和 `tagB` 的规则，然后评估包含 `tagA` 或 `tagB` 的规则，但不考虑没有标签的搜索策略规则。在每个组中，按搜索策略名称的字母顺序排序，并在 `stop_processing` 为 `false` 时处理多个规则。
+3. 如果搜索未设置 `override_tags`，则只考虑没有关联标签的规则。
+
+### 动态过滤
+
+在以下示例中，我们将动态地将过滤器应用于与规则匹配的查询。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+override = {
+  "rule": {
+    "query": "{brand} phone",
+    "match": "contains"
+  },
+  "filter_by": "brand:={brand}",
+  "remove_matched_tokens": true
+}
+
+// Creates/updates an override called `brand-filter` in the `companies` collection
+client.collections('companies').overrides().upsert('brand-filter', override)
+```
+
+    </TabItem>
+
+      <TabItem value="Python" label="Python">
+
+```py
+override = {
+  "rule": {
+    "query": "{brand} phone",
+    "match": "contains"
+  },
+  "filter_by": "brand:={brand}",
+  "remove_matched_tokens": True
+}
+
+# Creates/updates an override called `brand-filter` in the `companies` collection
+client.collections['companies'].overrides.upsert('brand-filter', override)
+```
+
+      </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/collections/companies/overrides/brand-filter" -X PUT \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+  "rule": {
+    "query": "{brand} phone",
+    "match": "contains"
+  },
+  "filter_by": "brand:={brand}",
+  "remove_matched_tokens": true
+}'
+```
+
+    </TabItem>
+</Tabs>
+
+启用此搜索策略后，任何包含品牌的查询都将自动根据匹配的品牌进行过滤。此外，该品牌也会从原始查询词中移除，以便搜索仅针对剩余的词`token`进行。
+
+例如，如果有人搜索 `sony ericsson phone`，则查询将被重写为 `phone`，并直接应用 `sony ericsson` 品牌过滤器。如果您不想从查询中删除匹配的标记，将 `remove_matched_tokens` 设置为 `false`。默认情况下，此参数设置为 `true`。
+
+:::tip 注意
+动态过滤查询中使用的字段应在 shcema 中的字段定义中包含 `facet: true`。
+:::
+
+### 管理和过滤
+
+`includes` 用于固定结果中某些位置的文档，但这些文档有可能被 `filter_curated_hits: true`过滤掉。
+
+发生这种情况时，kumosearch 会将 `includes` 添加的所有剩余文档“滑动”到结果中。例如，假设您有一组产品记录，在 `ranking` 字段上排序如下所示：
+
+```
+1. ABC123 (in stock)
+2. DEF456 (sold out)
+3. XYZ999 (sold out)
+4. QWE127 (in stock)
+5. BNM847 (in stock)
+6. JKL999 (in stock)
+7. CVB333 (in stock)
+```
+
+假设创建了一个搜索策略，它使用 `includes` 将以下记录固定到特定位置。搜索策略也将 `filter_curated_hits` 设置为 `true`，因此 `includes` 添加的文档如果不匹配任何 `filter_by` 条件，都将被过滤掉：
+
+```
+- QWE127 pinned to position 1
+- DEF456 pinned to position 2
+- CVB333 pinned to position 3
+```
+
+当此搜索策略应用于搜索时，结果将是：
+
+```
+1. QWE127 (in stock) <- Position set by includes
+2. DEF456 (sold out) <- Position set by includes
+3. CVB333 (in stock) <- Position set by includes
+4. ABC123 (in stock)
+5. XYZ999 (sold out)
+6. BNM847 (in stock)
+7. JKL999 (in stock)
+```
+
+如果随后将 `status:=in stock` 过滤器添加到搜索中，则会删除售完记录。这包括 `DEF456`，即使它是搜索策略尝试通过 `includes` 添加的记录之一(因为它缺货并且搜索策略有 `filter_curated_hits: true`)。最终结果是搜索策略中的两条库存记录出现在位置 1 和 2，其下是剩余记录：
+
+```
+1. QWE127 (in stock) <- Position set by includes
+2. CVB333 (in stock) <- Position set by includes (moved up)
+3. ABC123 (in stock)
+4. BNM847 (in stock)
+5. JKL999 (in stock)
+```
+
+文档 `CVB333` 会“向上滑动”到位置 2，以取代 `DEF456`（已被过滤掉）。
+
+### 搜索策略参数
+
+#### 定义
+`PUT ${KUMOSEARCH_HOST}/collections/:collection/overrides/:id`
+
+#### 参数
+| 参数             | 必选                      | 描述             |
+|-----------------------|---------------|-------------------|
+| rule.query            | `rule.query` 或 `rule.filter_by` 中必须至少指定一个 | 指示应搜索策略哪些搜索查询。       |
+| rule.match            | 否          | 指示查询词的匹配是 `exact`还是 `contains`。设置 `rule.query` 时需要。 |
+| rule.filter_by        |  `rule.query` 或 `rule.filter_by` 中必须至少指定一个 | 指示当搜索查询中的 `filter_by` 参数完全匹配此处指定的字符串（包括反引号、空格、方括号等）时，应应用搜索策略。   |
+| rule.tags             | 否              | 与此搜索策略规则关联的标签列表。      |
+| excludes              | 否               | 应从搜索结果中排除的文档 `id` 列表。       |
+| includes              | 否              | 应包含在搜索结果中的文档 `id` 列表及其相应的位置。   |
+| metadata              | 否      | 触发此规则时，在搜索 API 响应中返回自定义 JSON 对象。当触发特定规则时，这可用于在前端显示预定义的消息（例如：促销横幅）。    |
+| filter_by             | 否              | 应用于与搜索策略规则匹配的搜索查询的过滤依据子句。   |
+| sort_by               | 否        | 应用于与搜索策略规则匹配的搜索查询的排序依据子句。    |
+| replace_query         | 否            | 当搜索查询与搜索策略规则匹配时，将当前搜索查询替换为该值。  |
+| remove_matched_tokens | 否        | 指示是否应从搜索查询中删除搜索策略规则中存在的搜索查询 tokens。 <br/><br/>默认值：`true`。    |
+| filter_curated_hits   | 否       | 当设置为 `true` 时，查询的过滤条件也会应用于策略记录。 <br/><br/>默认值：`false`。     |
+| effective_from_ts     | 否             | Unix 时间戳，指示搜索策略生效的日期/时间。您可以使用它来创建从未来时间点开始应用的搜索策略规则。     |
+| effective_to_ts       | 否          | Unix 时间戳，指示搜索策略生效之前的日期/时间。您可以使用它来创建在一段时间后停止应用的搜索策略规则。     |
+| stop_processing       | 否         | 当设置为 `true` 时，搜索策略处理将在第一个匹配规则处停止。<br/><br/>当设置为 `false` 时，搜索策略处理将继续，并且将按顺序触发多个搜索策略操作。 <br/><br/> 搜索策略按照其 `id` 字段的字母顺序进行处理。<br/><br/>默认值：`true`。 |
+
+## 列出所有搜索策略
+
+列出与给定索引表关联的所有搜索策略。
+
+注意：默认情况下，返回所有搜索策略，但您可以使用 `offset` 和 `limit` 参数对列表进行分页。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+```js
+client.collections('companies').overrides().retrieve()
+```
+
+      </TabItem>
+    <TabItem value="Python" label="Python">
+
+```py
+client.collections['companies'].overrides.retrieve()
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+"http://localhost:8868/collections/companies/overrides"
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+      <TabItem value="json" label="json">
+
+```json
+{
+  "overrides":[
+    {
+      "id":"customize-apple",
+      "excludes":[
+        {
+          "id":"287"
+        }
+      ],
+      "includes":[
+        {
+          "id":"422",
+          "position":1
+        },
+        {
+          "id":"54",
+          "position":2
+        }
+      ],
+      "rule":{
+        "match":"exact",
+        "query":"apple"
+      }
+    }
+  ]
+}
+```
+
+      </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/collections/:collection/overrides`
+
+## 检索搜索策略
+
+获取与索引表关联的单个搜索策略。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+client.collections('companies').overrides('customize-apple').retrieve()
+```
+
+      </TabItem>
+      <TabItem value="Python" label="Python">
+```py
+client.collections['companies'].overrides['customize-apple'].retrieve()
+```
+
+      </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/collections/companies/overrides/customize-apple" -X GET \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "id":"customize-apple",
+  "excludes":[
+    {
+      "id":"287"
+    }
+  ],
+  "includes":[
+    {
+      "id":"422",
+      "position":1
+    },
+    {
+      "id":"54",
+      "position":2
+    }
+  ],
+  "rule":{
+    "match":"exact",
+    "query":"apple"
+  }
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/collections/:collection/overrides/:id`
+
+## 删除搜索策略
+
+删除与索引表关联的搜索策略。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+client.collections('companies').overrides('customize-apple').delete()
+```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python">
+
+```py
+client.collections['companies'].overrides['customize-apple'].delete()
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/collections/companies/overrides/customize-apple" -X DELETE \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "id": "customize-apple"
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`DELETE ${KUMOSEARCH_HOST}/collections/:collection/overrides/:id`
+

@@ -1,0 +1,147 @@
+---
+date: 01/10/2024
+---
+# 安装树布局
+
+本文介绍了将构建输出复制到安装目录时 kmpkg 使用的布局约定。
+
+本文介绍了 kmpkg 安装时使用的布局约定目录。安装目录保存着每个包安装的文件。
+端口作者应确保他们的包遵循所描述的约定在本文中。
+
+在[经典模式](../concepts/classic-mode.mdx)下，安装目录为
+位于 `$KMPKG_ROOT/installed` 中（其中 `$KMPKG_ROOT` 是您的 kmpkg
+安装路径）。在 [清单模式](../concepts/manifest-mode.mdx) 中，每个
+清单文件有一个对应的`kmpkg_installed`目录。的位置
+可以使用以下命令更改安装目录[`--x-install-root`](../commands/common-options.mdx#install-root) 选项。
+无论运行模式如何，安装目录的布局保持不变。
+
+安装目录是在第一次安装包时创建的，
+如果您没有看到安装目录，请尝试
+[首先安装一些软件包](../consume/manifest-mode.mdx)。
+
+安装目录的根级别包含：
+
+* 一个`kmpkg`目录，用于跟踪已安装的软件包和文件
+* 每个 [三元组](../users/triplets.mdx) 的目录。每个三元组目录
+包含每个包安装的文件。
+
+## 三元组目录
+
+每个软件包安装的输出都包含在一个特定于三元组的目录中。
+例如，为`x64-windows`三元组安装的软件包位于
+`installed/x64-windows` 目录。
+
+每个三元组目录内的子目录的布局是相同的：
+
+:::info
+某些软件包可能会生成与此处描述的约定不匹配的文件。
+移植作者应根据以下情况确定生成文件的最终位置
+每个文件的用途。
+:::
+
+| 子目录                                                       | 文件类型                                                         |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| [`bin`](#layout-bin)                                               | 发布 `.dll` 和 `.pdb` 文件                                   |
+| [`debug/bin`](#layout-bin)                                         | 调试 `.dll` 和 `.pdb` 文件                                     |
+| [`debug/lib`](#layout-lib)                                         | 调试 `.lib`、`.so`、`.dylib` 和 `.a` 文件                     |
+| [`debug/lib/manual-link`](#layout-manual-link)                     | 可手动链接的调试 `.lib`、`.so`、`.dylib` 和 `.a` 文件   |
+| [`debug/plugins/<group>`](#layout-plugins)                         | 运行时加载调试 `.dll` 文件                                   |
+| [`debug/lib/pkgconfig`](#layout-pkgconfig)                         | 调试 pkgconfig 文件 (`.pc`)                                     |
+| [`include`](#layout-include)                                       | 头文件（`.h`、`.hpp`、`.hxx`）                              |
+| [`lib`](#layout-lib)                                               | 发布 `.lib`、`.so`、`.dylib` 和 `.a` 文件                    |
+| [`lib/manual-link`](#layout-manual-link)                           | 可手动链接的发布 `.lib`、`.so`、`.dylib` 和 `.a` 文件 |
+| [`lib/pkgconfig`](#layout-pkgconfig)                               | Pkgconfig 文件 (`.pc`)                                           |
+| [`plugins/<group>`](#layout-plugins)                               | 运行时加载发布 `.dll` 文件                                 |
+| [`share/<port>`](#layout-share)                                    | 其他与配置无关的文件                        |
+| [`share/<port>/copyright`](#layout-copyright)                      | 包的许可证文本                                  |
+| [`share/<port>/usage`](#layout-usage)                              | 生成系统集成说明文件                         |
+| `share/<port>/kmpkg-port-config.cmake`                             | 端口定义的 `CMake` 函数和变量                        |
+| [`share/<lowercase-package>/<package>Config.cmake`](#layout-cmake) | `find_package(package)` 的 CMake 集成文件               |
+| `share/<cmakepackagename>/kmpkg-cmake-wrapper.cmake`               | CCMake `find_package(<cmakepackagename>)` 替代                 |
+| [`share/pkgconfig`](#layout-pkgconfig)                             | 与配置无关的 `pkgconfig` 文件 (`.pc`)                 |
+| [`tools/<port>`](#layout-tools)                                    | 可执行工具                                                  |
+
+### `bin` 和 `debug/bin` 目录 {#layout-bin}
+
+在 Windows 上，这些目录包含用于发布和调试配置的 DLL 和 PDB 文件
+分别。端口生成的任何可执行文件都应移动到
+[`tools/<port>`](#layout-tools) 目录。
+
+### `include` {#layout-include}
+
+包含头文件（`.h`、`.hpp`、`.hxx`）。该目录下的布局
+应反映包头文件的预期用途。例如，`contoso`
+打算使用`#include <contoso/contoso.h>`的库应该提供
+头文件`include/contoso/contoso.h`。
+
+kmpkg 禁止在根目录中安装一些保留的头文件名`include` 目录，例如：`err.h`、`user.h`、`time.h` 等。提供禁止的头文件名的库应该放置其头文件
+`include/<port>` 目录中的文件。如果图书馆打算更换系统头文件，它应该设置`KMPKG_POLICY_ALLOW_RESTRICTED_HEADERS`
+其`portfile.cmake`中的策略。
+
+### `lib` 和 `debug/lib` 目录 {#layout-lib}
+
+包含静态库、导入库（在 Windows 上）和共享库（在非 Windows 上）。
+
+### `lib/manual-link` 和 `debug/lib/manual-link` 目录 {#layout-manual-link}
+
+包含必须手动链接的库。
+
+自动链接时可能导致问题的文件必须放置在`lib/manual-link` 文件夹而不是 `lib` 目录。例如，如果一个
+库旨在定义程序的`main()`函数。
+
+### `lib/pkgconfig`、`debug/lib/pkgconfig` 和 `share/pkgconfig` 目录 {#layout-pkgconfig}
+
+包含 pkgconfig 集成文件 (`.pc`)。图书馆不应提供同时包含依赖于配置和独立于配置的文件。
+例如：不要安装`lib/pkgconfig/contoso.pc`和`share/pkgconfig/contoso.pc`。
+
+### `plugins/<group>` and `debug/plugins/<group>` {#layout-plugins}
+
+包含在运行时通过使用来加载的共享库应用程序。
+
+### `share/<port>` {#layout-share}
+
+包含每个端口安装的各种文件。例如，SPDX 文件、脚本等。
+
+### `share/<port>/copyright` {#layout-copyright}
+
+kmpkg 希望 ports 提供包含许可证的“版权”文件已安装软件包的信息。请参阅[维护者指南](../contributing/maintainer-guide.mdx#install-copyright-file)
+了解更多信息。
+### `share/<port>/usage` {#layout-usage}
+
+包含将库集成到项目中的说明的文本文件。
+请参阅[提供包使用文档的指南](../maintainers/handling-usage-files.mdx)
+了解更多信息。
+
+### `share/<lowercase-package>/<package>Config.cmake`, `share/<package>/<package>-config.cmake` {#layout-cmake}
+
+CMake 集成文件应放置在“share”文件夹中并尊重
+CMake 的规则
+[`find_package(package)`](<https://cmake.org/cmake/help/latest/command/find_package.html#config-mode-search-procedure>)
+在“配置”模式下。
+
+例如，如果端口期望提供`find_package(MyPackage REQUIRED)`，则它
+必须提供 `share/mypackage/MyPackageConfig.cmake` 或 `share/mypackage/MyPackage-config.cmake`。
+
+如果包提供 CMake 集成文件，则[`kmpkg_cmake_config_fixup()`](../maintainers/functions/kmpkg_cmake_config_fixup.mdx)
+应调用辅助函数来修复任何不可重定位的路径并合并构建配置。
+
+###  `tools/<port>` {#layout-tools}
+
+> [!IMPORTANT]
+
+:::warning
+kmpkg 首先是一个 C++ 库依赖管理器。端口作者应该
+在决定在安装输出中包含工具时要慎重。例如：
+当不需要调试工具时，考虑仅安装发布可执行文件。
+
+当需要可执行文件时，应提供发布和调试可执行文件
+供运行时使用。
+:::
+
+包含由端口生成的可执行工具。强烈推荐，
+但不是必需的，每个安装的可执行文件都进入一个子目录
+与生成它的端口名称相匹配。例如，`contoso`
+port 可能会将`ContosoGenerator.exe`安装到`tools/contoso/ContosoGenerator.exe`。
+
+某些端口要求将其可执行文件放入`bin`子目录中，其中
+在这种情况下，推荐的模式是`tools/<port>/bin`。

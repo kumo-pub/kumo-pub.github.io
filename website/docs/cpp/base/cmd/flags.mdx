@@ -1,0 +1,378 @@
+
+# turbo Flags
+
+`turbo/flags`允许以编程方式访问传递的标志值命令行到二进制文件。 `turbo/flags` 库提供以下内容
+特征：
+
+* 以线程安全的方式访问 `turbo/flags`
+* 访问在程序生命周期内任何时刻都有效的flags 值
+* 通过确保同一标志名称内的唯一性来防止标志名称冲突 二进制
+* 由许多内置使用标志提供的相关帮助文本
+* 具有对`bool`、`int`和`string`的类型支持，并且可扩展为支持其他`turbo`和自定义类型
+* 默认值和对标志值的编程访问以进行读取和写
+* 允许独立声明和标志定义，尽管这种用法有缺点，通常应该避免。
+* 在动态设置时，支持设置前检查
+* 在动态设置时，支持设置后回调
+
+这些标志的值可以从命令行参数或者文件解析获得。每个标志的结果值存储在未指定类型的全局变量`turbo::Flag<T>`。
+
+## 定义 Flags {#define_flags}
+
+使用`TURBO_FLAG(type, name, default, help-text)`宏定义一个标志适当的类型：
+
+```cpp
+#include "turbo/flags/flag.h"
+#include "turbo/time/time.h"
+
+TURBO_FLAG(bool, big_menu, true,
+          "Include 'advanced' options in the menu listing");
+TURBO_FLAG(std::string, output_dir, "foo/bar/baz/", "output file dir");
+TURBO_FLAG(std::vector<std::string>, languages,
+          std::vector<std::string>({"english", "french", "german"}),
+          "comma-separated list of languages to offer in the 'lang' menu");
+TURBO_FLAG(turbo::Duration, timeout, turbo::Seconds(30), "Default RPC deadline");
+TURBO_FLAG(std::optional<std::string>, image_file, std::nullopt,
+          "Sets the image input from a file.");
+```
+
+使用`TURBO_FLAG`定义的标志将创建名为的全局变量指定类型和默认值的。
+```cpp
+FLAGS_name
+```
+
+### 标准 Flags {#standard-flags}
+
+Turbo 标志库开箱即用，支持以下类型：
+
+*   `bool`
+*   `int16_t`
+*   `uint16_t`
+*   `int32_t`
+*   `uint32_t`
+*   `int64_t`
+*   `uint64_t`
+*   `float`
+*   `double`
+*   `std::string`
+*   `std::vector<std::string>`
+*   `std::optional<T>` (see "Optional Flags" below)
+*   `turbo::LogSeverity` (provided natively for layering reasons)
+
+:::info TIPS
+对整数类型的支持是使用重载来实现的 可变宽度基本类型（`short`、`int`、`long`等）。然而,应用中
+应该更喜欢上面列出的固定宽度整数类型（`int32_t`，
+`uint64_t` 等）。
+:::
+
+### turbo Flags {#turbo-flags}
+
+此外，一些 `Turbo` 库还提供自己的自定义支持`turbo flags`。类型的文档中提供了这些格式的文档
+`turbo_parse_flag()` 定义。
+
+Turbo [时间库][time-library] 提供标志支持
+绝对时间值：
+
+* `turbo::Duration`
+* `turbo::Time`
+
+[历法时间库][civiltime-library]还提供标志支持
+对于以下民用时间值：
+
+* `turbo::CivilSecond`
+* `turbo::CivilMinute`
+* `turbo::CivilHour`
+* `turbo::CivilDay`
+* `turbo::CivilMonth`
+* `turbo::CivilYear`
+
+添加对 Turbo 类型的其他支持时将在此处注明。
+
+请参阅[定义自定义标志类型](#custom) 了解如何为新的标志类型提供支持
+类型。
+
+您可以在可执行文件中的任何`.cc`文件中定义一个标志，但只能定义一个插旗一次！所有标志都应该在任何 C++ 命名空间之外定义，因此如果有多个
+具有相同名称的标志的定义链接到单个程序中链接器将报告错误。如果您想访问多个标志
+源文件，在 `.cc` 文件中定义它，并在其中 [声明](#declaring_flags)对应的头文件。
+
+### 可选 Flags
+
+Turbo 标志库支持 `std::Optional<T>` 类型的标志，其中 `T` 是受支持标志之一的类型。我们将此标志类型称为`T`可选标志。
+可选标志要么是`无值`，不包含任何值类型`T`（表示该标志尚未设置）或类型`T`的值。这C++ 代码中的无值状态由`std::nullopt`的值表示
+可选标志。
+
+使用 `std::nullopt` 作为可选标志的默认值允许您检查是否曾在命令行上指定过这样的标志：
+
+```cpp
+if (turbo::GetFlag(FLAGS_foo).has_value()) {
+  // flag was set on command line
+} else {
+  // flag was not passed on command line
+}
+```
+
+以这种方式使用 `std::Optional<T>` 可以避免指示的常见解决方法这样一个未设置的标志（例如使用哨兵值来指示此状态）。
+
+可选标志还允许开发人员以“未设置”的无值形式传递标志状态在命令行上，允许稍后在二进制逻辑中设置标志。一个
+可选标志的无值状态由特殊符号passing表示通过语法 `--flag=` 或 `--flag ""` 将值设置为空字符串。
+
+```sh
+$ binary_with_optional --flag_in_unset_state=
+$ binary_with_optional --flag_in_unset_state ""
+```
+
+:::info
+注意：由于上述语法要求，可选标志不能是设置为任何值的`T`，该值将解析为空字符串。
+:::
+
+
+## 读取 Flags {#accessing-flags}
+
+通过`TURBO_FLAG`定义的标志可用作未指定的变量使用传递给`TURBO_FLAG`的名称进行类型和命名。 `turbo::get_flag()` 和
+`turbo::SetFlag()` 可用于访问此类标志。例如，对于类型标志`turbo::Duration`:
+
+```cpp
+// Creates variable "turbo::Flag<turbo::Duration> FLAGS_timeout;"
+// Example command line usage: --timeout=1m30s
+TURBO_FLAG(turbo::Duration, timeout, turbo::Seconds(30), "Default RPC timeout");
+
+// Read the flag
+turbo::Duration d = turbo::GetFlag(FLAGS_timeout);
+
+// Modify the flag
+turbo::SetFlag(&FLAGS_timeout, d + turbo::Seconds(10));
+```
+对`TURBO_FLAG`标志的访问是**线程安全**的。
+
+## 在不同文件中使用标志 {#declaring_flags}
+
+以上一节的方式访问标志仅在该标志有效时有效之前在同一个`.cc`文件中定义。如果不是，您将得到一个`'unknown variable'`错误。
+
+如果需要允许其他模块访问该标志，则必须将其导出到这些模块包含的一些头文件。对于“TURBO_FLAG”标志
+名为`T`类型的`FLAGS_name`，使用`TURBO_DECLARE_FLAG(T, name);`宏在 `turbo/flags/declare.h` 中定义这样做：
+
+```cpp
+#include "turbo/flags/declare.h"
+
+TURBO_DECLARE_FLAG(turbo::Duration, timeout);
+```
+
+声明应始终放置在与相关的头文件中与任何其他导出实体一样，定义并拥有该标志的`.cc`文件。
+如果您只需要执行此操作以进行测试，则可以将其与`// Exposed for testing only` 注释。
+
+:::warning
+警告：有必要从不同的文件访问标志，特别是在库，通常是糟糕设计的标志。给定“全局变量”
+标志的性质应该在库中避免它们并注入（例如在构造函数中）。 （看
+[tips/flags](/blog/releases/tips/flags))
+:::
+
+## 验证标志值 {#validating-flag-values}
+
+某些标志值可能无效。例如，底层类型可能有更大的范围超出了标志所需的范围。
+
+对于`TURBO_FLAG`标志，可以通过提供一个来完成对标志值的额外检查自定义类型并向相应的类型添加
+适当的验证`turbo_parse_flag()` 函数，定义特定标志应该如何解析。
+
+示例：
+
+```c++
+#include <string>
+
+#include "turbo/flags/flag.h"
+#include "turbo/flags/marshalling.h"
+#include "turbo/strings/string_view.h"
+
+struct PortNumber {
+  explicit PortNumber(int p = 0) : port(p) {}
+
+  int port;  // Valid range is [0..32767]
+};
+
+// Returns a textual flag value corresponding to the PortNumber `p`.
+std::string turbo_unparse_flag(PortNumber p) {
+  // Delegate to the usual unparsing for int.
+  return turbo::unparse_flag(p.port);
+}
+
+// Parses a PortNumber from the command line flag value `text`.
+// Returns true and sets `*p` on success; returns false and sets `*error`
+// on failure.
+bool turbo_parse_flag(turbo::string_view text, PortNumber* p, std::string* error) {
+  // Convert from text to int using the int-flag parser.
+  if (!turbo::parse_flag(text, &p->port, error)) {
+    return false;
+  }
+  if (p->port < 0 || p->port > 32767) {
+    *error = "not in range [0,32767]";
+    return false;
+  }
+  return true;
+}
+
+TURBO_FLAG(PortNumber, port, PortNumber(0), "What port to listen on");
+```
+
+如果 `turbo_parse_flag()` 对于命令行上指定的值返回 `false`，该过程将退出并显示错
+误消息。请注意，`turbo_parse_flag()`确实本身不启动任何解析，而只是定义解析行为。
+
+## 更改默认标志值 {#changing-default-flag-value}
+
+有时，库中定义了一个标志，而您想要更改其默认值在一个应用程序中有价值，但在其他应用程序中没有价值。
+为此，您可以使用`turbo::set_flag()`在调用层序启动之前覆盖此默认值；如果用户未在命令行上传递
+值，将使用这个新的默认值：
+
+```cpp
+int main(int argc, char** argv) {
+  // Overrides the default for FLAGS_logtostderr
+  turbo::set_flag(&FLAGS_logtostderr, true);
+  // If the command-line contains a value for logtostderr, use that. Otherwise,
+  // use the default (as set above).
+  ...
+}
+```
+
+请注意，在解析命令行*之后*设置标志通常既不是有用也不推荐，因为它会忽略用户的意图
+命令行标志，本质上将该标志设置为常量值。
+
+## 删除/停用 {#removing-retiring-flags}
+
+当标志不再有用（并且不再在代码中引用）时，在某些情况下在这种情况下，可以简单地删除定义。然而，如果标志
+在配置文件、作业启动脚本等中引用，简单地删除定义会导致部署问题。对于旗帜在复杂的部署中引用，其中可以使用单个配置
+多次构建，不可能满足所有约束。处理在这些情况下，时间安排和协调都很困难，您可以表示一些通
+过`TURBO_RETIRED_FLAG()`标记为`retiring`标志。
+
+```cpp
+TURBO_RETIRED_FLAG(bool, old_bool_flag, true, "old description");
+```
+停用`Flags`有许多重要的行为。具体来说，他们：
+
+- 不要定义 C++ `FLAGS_` 变量。
+- 有一个类型和一个值，但该值是故意不可访问的。
+- 不会出现在`--help`消息中。
+- `_all_` 标志解析例程完全支持。
+- 正常使用参数，并抱怨其中的类型不匹配参数。
+- 发出投诉，但如果通过名称访问它们，则不会死亡
+用于解析或其他方式的标志 API。
+
+通过这种方式，您可以安全地删除（多个）复杂中使用的标志 部署：撤销标志，等待受影响的二进制文件的发布，然后
+从配置文件和启动脚本中删除对该标志的引用。一次所有作业都在启动时没有记录有关引用退休人员的警告
+flag，停用的flag可以完全删除。
+
+## 定义自定义标志类型 {#custom}
+
+对于要用作 Turbo 标志类型的类型`T`，它必须支持转换为以及命令行上提供的字符串。自定义类型可能有独特的
+此命令行字符串的格式，因此可能需要自定义支持`turbo/flags`。
+
+要添加对用户定义类型的支持，请添加`turbo_parse_flag()`的重载
+和 `turbo_unparse_flag()` 作为您类型的免费（非成员）函数。如果`T`是类类型，这些函数可以是友元函数定义。这些
+重载必须添加到定义类型的同一命名空间中，因此它们可以通过参数相关查找 (ADL) 来发现。
+
+示例:
+
+```cpp
+namespace foo {
+enum class OutputMode { kPlainText, kHtml };
+
+// turbo_parse_flag converts from a string to OutputMode.
+// Must be in same namespace as OutputMode.
+
+// Parses an OutputMode from the command line flag value `text`. Returns
+// `true` and sets `*mode` on success; returns `false` and sets `*error`
+// on failure.
+bool turbo_parse_flag(turbo::string_view text,
+                   OutputMode* mode,
+                   std::string* error) {
+  if (text == "plaintext") {
+    *mode = OutputMode::kPlainText;
+    return true;
+  }
+  if (text == "html") {
+    *mode = OutputMode::kHtml;
+    return true;
+  }
+  *error = "unknown value for enumeration";
+  return false;
+}
+
+// turbo_unparse_flag converts from an OutputMode to a string.
+// Must be in same namespace as OutputMode.
+
+// Returns a textual flag value corresponding to the OutputMode `mode`.
+std::string turbo_unparse_flag(OutputMode mode) {
+  switch (mode) {
+    case OutputMode::kPlainText: return "plaintext";
+    case OutputMode::kHtml: return "html";
+    default: return turbo::StrCat(mode);
+  }
+}
+}  // namespace foo
+```
+
+请注意，`turbo_parse_flag()`和`turbo_unparse_flag()`都不是类会员，但免费功能。 `turbo_parse_flag/turbo_unparse_flag()` 重载
+对于类型只能在相同的文件和命名空间中声明类型。正确的 `turbo_parse_flag/turbo_unparse_flag()` 实现给定类型将通过参数相关查找 (ADL) 发现。
+
+`turbo_parse_flag()` 可能需要依次解析更简单的组成类型使用`turbo::parse_flag()`。例如，自定义结构体`MyFlagType`
+由 `std::pair<int, std::string>` 组成将添加一个 `turbo_parse_flag()`
+其 `MyFlagType` 的重载如下：
+
+示例:
+
+```cpp
+namespace my_flag_namespace {
+
+struct MyFlagType {
+  std::pair<int, std::string> my_flag_data;
+};
+
+bool turbo_parse_flag(turbo::string_view text, MyFlagType* flag,
+                   std::string* err);
+
+std::string turbo_unparse_flag(const MyFlagType&);
+
+// Within the implementation, `turbo_parse_flag()` will, in turn invoke
+// `turbo::parse_flag()` on its constituent `int` and `std::string` types
+// (which have built-in Turbo flag support.
+
+bool turbo_parse_flag(turbo::string_view text, MyFlagType* flag,
+                   std::string* err) {
+  std::pair<turbo::string_view, turbo::string_view> tokens =
+      turbo::str_split(text, ',');
+  if (!turbo::parse_flag(tokens.first, &flag->my_flag_data.first, err))
+    return false;
+  if (!turbo::parse_flag(tokens.second, &flag->my_flag_data.second, err))
+    return false;
+  return true;
+}
+
+// Similarly, for unparsing, we can simply invoke `turbo::unparse_flag()` on
+// the constituent types.
+std::string turbo_unparse_flag(const MyFlagType& flag) {
+  return turbo::StrCat(turbo::unparse_flag(flag.my_flag_data.first),
+                      ",",
+                      turbo::unparse_flag(flag.my_flag_data.second));
+}
+}  // my_flag_namespace
+```
+
+### 定义自定义标志类型的最佳实践
+
+* 在同一位置声明 `turbo_parse_flag()` 和 `turbo_unparse_flag()` `T`，通常位于声明`T`的同一文件中。
+如果 `T` 是一个类类型，它们可以用 [friend _function-definitions_][friend-functions] 定义。
+* 如果你必须声明 `turbo_parse_flag()` 和 `turbo_unparse_flag()` 远离`T`的声明，你必须仍然是‘T’的所有者并且必须保证
+这些函数在代码库中只定义一次。
+* 记录声明 `turbo_parse_flag()` 的标志的格式字符串
+和`turbo_unparse_flag()`。作为`T`的所有者，您有责任
+记录这种格式。
+* `turbo::str_split("")` 返回 `{""}` （一个包含一个元素的列表），所以要小心如果您正在定义复合标志类型，
+则为此。标志定义为`TURBO_FLAG(std::vector<std::string>, ...)` 将空字符串视为空
+容器。
+* 如果转义分隔符出现在复合标志类型的值中，则转义分隔符。
+* 在你的空闲空间中调用 `turbo::parse_flag()` 和 `turbo::unparse_flag()`函数重载以获取实现的字符串转换行为
+组成的内置类型。
+* 仅允许布尔标志不传递值：例如`--enable_foo` 或`--noenable_foo`。因此，所有自定义标志类型都需要显式
+要传递给 `turbo_parse_flag()` 和 `turbo_unparse_flag()` 的值，即使该值是空字符串（例如 `--my_custom_flag=""`）。
+
+[retired-flags]: https://abseil.io/tips/90
+[friend-functions]: http://en.cppreference.com/w/cpp/language/friend
+[time-library]: ../time/time.mdx#time-durations
+[civiltime-library]: ../time/time.mdx#civil-times
+[shell-expansions]: https://www.gnu.org/software/bash/manual/html_node/Shell-Expansions.html

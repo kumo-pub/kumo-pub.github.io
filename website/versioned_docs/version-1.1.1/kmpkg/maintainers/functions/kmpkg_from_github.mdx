@@ -1,0 +1,92 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_from_github
+
+从 GitHub 下载并提取项目。 启用对 `install` `--head` 的支持。
+
+这也适用于 Gitea，方法是使用 GITHUB_HOST 选项指定 `Gitea` 服务器。
+
+## 使用情况
+
+```cmake
+kmpkg_from_github(
+    OUT_SOURCE_PATH <SOURCE_PATH>
+    REPO <Microsoft/cpprestsdk>
+    [REF <v2.0.0>]
+    [SHA512 <45d0d7f8cc350...>]
+    [HEAD_REF <master>]
+    [PATCHES <patch1.patch> <patch2.patch>...]
+    [GITHUB_HOST <https://github.com>]
+    [AUTHORIZATION_TOKEN <${SECRET_FROM_FILE}>]
+    [FILE_DISAMBIGUATOR <N>]
+)
+```
+
+## 参数
+
+### OUT_SOURCE_PATH
+
+指定将包含提取位置的输出变量。
+
+此项应按约定设置为 `SOURCE_PATH`。
+
+### REPO
+
+GitHub 上的组织或用户和存储库。
+
+### REF
+
+不会更改内容的稳定 `git commit-ish`（理想情况下为标记或提交）。 *此项不应为分支*。
+
+对于没有官方版本的存储库，此项可以设置为当前最新主版本的完整提交 ID。
+
+如果指定了 `REF`，则也必须指定 `SHA512`
+
+### SHA512
+
+应与存档 (`https://github.com/${REPO}/archive/${REF}.tar.gz`) 匹配的 SHA512 哈希。
+
+这是最简单的确定方法，即先将其设置为 `0`，然后尝试构建该端口。 错误消息将包含可以复制回端口文件的完整哈希。
+
+### HEAD_REF
+
+用于拉取 `--head` 构建的不稳定 `git commit-ish`（理想情况下为分支）。
+
+对于大多数项目，此项应为 `master`。 所选分支应为预期在所有支持的平台上始终可构建的分支。
+
+### PATCHES
+
+要应用于提取的源代码的修补程序列表。
+
+相对路径基于端口目录。
+
+### GITHUB_HOST
+
+企业 GitHub 实例的替换主机。
+
+此字段应包含所需 URL 的方案、主机和端口，而无需尾部斜杠。
+
+### AUTHORIZATION_TOKEN
+
+通过授权 HTTP 头传递作为 `"token ${AUTHORIZATION_TOKEN}"` 的令牌。
+
+### FILE_DISAMBIGUATOR
+
+一个令牌，在 `SHA512` 更改（即使 `git ref` 未更改）时用来唯一标识结果文件名，以避免单步执行相同的文件名。
+
+## 说明
+
+必须至少指定 `REF` 和 `HEAD_REF` 之一，但最好两者同时存在。
+
+这会在头部构建期间导出 `KMPKG_HEAD_VERSION` 变量。
+
+## 示例
+
+- [cpprestsdk](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/cpprestsdk/portfile.cmake)
+- [ms-gsl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/ms-gsl/portfile.cmake)
+- [boost-beast](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/boost-beast/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_from\_github.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_from_github.cmake)

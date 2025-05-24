@@ -1,0 +1,326 @@
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 将 kumosearch 集群部署到 Docker Swarm
+
+要在多个主机上以 [Docker Swarm](https://docs.docker.com/engine/swarm/) 模式部署 kumosearch 集群，请按照以下步骤操作：
+
+## 1. 初始化 Docker Swarm
+
+- 例如，在 4 节点 Docker Swarm 设置中，Node1 作为 Docker 的 `manager`，Node2、Node3、Node4 作为 Docker的 `worker`。在 `manager` 节点上运行 `docker swarm init` 命令来初始化 Swarm。
+
+<Tabs>
+    <TabItem value="Node1" label="Node1">
+        ```shellsession
+        # Run docker swarm init on the docker manager node
+
+        $ docker swarm init --advertise-addr $(hostname -i)
+
+        Swarm initialized: current node (6082x127zz98f0pwgjexbv5xp) is now a manager.
+        To add a worker to this swarm, run the following command:
+        docker swarm join --token SWMTKN-1-30txqn35hmpwjpk2qq2zmled1rf94pcft2nbhsb0ckleco9pb2-bjh6oh9yz3vk58uimd6v3jjky
+        192.168.0.25:2377
+        To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+        ```
+    </TabItem>
+</Tabs>
+
+## 2. 创建用户定义的 Overlay 网络
+
+- 在 Docker `manager` 节点上创建一个用户定义的 `overlay` 网络，用于 kumosearch 服务通信。在 `manager` 节点上运行以下命令：
+
+<Tabs>
+    <TabItem value="Node1" label="Node1">
+
+        ```shell
+        # Run docker network create on the docker manager node
+
+        docker network create \
+        --driver overlay \
+        --subnet=10.11.0.10/16 \
+        ts_net
+
+        ```
+    </TabItem>
+</Tabs>
+
+记下 `subnet 子网` 值。相同的 `subnet` 值将在后续的 `docker-stack.yml --peering-subnet` 配置文件中使用。
+
+## 3. 将 worker 节点加入 Swarm
+
+- 在其余 Docker 节点上，将实例作为 `worker` 节点添加到现有的 Docker Swarm 中。使用命令 `docker swarm join-token worker` 获取或更新 `token`，然后，在所有 Docker 节点上运行此命令来加入 Swarm。
+
+<Tabs>
+    <TabItem value="Node2" label="Node2">
+
+        ```shell
+        # Change the token and join the swarm as a worker
+        # This command is identical on all docker nodes
+        docker swarm join --token SWMTKN-1-30txqn35hmpwjpk2qq2zmled1rf94pcft2nbhsb0ckleco9pb2-bjh6oh9yz3vk58uimd6v3jjky
+        192.168.0.25:2377
+        This node joined a swarm as a worker.
+        ```
+
+    </TabItem>
+    <TabItem value="Node3" label="Node3">
+
+        ```shell
+        # Change the token and join the swarm as a worker
+        # This command is identical on all docker nodes
+        docker swarm join --token SWMTKN-1-30txqn35hmpwjpk2qq2zmled1rf94pcft2nbhsb0ckleco9pb2-bjh6oh9yz3vk58uimd6v3jjky
+        192.168.0.25:2377
+        This node joined a swarm as a worker.
+        ```
+
+    </TabItem>
+    <TabItem value="Node4" label="Node4">
+
+        ```shell
+        # Change the token and join the swarm as a worker
+        # This command is identical on all docker nodes
+        docker swarm join --token SWMTKN-1-30txqn35hmpwjpk2qq2zmled1rf94pcft2nbhsb0ckleco9pb2-bjh6oh9yz3vk58uimd6v3jjky
+        192.168.0.25:2377
+        This node joined a swarm as a worker.
+        ```
+
+    </TabItem>
+</Tabs>
+
+## 4. 验证 Docker Swarm 节点状态
+
+- 在 Docker `manager` 节点上运行以下命令以验证 `Swarm` 节点的状态和角色。
+
+<Tabs>
+    <TabItem value="Node1" label="Node1">
+
+        ```shell
+        # Check the status of the Swarm
+        docker node ls
+        ID HOSTNAME STATUS AVAILABILITY MANAGER STATUS ENGINE VERSION
+        6082x127zz98f0pwgjexbv5xp * node1 Ready Active Leader 20.10.0
+        z1n71a3h0bw7clclw22i5f0ys node2 Ready Active 20.10.0
+        xm1h48xsgzzqftvqaod0nx673 node3 Ready Active 20.10.0
+        mde8zbj3bsqrvwk02529cm3le node4 Ready Active 20.10.0
+        ```
+
+    </TabItem>
+</Tabs>
+
+## 5. 创建 `nodes` 文件
+
+- 在每个 Docker `worker` 节点上创建一个新的 `nodes` 文件。此文件将用于配置和管理节点间的通信。
+
+<Tabs>
+    <TabItem value="Node2" label="Node2">
+        ```shell
+        # Create nodes file
+        # This command is identical on all docker nodes
+        mkdir /root/kumosearch && cd /root/kumosearch && echo 'kumosearch-1:7107:7108,kumosearch-2:8107:8868,kumosearch-3:9107:9108' | sudo tee
+        /root/kumosearch/nodes
+        ```
+
+    </TabItem>
+    <TabItem value="Node3" label="Node3">
+
+        ```shell
+        # Create nodes file
+        # This command is identical on all docker nodes
+        mkdir /root/kumosearch && cd /root/kumosearch && echo 'kumosearch-1:7107:7108,kumosearch-2:8107:8868,kumosearch-3:9107:9108' | sudo tee
+        /root/kumosearch/nodes
+        ```
+
+    </TabItem>
+    <TabItem value="Node4" label="Node4">
+
+        ```shell
+        # Create nodes file
+        # This command is identical on all docker nodes
+        mkdir /root/kumosearch && cd /root/kumosearch && echo 'kumosearch-1:7107:7108,kumosearch-2:8107:8868,kumosearch-3:9107:9108' | sudo tee
+        /root/kumosearch/nodes
+        ```
+
+    </TabItem>
+</Tabs>
+
+## 6. 创建 `data` 文件夹
+
+- 在每个 Docker `worker` 节点上创建一个用于存储数据的 `data` 文件夹。
+
+<Tabs>
+    <TabItem value="Node2" label="Node2">
+
+        ```shell
+        # Create data folder
+        # This command is identical on all docker nodes
+        mkdir /var/lib/kumosearch-data-1/ && mkdir /var/lib/kumosearch-data-2/ && mkdir /var/lib/kumosearch-data-3/
+        ```
+
+    </TabItem>
+    <TabItem value="Node3" label="Node3">
+
+        ```shell
+        # Create data folder
+        # This command is identical on all docker nodes
+        mkdir /var/lib/kumosearch-data-1/ && mkdir /var/lib/kumosearch-data-2/ && mkdir /var/lib/kumosearch-data-3/
+        ```
+
+    </TabItem>
+    <TabItem value="Node4" label="Node4">
+
+        ```shell
+        # Create data folder
+        # This command is identical on all docker nodes
+        mkdir /var/lib/kumosearch-data-1/ && mkdir /var/lib/kumosearch-data-2/ && mkdir /var/lib/kumosearch-data-3/
+        ```
+
+    </TabItem>
+</Tabs>
+
+## 7. 创建 `docker-stack.yml` 文件
+
+- 在 Docker `manager` 节点上创建一个 `docker-stack.yml` 文件，用于在所有 Docker `worker` 节点上部署 kumosearch 服务。
+
+<Tabs>
+    <TabItem value="Node1" label="Node1">
+
+        ```shell
+        # Create docker-stack.yml
+        mkdir kumosearch && touch /root/kumosearch/docker-stack.yml
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 以下是 `docker-stack.yml` 文件的示例内容：
+
+:::warning 重要
+在 `Docker Swarm` 设置中，`--peering-subnet` 标志应与 `overlay` 网络中定义的 `subnet`相同。
+有关 `Overlay` 网络的更多信息，请参阅官方 Docker 文档 [此处](https://docs.docker.com/network/overlay/)。
+:::
+
+```yaml
+
+  version: "3.8"
+  services:
+    kumosearch-1:
+      image: kumosearch/kumosearch:1.0.8
+      hostname: kumosearch-1
+      volumes:
+        - /var/lib/kumosearch-data-1/:/data
+        - ./nodes:/nodes
+      ports:
+        - 7108:7108
+        - 7107:7107
+      command: ["--peering-subnet","10.11.0.10/16","--data-dir", "/data","--api-key", "xyz","--nodes","/nodes","--peering-port","7107","--api-port","7108","--enable-cors"]
+      deploy:
+        replicas: 1
+        labels:
+          feature.description: "kumosearch-1"
+        restart_policy:
+          condition: any
+        placement:
+          constraints: [node.hostname == node2]
+      networks:
+          - ts_net
+    kumosearch-2:
+      image: kumosearch/kumosearch:1.0.8
+      hostname: kumosearch-2
+      volumes:
+        - /var/lib/kumosearch-data-2/:/data
+        - ./nodes:/nodes
+      ports:
+        - 8868:8868
+        - 8107:8107
+      command: ["--peering-subnet","10.11.0.10/16","--data-dir", "/data","--api-key", "xyz","--nodes","/nodes","--peering-port","8107","--api-port","8868","--enable-cors"]
+      deploy:
+        replicas: 1
+        labels:
+          feature.description: "kumosearch-2"
+        restart_policy:
+          condition: any
+        placement:
+          constraints: [node.hostname == node3]
+      networks:
+          - ts_net
+    kumosearch-3:
+      image: kumosearch/kumosearch:1.0.8
+      hostname: kumosearch-3
+      volumes:
+        - /var/lib/kumosearch-data-3/:/data
+        - ./nodes:/nodes
+      ports:
+        - 9108:9108
+        - 9107:9107
+
+      command: ["--peering-subnet","10.11.0.10/16","--data-dir", "/data","--api-key", "xyz","--nodes","/nodes","--peering-port","9107","--api-port","9108","--enable-cors"]
+      deploy:
+        replicas: 1
+        labels:
+          feature.description: "kumosearch-3"
+        restart_policy:
+          condition: any
+        placement:
+          constraints: [node.hostname == node4]
+      networks:
+          - ts_net
+  networks:
+    ts_net:
+      external: true
+
+```
+
+## 8. 部署堆栈
+
+- 通过在 Docker `manager` 节点上运行以下命令来部署堆栈：
+
+<Tabs >
+    <TabItem value="Node1" label="Node1">
+
+    ```shell
+    # Deploy stack
+    docker stack deploy --compose-file /root/kumosearch/docker-stack.yml --with-registry-auth ts
+    ```
+</TabItem>
+</Tabs>
+
+## 9. 验证服务分布
+
+- 列出从 `manager` 节点到 `worker` 节点的服务和任务的分布情况。使用 `docker stack ps` 显示所有 Docker `worker` 节点上的 kumosearch 服务分布。
+
+<Tabs>
+    <TabItem value="Node1" label="Node1">
+
+    ```shell
+    docker stack ps ts
+    ID NAME IMAGE NODE DESIRED STATE CURRENT STATE ERROR PORTS
+    x4w38438c7bn kumosearch-1.1 kumosearch/kumosearch:1.0.8 node2 Running Running 5 minutes ago
+    0iacq1bhw1ia kumosearch-2.1 kumosearch/kumosearch:1.0.8 node1 Running Running 5 minutes ago
+    wqyec57a3d4o kumosearch-3.1 kumosearch/kumosearch:1.0.8 node3 Running Running 5 minutes ago
+    ```
+
+        </TabItem>
+</Tabs>
+
+## 10. 验证 kumosearch 服务状态
+
+- 通过连接到任何 Docker `worker` 节点来验证 kumosearch 服务是否已成功 `集群`。
+
+**注意：** 对于成功的 Docker Swarm 设置，可以通过 `/debug` 端点响应中 `state` 字段的值来确定容器节点是 `leader` 还是 `follower`。至少一个容器节点的状态值应为 `1`，如[高可用集群](./high-availability.mdx)文档中所述。
+
+<Tabs >
+    <TabItem value="Node2" label="Node2">
+
+    ```shell
+        # Connect to docker container
+        docker exec -it kumosearch-1.1.trnoz5k698vzfwtom5lg3bi4p bash
+        root@kumosearch-1:/# apt-get update && apt-get -y install curl
+
+        root@kumosearch-1:/# curl 'http://kumosearch-1:7108/debug' -X GET -H "x-kumosearch-api-key: xyz" && curl 'http://kumosearch-2:8868/debug' -X
+        GET -H "x-kumosearch-api-key: xyz" && curl 'http://kumosearch-3:9108/debug' -X GET -H "x-kumosearch-api-key: xyz"
+        {"state":1,"version":"1.0.8"}{"state":4,"version":"1.0.8"}{"state":4,"version":"1.0.8"}
+    ```
+</TabItem>
+</Tabs>
+
+通过这些步骤，您将成功在 Docker Swarm 环境中部署和管理 kumosearch 集群。

@@ -1,0 +1,39 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg owns
+
+kmpkg owns 命令的参考。确定哪个已安装的软件包拥有与子字符串匹配的特定文件或文件。
+
+## 摘要
+
+```console
+kmpkg owns <file-substr>
+```
+
+## 说明
+
+
+`owns` 命令用于搜索拥有与子字符串 (`<file-substr>`) 匹配的一个或多个特定文件的已安装包。
+
+该命令输出包含与给定子字符串匹配的文件的包列表。 每个条目的格式如下：
+
+```console
+<package-name>: <file-path>
+```
+
+## 示例
+
+搜索拥有与子字符串 `zlib.h` 匹配的文件的已安装包。
+
+```console
+kmpkg owns zlib.h
+
+-- zlib:x86-windows: x86-windows/include/zlib.h
+-- zlib:x64-windows: x64-windows/include/zlib.h
+-- bzip2:x64-windows: x64-windows/include/bzlib.h
+```
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。

@@ -1,0 +1,204 @@
+# 断言
+
+## 断言宏 Assertion macros {#assertion-macros}
+
+大多数测试框架都有大量断言宏来捕获所有可能的条件形式（``_EQUALS```、````_NOTEQUALS````、````_GREATER_THAN```` 等）。
+
+**doctest** 是不同的（但在这方面它就像 [**Catch**](https://github.com/catchorg/Catch2) ）。因为它分解了比较表
+达式，所以这些形式中的大多数都被简化为您将一直使用的一两种形式。也就是说，还有一组丰富的辅助宏。
+
+所有断言宏都有 3 个断言严重性级别：
+
+- ```REQUIRE``` - 如果断言失败，此级别将立即退出测试用例并将测试用例标记为失败。
+- ```CHECK``` - 如果断言失败，此级别会将测试用例标记为失败，但将继续测试用例。
+- ```WARN``` - 这个级别只会在断言失败时打印一条消息，但不会将测试用例标记为失败。
+
+如果您有一系列本质上正交的断言，并且查看所有结果而不是在第一次失败时停止，那么“CHECK”级别非常有用。
+
+所有断言仅对表达式求值一次，如果失败 - 值将正确地 [**stringified**](stringification.mdx)。
+
+请注意，断言的`REQUIRE`级别使用异常来结束当前测试用例。在用户定义类的析构函数中使用此级别的断言可能很
+危险 - 如果由于异常而在堆栈展开期间调用析构函数并且“REQUIRE”断言失败，则程序将终止。另外，从 C++11 开始，所有析构函
+数默认都是 ```noexcept(true)```，除非另有指定，所以这样的断言将导致 ```std::terminate()``` 被调用。
+
+## 表达式分解断言 {#expression-decompositing-asserts}
+
+它们的形式为```CHECK(expression)```（与```REQUIRE```和```WARN```相同）。
+
+```expression```可以是二进制比较，如 ```a == b``` ，也可以是单个比较，如```vec.isEmpty()```。
+
+如果抛出异常，则会捕获、报告并计为失败（除非断言的级别为```WARN```）。
+
+示例：
+
+```c++
+CHECK(flags == state::alive | state::moving);
+CHECK(thisReturnsTrue());
+REQUIRE(i < 42);
+```
+- 否定断言 - ```<LEVEL>_FALSE(表达式)``` - 计算表达式并记录结果的 _逻辑 NOT_。
+
+这些形式的存在是为了解决`!`前缀表达式无法正确分解的问题。
+
+示例:
+
+```c++
+REQUIRE_FALSE(thisReturnsFalse());
+```
+- 使用 [**```DOCTEST_CONFIG_SUPER_FAST_ASSERTS```**](configuration.mdx#doctest_config_super_fast_asserts) 配置选项可
+以使断言编译高达 [**31-63%**](benchmarks.mdx#cost-of-an-assertion-macro)更快！
+- 这些断言也有一个 ```_MESSAGE``` 形式 - 就像 ```CHECK_MESSAGE(expression, message)``` 基本上是一个带有范围 [**INFO()**](logging.mdx#info)
+记录宏与 `CHECK` 宏一起 - 这样消息将仅与该断言相关。二进制/一元断言还没有这种变化。
+
+示例:
+
+```c++
+INFO("this is relevant to all asserts, and here is some var: ", local);
+
+CHECK_MESSAGE(a < b, "relevant only to this assert ", other_local, " more text!");
+
+CHECK(b < c); // here only the first INFO() will be relevant
+```
+
+有关`INFO()`宏的更多信息，请访问[日志记录页面](logging.mdx)。
+
+
+## 二元和一元断言 {#binary-and-unary-asserts}
+
+这些断言不使用模板来分解左右部分的比较表达式。
+
+它们与表达式分解表达式具有相同的保证，但编译速度 [**57-68%**](benchmarks.mdx#cost-of-an-assertion-macro)。
+
+```<LEVEL>``` 是 3 种可能之一：```REQUIRE```/```CHECK```/```WARN```。
+
+- ```<LEVEL>_EQ(left, right)``` - ```<LEVEL>(left == right)```
+- ```<LEVEL>_NE(left, right)``` - ```<LEVEL>(left != right)```
+- ```<LEVEL>_GT(left, right)``` - ```<LEVEL>(left >  right)```
+- ```<LEVEL>_LT(left, right)``` - ```<LEVEL>(left <  right)```
+- ```<LEVEL>_GE(left, right)``` - ```<LEVEL>(left >= right)```
+- ```<LEVEL>_LE(left, right)``` - ```<LEVEL>(left <= right)```
+- ```<LEVEL>_UNARY(expr)``` - ```<LEVEL>(expr)```
+- ```<LEVEL>_UNARY_FALSE(expr)``` - ```<LEVEL>_FALSE(expr)```
+
+使用 [**```DOCTEST_CONFIG_SUPER_FAST_ASSERTS```**](configuration.mdx#doctest_config_super_fast_asserts) 配置选项
+可以使二进制断言编译高达 [**84-91%**](benchmarks.mdx#cost-of-an-assertion-macro)更快！
+
+## 例外情况 {#exceptions}
+
+```<LEVEL>``` 是 3 种可能之一：```REQUIRE```/```CHECK```/```WARN```。
+
+- ```<LEVEL>_THROWS(expression)```
+
+期望在表达式求值期间抛出异常（任何类型）。
+
+- ```<LEVEL>_THROWS_AS(expression, exception_type)```
+
+期望在表达式求值期间抛出_指定类型_的异常。
+
+请注意，如果缺少，```const``` 和 ```&``` 会添加到异常类型中（用户不应该关心） - C++ 中异常的标准做法是 ```按值抛出，按值捕获（常量）参考```。
+
+```c++
+CHECK_THROWS_AS(func(), const std::exception&);
+CHECK_THROWS_AS(func(), std::exception); // same as above
+```
+
+- ```<LEVEL>_THROWS_WITH(expression, c_string)```
+
+期望在表达式求值期间引发异常，并成功转换为_指定的 c 字符串_（请参阅 [**翻译异常**](stringification.mdx#translated-exceptions)）。
+
+```c++
+CHECK_THROWS_WITH(func(), "invalid operation!");
+```
+
+- ```<LEVEL>_THROWS_WITH_AS(expression, c_string, exception_type)```
+
+这是 ```<LEVEL>_THROWS_WITH``` 和 ```<LEVEL>_THROWS_AS``` 的组合。
+
+```c++
+CHECK_THROWS_WITH_AS(func(), "invalid operation!", std::runtime_error);
+```
+
+- ```<LEVEL>_NOTHROW(expression)```
+
+期望在表达式求值期间不会引发异常。
+
+请注意，这些断言也有一个 ```_MESSAGE``` 形式 - 就像 ```CHECK_THROWS_MESSAGE(expression, message)``` - 这些
+断言的工作方式与普通宏的 ```_MESSAGE``` 形式相同（```CHECK_MESSAGE(a < b, "this should not fail")```) 如前所述。
+
+另请注意，需要使用单数表达式，这意味着函数调用、IIFE（立即调用函数表达式），例如 `[&]() { throw 1; }()`（注意末尾的`()`）
+或类似的内容。单独传入函数或 lambda 将**不起作用**。
+
+人们可以使用 [**````DOCTEST_CONFIG_VOID_CAST_EXPRESSIONS````**](configuration.mdx#doctest_config_void_cast_expressions)
+配置标识符将这些断言中的表达式强制转换为 void 以避免警告或其他问题 - 例如，结果为“的 nodiscard 语句”检查过。然而，这将限制将整个`{}`代码块编写为
+表达式（或多个语句）的能力，但在这种情况下可以使用简单的 lambda。这应该是框架第一天开始的默认行为......
+
+## 在测试上下文之外使用断言 {#using-asserts-out-of-a-testing-context}
+
+断言可以在测试上下文之外使用（在未从 ```TEST_CASE()``` 调用的代码中），而不是 [```assert()```](https://en.cppreference.com/w/cpp/error/assert)。
+
+仍然需要在某处创建一个 `doctest::Context` 对象，并使用 `setAsDefaultForAssertsOutOfTestCases()` 方法
+将其设置为默认对象，然后断言才能起作用。可以通过调用上下文对象上的`setAssertHandler()`方法来注册处理程序。
+如果没有设置处理程序，则失败时调用`std::abort()`。
+
+使用 [**````DOCTEST_CONFIG_SUPER_FAST_ASSERTS````**](configuration.mdx#doctest_config_super_fast_asserts) 配置标识符时，结果最好。
+
+查看 [**example**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/asserts_used_outside_of_tests.cpp) 展示这是如何完成的。
+有关更多信息，请参阅[**功能请求问题**](https://github.com/doctest/doctest/issues/114)。
+
+目前，[**logging macros**](logging.mdx) 不能用于测试运行之外的断言的额外上下文。这意味着断言
+的 ``_MESSAGE```` 变体也是不可用的 - 因为它们只是一个打包的 ```INFO()``` ，后面有一个断言。
+
+## 字符串包含 {#string-containment}
+
+```doctest::Contains``` 可用于检查传递给其构造函数的字符串是否包含在与之比较的字符串中。这是一个简单的例子：
+
+```c++
+REQUIRE("foobar" == doctest::Contains("foo"));
+```
+
+它还可以与断言宏`THROWS_WITH`家族一起使用，以检查抛出的异常[转换为字符串](stringification.mdx#translated-exceptions)是否包含提供的字符串。这是另一个例子：
+```c++
+REQUIRE_THROWS_WITH(func(), doctest::Contains("Oopsie"));
+```
+
+## 浮点比较 {#floating-point-comparisons}
+
+在比较浮点数时 - 特别是如果至少其中一个已被计算 - 必须非常小心，以允许舍入误差和不精确的表示。
+
+**doctest** 提供了一种通过使用名为“doctest::Approx”的包装类来执行浮点值的宽容比较的方法。
+```doctest::Approx``` 可以用在比较表达式的任一侧。它重载比较运算符以考虑相对容差。这是一个简单的例子：
+
+```c++
+REQUIRE(performComputation() == doctest::Approx(2.1));
+```
+
+**doctest** 提供了一种通过使用名为“doctest::Approx”的包装类来执行浮点值的宽容比
+较的方法。 ```doctest::Approx``` 可以用在比较表达式的这是一个简单的例子：
+
+```c++
+REQUIRE(22.0/7 == doctest::Approx(3.141).epsilon(0.01)); // allow for a 1% error
+```
+
+当处理非常大或非常小的数字时，指定一个比例可能很有用，这可以通过调用 ```doctest::Approx``` 实例上的 ```scale()``` 方法来实现。
+
+## NaN 检查 {#nan-checking}
+
+两个 NaN 浮点数比较起来并不相等。这使得在捕获值时检查 NaN 非常不方便。
+
+```c++
+CHECK(std::isnan(performComputation()); // does not capture the result of the call
+```
+
+**doctest** 提供了 `doctest::IsNaN` ，它可以在断言中使用来检查浮点（或任何其他浮点基本类型）是否确实为 NaN，如果不是则输出实际值。
+
+```c++
+CHECK(doctest::IsNaN(performComputation()); // captures the result!
+```
+
+即使通过`!`取反，`IsNaN`也能够捕获该值。
+
+--------
+
+- 查看 [**example**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/assertion_macros.cpp)，其中显示了许多这些宏
+- 不要将断言宏包装在 ```try```/```catch``` 中 - REQUIRE 宏抛出异常以结束测试用例执行！
+

@@ -1,0 +1,12 @@
+{
+  "version": 2,
+
+  "configurePresets": [
+    {
+      "name": "debug",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{KMPKG_ROOT}/scripts/buildsystems/kmpkg.cmake"
+      }
+    }
+  ]
+}

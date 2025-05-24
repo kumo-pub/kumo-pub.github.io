@@ -1,0 +1,44 @@
+---
+date: 5/1/2024
+---
+# 默认本地 kmpkg 二进制缓存
+
+了解默认 kmpkg 二进制缓存。
+
+默认情况下，kmpkg 创建本地二进制缓存。当安装先前已安装在同一台计算机上的软件包时，这可以节省时间。
+
+默认二进制缓存的位置取决于您的操作系统。
+
+
+默认情况下，二进制缓存在以下位置中的第一个有效位置启用：
+
+* 由 `KMPKG_DEFAULT_BINARY_CACHE` 环境变量指定的位置
+* `$XDG_CACHE_HOME/kmpkg/archives`
+* `$HOME/.cache/kmpkg/archives`
+
+
+使用“KMPKG_DEFAULT_BINARY_CACHE”环境变量更改默认二进制缓存
+地点。
+
+默认二进制缓存使用 [`files` 提供程序](../reference/binarycaching.mdx#files)。这
+二进制缓存提供程序的类型将二进制包作为压缩档案存储在文件系统中
+目录。
+
+## 禁用默认二进制缓存
+
+要禁用默认二进制缓存，请设置 [`KMPKG_BINARY_SOURCES` 环境变量](../reference/binarycaching.mdx#configuration-syntax) 为 `clear`。
+
+
+```bash
+export KMPKG_BINARY_SOURCES=clear
+```
+
+
+## 后续步骤
+
+[设置本地二进制缓存](binary-caching-local.mdx)
+
+以下是接下来要尝试的其他任务：
+
+* [更改默认二进制缓存位置](binary-caching-default.mdx)
+* [设置本地二进制缓存](binary-caching-local.mdx)

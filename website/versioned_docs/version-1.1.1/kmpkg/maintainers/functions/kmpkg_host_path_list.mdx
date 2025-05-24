@@ -1,0 +1,25 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_host_path_list
+
+修改主机路径列表变量（`PATH`、`INCLUDE`、`LIBPATH` 等）
+
+## 使用情况
+
+```cmake
+kmpkg_host_path_list(PREPEND <list-var> [<path>...])
+kmpkg_host_path_list(APPEND <list-var> [<path>...])
+kmpkg_host_path_list(SET <list-var> [<path>...])
+```
+
+`<list-var>` 可以是常规变量名称或 `ENV{variable-name}`，在第二种情况下，`kmpkg_host_path_list` 会修改环境。
+
+kmpkg_host_path_list 将传递给它的所有路径添加到 `<list-var>`；`PREPEND` 将这些路径放置在现在列表之前，以便可以先搜索到它们；APPEND 则将它们放置在现有列表之后，以便在变量中已经存在的路径之后再搜索到新添加的路径，而 SET 则会替换现有列表的值。
+
+`APPEND`、`PREPEND` 和 `SET` 的所有路径都按照接收顺序添加。因此，也是按照接收顺序进行搜索。
+
+如果没有向 `APPEND` 或 `PREPEND` 传递任何路径，则什么操作都不会进行；`SET` 的变量将会设置为空字符串。
+## Source
+
+[scripts/cmake/kmpkg\_host\_path\_list.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_host_path_list.cmake)

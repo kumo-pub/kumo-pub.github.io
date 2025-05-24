@@ -1,0 +1,85 @@
+---
+sidebarDepth: 1
+sitemap:
+  priority: 0.7
+---
+
+# 停用词
+
+停用词是在搜索时从搜索查询中删除的关键字。
+
+**注意：** 在索引过程中不会删除停用词。
+
+## 添加停用词
+
+首先，我们使用 `en` 语言环境（可选）创建一个名为 `stopword_set1` 的停用词集。
+
+```shell
+curl "http://localhost:8868/stopwords/stopword_set1" -X PUT \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -d '{
+        "stopwords": ["Germany", "France", "Italy", "United States"], 
+        "locale": "en"
+    }'
+```
+
+成功添加停用词集后，我们会收到如下响应：
+
+```json
+{
+  "name": "stopword_set1",
+  "locale": "en",
+  "stopwords": [
+    "states","united","france","germany","italy"
+  ]
+}
+```
+
+请注意短语 `United States` 是作为两个不同的单词添加的。
+
+## 在搜索过程中使用停用词
+
+在搜索时，我们可以通过 `stopwords` 参数传递一个停用词集，停用词集中存在的关键词将从搜索查询中删除。
+
+```shell
+curl "http://localhost:8868/multi_search" -X POST \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -d '{
+      "searches": [
+        {
+          "collection": "books",
+          "q": "the"
+          "query_b": "title"
+          "stopwords": "stopword_set1",
+        }
+      ]
+    }'
+```
+
+## 获取所有停用词集
+
+我们可以通过列表端点获取所有停用词集。
+
+```shell
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  "http://localhost:8868/stopwords"
+```
+
+## 获取特定的停用词集
+
+要获取与特定停用词集关联的停用词：
+
+```shell
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  "http://localhost:8868/stopwords/countries" 
+```
+
+## 更新停用词
+
+我们可以用一组新的停用词覆盖现有的停用词集。例如，要覆盖关联的停用词集并设置新的停用词 `countries`，可以这样做：
+
+```shell
+curl "http://localhost:8868/stopwords/countries" -X PUT \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{"stopwords": ["Germany", "France", "Italy"], "locale": "en"}'
+```

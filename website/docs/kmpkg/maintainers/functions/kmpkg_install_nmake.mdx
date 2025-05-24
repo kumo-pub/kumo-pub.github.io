@@ -1,0 +1,89 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_install_nmake
+
+构建并安装 msvc 生成文件项目。
+
+## 使用情况
+
+```cmake
+kmpkg_install_nmake(
+    SOURCE_PATH <${SOURCE_PATH}>
+    [PROJECT_SUBPATH <${SUBPATH}>]
+    [PROJECT_NAME <${MAKEFILE_NAME}>]
+    [CL_LANGUAGE <language-name>]
+    [PREFER_JOM]
+    [PRERUN_SHELL <${SHELL_PATH}>]
+    [PRERUN_SHELL_DEBUG <${SHELL_PATH}>]
+    [PRERUN_SHELL_RELEASE <${SHELL_PATH}>]
+    [OPTIONS <-DUSE_THIS_IN_ALL_BUILDS=1>...]
+    [OPTIONS_RELEASE <-DOPTIMIZE=1>...]
+    [OPTIONS_DEBUG <-DDEBUGGABLE=1>...]
+    [TARGET <all>...]
+)
+```
+
+## 参数
+
+### SOURCE_PATH
+
+指定包含源文件的目录。 按照约定，这通常在端口文件中设置为变量 `SOURCE_PATH`。
+
+### PROJECT_SUBPATH
+
+指定包含生成文件的子目录。
+
+### PROJECT_NAME
+
+指定生成文件的名称。 默认为 `makefile.vc`
+
+### CL_LANGUAGE
+
+指定用于在 `_CL_` 环境变量中设置标志的语言。 默认语言为 `CXX`。 若要禁用修改 `_CL_`，请使用 `NONE`。
+
+### PREFER_JOM
+
+指定应与 `jom` 一起尝试的并行生成。 更对于更快生成生成文件很有用，生成文件可以处理许多独立目标并且无法从 `/MP cl` 选项中获
+益。 为了缓解生成文件不了解并发的问题，在 `jom` 错误之后运行一个正常的 `nmake` 版本。
+
+### PRERUN_SHELL
+
+在生成之前需要调用的脚本。
+
+### PRERUN_SHELL_DEBUG
+
+在调试生成之前需要调用的脚本。
+
+### PRERUN_SHELL_RELEASE
+
+在发布生成之前需要调用的脚本。
+
+### OPTIONS
+
+将附加选项传递给 Robocopy 命令。
+
+### OPTIONS_RELEASE
+
+传递给发布版本的生成版本的其他选项。 这些是对 `OPTIONS` 的补充。
+
+### OPTIONS_DEBUG
+
+传递给调试版本的生成版本的其他选项。 这些是对 `OPTIONS` 的补充。
+
+### TARGET
+
+传递给生成命令的目标列表。 如果未指定，将会传递目标 `all`。
+
+## 说明
+
+此命令以透明方式转发到 [`kmpkg_build_nmake()`](kmpkg_build_nmake.mdx)，添加 `ENABLE_INSTALL`。
+
+## 示例
+
+- [libspatialite](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/libspatialite/portfile.cmake)
+- [tcl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/tcl/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_install\_nmake.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_install_nmake.cmake)

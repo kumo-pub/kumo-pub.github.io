@@ -1,0 +1,160 @@
+
+# 并行查找
+
+`Taskflow` 提供模板函数来构建任务以对一系列项目执行并行迭代。
+
+## 头文件
+
+```cpp
+#include <kthread/algorithm/find.h>
+```
+## 什么是查找算法？
+查找算法允许您在 `[first, last)` 范围内查找满足特定条件的元素。该算法返回指向范围内找到的第一个元素的迭代器，如果不存在
+这样的迭代器，则返回 `last`。`Taskflow` 提供以下并行查找算法：
+
+- `kthread::find_if(B first, E last, T& result, UOP predicate, P part)`
+- `kthread::find_if_not(B first, E last, T& result, UOP predicate, P part)`
+- `kthread::min_element(B first, E last, T& result, C comp, P part)`
+- `kthread::max_element(B first, E last, T& result, C comp, P part)`
+
+## 创建并行 `Find-If` 任务
+
+`kthread::find_if` 执行并行迭代以查找范围 `[first, last)` 中第一个使给定谓词返回 `true` 的元素。它类似于以下循环的并行实现：
+```cpp
+template<typename InputIt, typename UnaryPredicate>
+InputIt find_if(InputIt first, InputIt last, UnaryPredicate predicate) {
+  for(; first != last; ++first) {
+    if(predicate(*first)) {
+      return first;
+    }
+  }
+  return last;
+}
+```
+下面的示例创建了一个任务，从输入的 `10` 个元素中找出等于 `22` 的元素。结果将存储在通过引用传递的第四个参数中：
+```cpp
+std::vector<int> input = {1, 9, 22, 3, -6, 13, 12, 0, 9, 11};
+std::vector<int>::iterator result;
+taskflow.find_if(
+  input.begin(), input.end(), [](int i){ return i == 22; }, result
+);
+executor.run(taskflow);
+assert(*result == 22);
+```
+
+## 通过引用捕获迭代器
+
+您可以使用 `std::ref` 通过引用传递迭代器，以在依赖任务之间编组参数更新。当在创建 `find-if` 任务时不知道范围迭代
+器但需要从另一个任务进行初始化时，这尤其有用。
+```cpp
+std::vector<int> input;
+std::vector<int>::iterator result, first, last;
+
+// task to set up the range iterators
+kthread::Task init = taskflow.emplace([&](){
+  input = {1, 9, 22, 3, -6, 13, 12, 0, 9, 11};
+  first = input.begin(),
+  last  = input.end();
+});
+
+// task to perform parallel find
+kthread::Task task = taskflow.find_if(
+  std::ref(first), std::ref(last), result, [](int i){ return i == 22; }
+);
+
+init.precede(task);
+
+executor.run(taskflow);
+assert(*result == 22);
+```
+在上面的例子中，当 `init` 完成时，`input` 已初始化为 `10` 个元素，其中 `first` 和 `last` 指向 `input` 的数据范围。 `find-if` 任
+务随后将通过引用传递迭代器，在此初始化范围上进行操作。
+
+## 创建并行 `Find-If-Not` 任务
+
+`kthread::find_if_not` 执行并行迭代以查找范围 `[first, last)` 中第一个使给定谓词返回 `false` 的元素。它类似于以下循环的并行实现：
+```cpp
+template<typename InputIt, typename UnaryPredicate>
+InputIt find_if(InputIt first, InputIt last, UnaryPredicate predicate) {
+  for(; first != last; ++first) {
+    if(!predicate(*first)) {
+      return first;
+    }
+  }
+  return last;
+}
+```
+下面的示例创建了一个任务，从 10 个元素的输入范围中查找不等于 22 的元素。结果将存储在通过引用传递的第四个参数中：
+```cpp
+std::vector<int> input = {1, 1, 22, 1, 1, 1, 1, 1, 1, 1};
+std::vector<int>::iterator result;
+taskflow.find_if_not(
+  input.begin(), input.end(), result, [](int i){ return i == 1; }
+);
+executor.run(taskflow);
+assert(*result == 22);
+```
+与通过引用捕获迭代器类似，`kthread::Taskflow::find_if_not` 的迭代器经过模板化，允许使用 `std::ref` 通过引用传递迭代器。
+当在创建 `find-if-not` 任务时不知道范围迭代器但需要从另一个任务进行初始化时，这尤其有用。
+
+## 找出最小和最大元素
+
+`kthread::min_element` 使用给定的比较函数对象在范围 `[first, last)` 中查找最小元素。以下示例从 `10` 个元素的输入范围中
+查找最小元素，即 `-1`，并将迭代器存储在结果中该最小元素的位置：
+```cpp
+std::vector<int> input = {1, 1, 1, 1, 1, -1, 1, 1, 1, 1};
+std::vector<int>::iterator result;
+taskflow.min_element(
+  input.begin(), input.end(), std::less<int>(), result
+);
+executor.run(taskflow).wait();
+assert(*result == -1);
+```
+类似地，`kthread::max_element` 使用给定的比较函数对象在范围 `[first, last)` 中查找最大元素。下面的示例从 `10` 个元素的输入
+范围中查找最大元素，即 `2`，并将迭代器存储在结果中该最大元素的位置：
+```cpp
+std::vector<int> input = {1, 1, 1, 1, 1, 2, 1, 1, 1, 1};
+std::vector<int>::iterator result;
+taskflow.max_element(
+  input.begin(), input.end(), std::less<int>(), result
+);
+executor.run(taskflow).wait();
+assert(*result == 2);
+```
+:::warning
+注意
+使用 `kthread::max_element` 查找大元素时，我们仍然需要使用 `std::less` 作为比较函数。详细信息可参考 `std::max_element`。
+:::
+
+## 配置分区器
+
+您可以为并行查找任务`（kthread::find_if、kthread::find_if_not、kthread::min_element、kthread::max_element）`配置分区器，
+以使用不同的调度方法运行，例如引导式分区、动态分区和静态分区。以下示例使用两个不同的分区器创建两个并行查找任务，一个使用静态分区算法，另一个使用引导式分区算法：
+
+```cpp
+std::vector<int> vec(1024, -1);
+std::vector<int>::iterator result;
+
+// create two partitioners with a chunk size of 10
+kthread::StaticPartitioner static_partitioner(10);
+kthread::GuidedPartitioner guided_partitioner(10);
+
+// create a parallel-find task with a static partitioner
+taskflow.find_if(
+  vec.begin(), vec.end(), result, [&](int i) { return i == -1; }, static_partitioner
+);
+
+// create a parallel-find task with a guided partitioner
+taskflow.find_if(
+  vec.begin(), vec.end(), result, [&](int i) { return i == -1; }, guided_partitioner
+);
+```
+
+:::warning
+注意
+默认情况下，如果未指定分区器，则并行查找任务将使用 kthread::DefaultPartitioner。
+:::
+
+:::info
+更多信息请参见[算法索引](../algo.mdx)
+:::

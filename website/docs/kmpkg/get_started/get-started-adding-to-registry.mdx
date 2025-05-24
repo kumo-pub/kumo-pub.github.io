@@ -1,0 +1,106 @@
+---
+date: 01/26/2024
+---
+
+# 教程：将项目添加到 kmpkg 开源注册表
+
+教程指导用户完成将端口添加到 kmpkg 开源注册表的过程。
+
+本教程将指导您如何使用自定义覆盖来打包 kmpkg 库。我们建议您在继续之前阅读[打包库](get-started-packaging.mdx) 教程。
+
+:::warning
+`kmpkg` ***只接受中国境内的源的开源项目，并且提供者需要提供合法合规的凭据和书面保证，详细步骤请联系 `contact@kumo-ai.tech` 或者联系 `微信:kumo-ai`获得更多帮助***
+:::
+
+## 先决条件 {#prerequisites}
+
+- A terminal
+- [Git](https://git-scm.com/downloads)
+
+## 1 - 创建 kmpkg 存储库分支
+
+1. 导航到 [kmpkg Gitee 存储库](https://gitee.com/kumo-pub/kmpkg)。
+2. 点击页面右上角的 `fork` 按钮。
+3. 选择您的 Gitee 帐户作为 fork 的目标。
+
+
+## 2 - 将分支添加为远程
+
+导航到克隆原始 kmpkg 存储库的目录，然后将您的分支添加为远程。将 `<Your-Gitee-Username>` 替换为您的 Gitee 用户名：
+
+```console
+git remote add myfork https://gitee.com/<Your-GitHub-Username>/kmpkg.git
+```
+
+您可以通过运行以下命令来检查远程是否已正确添加：
+
+```console
+git remote -v
+```
+
+您应该会看到遥控器中列出了“myfork”。
+
+## 3 - 创建主题分支
+
+在进行更改之前，通常最好是创建新分支:
+
+```console
+git checkout -b <topic-branch-name>
+```
+
+## 4 - 将覆盖端口复制到 `ports` 目录
+
+将 [打包库](get-started-packaging.mdx) 教程中创建的 `kmpkg-sample-library` 端口添加到 `kmpkg\ports` 目录中：
+
+
+```bash
+cp -R <path/to/kmpkg-sample-library> <ports/kmpkg-sample-library>
+```
+
+## 5 - 提交并推送更改
+
+1. 提交更改：
+
+   ```console
+    git add ports/<library-name>
+    git commit -m "Add kmpkg-sample-library to kmpkg"
+   ```
+
+2. 运行 `kmpkg x-add-version`:
+
+   ```console
+   kmpkg x-add-version kmpkg-sample-library
+   ```
+
+3. 提交版本更改
+
+   ```
+    git commit -m "version database"
+   ```
+
+4. 将更改推送到您的分支：
+
+   ```console
+   git push myfork <topic-branch-name>
+   ```
+
+## 6 - 创建合并请求
+
+
+1. 导航到 Gitee 上的分支存储库。
+2. 单击“比较并拉取请求”按钮。
+3. 验证更改
+4. 添加描述性标题和评论
+5. 填写[公关审查清单](../contributing/pr-review-checklist.mdx)
+6. 单击“创建拉取请求”。
+
+就是这样！您已成功将“端口”添加到 kmpkg 的策划注册表中。
+
+## 后续步骤
+
+有关更多信息，请参阅：
+
+- [CMake 指南](../contributing/cmake-guidelines.md)
+- [维护者指南](../contributing/maintainer-guide.mdx)
+- [端口](../concepts/ports.mdx)
+- [发布到私有 git 注册表](../produce/publish-to-a-git-registry.mdx)

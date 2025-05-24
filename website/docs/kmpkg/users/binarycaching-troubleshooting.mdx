@@ -1,0 +1,328 @@
+---
+date: 01/10/2024
+---
+
+# 二进制缓存故障排除指南
+
+本指南适用于遇到[二进制缓存](binarycaching.mdx)问题的用户。
+
+## 启用 `kmpkg` 调试信息 {#debug-output}
+
+强烈建议在遵循本指南时启用调试输出。
+
+* [经典模式](../concepts/classic-mode.mdx)：将 `--debug` 添加到命令调用。
+* CMake 工具链：在 CMake 配置调用或 `CMakePresets.json` 文件中添加 `-DKMPKG_INSTALL_OPTIONS="--debug"`。
+* MSBuild/Visual Studio：将属性 `KmpkgAdditionalInstallOptions` 设置为 `--debug`。
+* 将 `KMPKG_INSTALL_OPTIONS` 环境变量设置为 `--debug`。
+
+## NuGet 推送到 `{url}` 失败 {#push-failure}
+
+:::warning 重要
+将 kmpkg 工具更新到最新版本。 此外，为全面的错误日志启用[调试输出](#debug-output)。
+:::
+
+使用 NuGet 二进制源时，将显示以下错误：
+
+```
+Pushing NuGet to {url} failed. Use --debug for more information.
+```
+
+使用 NuGet 配置文件二进制源时，将显示以下错误：
+
+```
+Pushing NuGet config to {url} failed. Use --debug for more information.
+```
+
+当 kmpkg 尝试使用 NuGet 命令行将包上传到 NuGet 源并失败时，会出现此错误。
+
+### 原因 1：用户的写入权限不足
+
+如果遇到以下错误消息：
+
+```
+System.Net.Http.HttpRequestException: Response status code does not indicate success: 403 (Forbidden - User <user> lacks permission to complete this action. You need to have 'AddPackage'.
+```
+
+由于用户没有足够的写入权限，因此远程源拒绝了推送。
+
+* 确认用户或用户组具有写入权限。 在 NuGet 中，用户必须至少是源的参与者角色。
+
+### NuGet 源 URL 配置错误
+
+你可能会看到以下错误：
+
+```
+System.Net.Http.HttpRequestException: Response status code does not indicate success: 405 (Method Not Allowed).
+```
+
+服务器拒绝了 NuGet 的推送请求，因为它无法识别请求方法。
+
+* 验证二进制源中的 `URI` 是否正确，并且它会定向到源的服务索引，通常为 `<feed base url>/nuget/v3/index.json`。
+
+### 其他 NuGet 资源
+
+有关连接到 NuGet 源和在 NuGet 源上发布的指南，请参阅 NuGet 文档。
+
+## 缓存上传错误 {#cache-upload}
+
+:::warning 重要
+将 kmpkg 工具更新到最新版本。 此外，为全面的错误日志启用[调试输出](#debug-output)。
+:::
+
+将二进制包上传到缓存时遇到错误。
+
+### 原因 1：二进制缓存提供程序上传失败
+
+上传可能由于各种原因而失败，而不同的提供程序通常会显示不同的错误消息。
+
+- 确保对缓存进行身份验证。 不同的提供程序，身份验证方法有所不同。
+- 检查是否为缓存指定了正确的 URI。
+- 如果使用 NuGet 作为二进制源，请参阅[推送故障排除](#push-failure)。
+- 查看特定提供程序的相应文档或故障排除指南。
+
+## 二进制缓存为空 {#empty-cache}
+
+:::warning 重要
+将 kmpkg 工具更新到最新版本。 此外，为全面的错误日志启用[调试输出](#debug-output)。
+:::
+
+尽管没有遇到任何错误且 kmpkg 安装成功，但二进制缓存仍为空。 如果观察到错误，请参阅[NuGet 的推送故障排除](#push-failure)以及其他提供程序的[上传故障排除](#cache-upload)。
+
+### 原因 1：kmpkg 缺少对二进制缓存的写入权限
+
+输出中缺少以下消息。
+
+```
+Uploading binaries for 'rapidjson:x64-windows' to <binary source> source <url>.
+Stored binaries in 1 destinations in 1.5 s.
+```
+
+kmpkg 跳过了将二进制包上传到二进制缓存的过程。
+
+* 确保将[二进制缓存配置](../reference/binarycaching.mdx#configuration-syntax)设置为 `write` 或 `readwrite`
+
+## 系统会重新生成库，而不是使用远程二进制缓存
+
+:::warning 重要
+将 kmpkg 工具更新到最新版本。 此外，为全面的错误日志启用[调试输出](#debug-output)。
+:::
+
+即使远程二进制缓存中提供所需的二进制包，系统也会在本地重新生成库。
+
+输出中缺少以下消息。
+
+```
+Restored 1 package(s) from <remote binary cache> in 1.1 s. Use --debug to see more details.
+```
+
+### 原因 1：kmpkg 缺少对远程二进制缓存的读取权限
+
+kmpkg 选择通过远程二进制缓存读取默认二进制缓存。
+
+* 确保将[二进制缓存配置](../reference/binarycaching.mdx#configuration-syntax)设置为 `read` 或 `readwrite`
+
+### 原因 2：远程二进制缓存为空
+
+远程缓存应包含已推送的二进制包的列表。
+
+* 请参阅[二进制缓存为空](#empty-cache)部分。
+
+### 原因 3：本地和远程生成环境之间存在差异
+
+二进制缓存中的每个包都标有 [ABI 哈希](../reference/binarycaching.mdx#abi-hash)，其中包含用于区分二进制包的编译器版本、源和其他信息。 如果本地计算的 ABI 哈希与远程存储的哈希不匹配，则不会检索该包。
+
+* 请参阅 [ABI 哈希不匹配故障排除](#abi-mismatch)指南来确定根本原因。
+
+## 意外或频繁重新生成库
+
+:::warning 重要
+将 kmpkg 工具更新到最新版本。 此外，为全面的错误日志启用[调试输出](#debug-output)。
+:::
+
+在未发生变化的环境中，如果不更新 kmpkg，你仍然发现有时会遇到重新生成库的情况。
+
+### 原因 1：生成环境中出现未检测到的更改
+
+二进制缓存中的每个包都标有 [ABI 哈希](../reference/binarycaching.mdx#abi-hash)，其中包含用于区分二进制包的编译器版本、源和其他信息。 如果本地计算的 ABI 哈希与远程存储的哈希不匹配，则不会检索该包。
+
+* 请参阅 [ABI 哈希不匹配故障](#abi-mismatch)排除指南来确定根本原因。
+
+## ABI 哈希不匹配故障排除 {#abi-mismatch}
+
+:::warning 重要
+将 kmpkg 工具更新到最新版本。 此外，为全面的错误日志启用[调试输出](#debug-output)。
+:::
+
+本指南适用于诊断名称相同的两个二进制包存在不同 ABI 哈希的原因的用户。
+
+### 比较两个二进制包
+
+需要比较各种数据才能确定名称相同的两个包之间的差异：源、工具版本、编译器和目标平台。 [ABI 哈希](../reference/binarycaching.mdx#abi-hash)提供这些数据的简洁表示形式。
+计算 ABI 哈希时，kmpkg 会考虑所有相关数据，包括文件内容、工具版本和系统详细信息。 它为每个数据点创建哈希，然后将这些哈希合并为二进制包的单个值。
+
+#### 二进制包 ABI 哈希比较
+
+库 zlib 的 [ABI 哈希](../reference/binarycaching.mdx#abi-hash)为 bb1c96759ac96102b4b18215db138daedd3eb16c2cd3302ae7bffab2b643eb87：
+
+```
+[DEBUG] Trying to hash <path>\buildtrees\zlib\x86-windows.kmpkg_abi_info.txt
+[DEBUG] <path>\buildtrees\zlib\x86-windows.kmpkg_abi_info.txt has hash bb1c96759ac96102b4b18215db138daedd3eb16c2cd3302ae7bffab2b643eb87
+```
+如果两次运行同一个库时哈希有所更改，则表示这两个包是不同的。
+
+#### 编译器版本 ABI 哈希比较
+
+验证在两次运行之间编译器的版本是否发生了变化。
+
+```
+[DEBUG] -- The C compiler identification is MSVC 19.36.32538.0
+[DEBUG] -- The CXX compiler identification is MSVC 19.36.32538.0
+[DEBUG] #COMPILER_HASH#f5d02a6542664cfbd4a38db478133cbb1a18f315
+```
+
+编译器哈希为 `f5d02a6542664cfbd4a38db478133cbb1a18f315`。
+
+#### ABI 哈希条目比较
+
+比较每个包的 ABI 条目。 条目表示有助于生成最终哈希的一条信息。
+
+```
+[DEBUG] <abientries for zlib:x86-windows>
+[DEBUG]   0001-Prevent-invalid-inclusions-when-HAVE_-is-set-to-0.patch|750b9542cb55e6328cca01d3ca997f1373b9530afa95e04213168676936e7bfa
+[DEBUG]   0002-skip-building-examples.patch|835ddecfed752e0f49be9b0f8ff7ba76541cb0a150044327316e22ca84f8d0c2
+[DEBUG]   0003-build-static-or-shared-not-both.patch|d6026271dcb3d8fc74b41e235620ae31576a798e77aa411c3af8cd9e948c02b1
+[DEBUG]   0004-android-and-mingw-fixes.patch|37a43eddbcb1b7dde49e7659ae895dfd0ff1df66666c1371ba7d5bfc49d8b438
+[DEBUG]   cmake|3.26.2
+[DEBUG]   features|core
+[DEBUG]   portfile.cmake|ac63047b644fa758860dd7ba48ff9a13b058c6f240b8e8d675b8fbba035976be
+[DEBUG]   ports.cmake|5a8e00cedff0c898b1f90f7d129329d0288801bc9056562b039698caf31ff3f3
+[DEBUG]   post_build_checks|2
+[DEBUG]   powershell|7.3.6
+[DEBUG]   triplet|x86-windows
+[DEBUG]   triplet_abi|3e71dd1d4afa622894ae367adbbb1ecbd42c57c51428a86b675fa1c8cad3a581-36b818778ba6f2c16962495caedb9a7b221d5be4c60de1cd3060f549319a9931-f5d02a6542664cfbd4a38db478133cbb1a18f315
+[DEBUG]   usage|be22662327df993eebc437495add75acb365ab18d37c7e5de735d4ea4f5d3083
+[DEBUG]   kmpkg-cmake|1b3dac4b9b0bcbef227c954b495174863feebe3900b2a6bdef0cd1cf04ca1213
+[DEBUG]   kmpkg-cmake-wrapper.cmake|5d49ef2ee6448479c2aad0e5f732e2676eaba0411860f9bebabe6002d66f57d1
+[DEBUG]   kmpkg.json|bc94e2540efabe36130a806381a001c57194e7de67454ab7ff1e30aa15e6ce23
+[DEBUG]   kmpkg_copy_pdbs|d57e4f196c82dc562a9968c6155073094513c31e2de475694143d3aa47954b1c
+[DEBUG]   kmpkg_fixup_pkgconfig|588d833ff057d3ca99c14616c7ecfb5948b5e2a9e4fc02517dceb8b803473457
+[DEBUG]   kmpkg_from_git|8f27bff0d01c6d15a3e691758df52bfbb0b1b929da45c4ebba02ef76b54b1881
+[DEBUG]   kmpkg_from_github|b743742296a114ea1b18ae99672e02f142c4eb2bef7f57d36c038bedbfb0502f
+[DEBUG]   kmpkg_replace_string|d43c8699ce27e25d47367c970d1c546f6bc36b6df8fb0be0c3986eb5830bd4f1
+[DEBUG] </abientries>
+```
+:::info
+`triplet_abi` 项包含三个哈希：`x86-windows` 三元组的文件内容的哈希、`windows.cmake` 工具链的哈希和编译器哈希。 如果决定以其他平台为目标，将会更改这些哈希。
+:::
+
+### 不匹配项 1：端口文件
+
+端口文件包括端口脚本（`portfile.cmake`、`kmpkg.json`）、修补程序文件 (`*.patch`) 或端口目录中的任何其他文件：`ports/<library>/*`。
+
+#### 原因 1：CI 或管道更新了端口注册表
+
+在 CI 中运行 kmpkg 之前，它克隆了最新的 kmpkg 存储库。
+
+使用 `git clone https://gitee.com/kumo-pub/kmpkg` 后跟 `bootstrap` 脚本时，请确保检查签出到特定提交。
+考虑将 kmpkg 作为 git 子模块添加到项目中。
+
+#### 原因 2：GitHub Actions 更新了 kmpkg
+
+你使用的是 GitHub Actions 提供的 kmpkg 的系统副本，该副本已更新。
+
+- 克隆自己的 kmpkg 副本。
+- 考虑在项目中将 kmpkg 作为 git 子模块。
+
+### 不匹配项 2：kmpkg CMake 帮助程序函数
+
+
+CMake 帮助程序函数保留在脚本目录 `scripts/*` 中，通常以 `kmpkg_` 开头。
+
+#### 原因 1：CI 或管道更新了帮助程序脚本
+
+在 CI 中运行 kmpkg 之前，它克隆了最新的 kmpkg 存储库。
+
+使用 `git clone https://gitee.com/kumo-pub/kmpkg` 后跟 bootstrap 脚本时，请确保检查签出到特定提交。
+考虑将 kmpkg 作为 git 子模块添加到项目中。
+
+#### GitHub Actions 更新了 kmpkg
+
+你使用的是 GitHub Actions 提供的 kmpkg 的系统副本，该副本已更新。
+
+- 克隆自己的 kmpkg 副本。
+- 考虑在项目中将 kmpkg 作为 git 子模块。
+
+### 不匹配项 3：编译器版本
+
+kmpkg 使用不同版本的编译器重新生成依赖项。
+
+#### 原因 1：Visual Studio C++ 编译器已自动更新。
+
+Visual Studio 在两次运行之间自动更新了 C++ 工作负载（包括编译器）。 即使是次要版本更新，也会导致 kmpkg 重新生成库。
+
+* [禁用自动编译器更新](https://learn.microsoft.com/zh-cn/visualstudio/install/update-visual-studio?view=vs-2022#always-update-on-close-and-other-download-behaviors)。
+
+#### 原因 2：创建该库的计算机与使用该库的计算机是不同的。
+
+创建了一台计算机并将二进制包发布到远程缓存。 另一台通常用于开发的计算机会消耗缓存库。
+
+- 在本地使用与远程计算机相同的 C++ 编译器版本。 对于 Visual Studio，请考虑使用[不可编辑版本的引导程序](https://learn.microsoft.com/zh-cn/visualstudio/releases/2022/release-history#fixed-version-bootstrappers)。
+- 在本地重新生成依赖项以进行开发。 稍后在持续集成期间测试并解决问题。
+
+#### 原因 3：自托管的映像更新了编译器。
+
+用于生成 kmpkg 依赖项的基础映像已更改，因而更新了编译器版本。
+
+- 固定到已进行版本控制的稳定映像。 请确保未提取最新映像，这样它就不会在两次运行之间自动更新基础工具或编译器了。
+- 如果需要频繁更新映像，请在创建映像时将 C++ 编译器工具固定到特定版本。
+
+#### 原因 4：GitHub 托管运行程序更新了基础编译器。
+
+托管的 GitHub 运行程序每周都会更新编译器和工具。
+
+* 目前，无法修复映像并阻止工具和编译器版本的定期更新。 有关替代解决方案，请参阅[其他选项](#other-options)部分。
+
+### 不匹配项 4：两次运行之间的工具版本发生了更改。
+
+在两次运行之间，用于生成库（CMake 或 PowerShell）的工具版本发生了更改。
+
+#### 原因 1：Visual Studio 已自动更新。
+
+在两次运行之间，Visual Studio（包括任何工具）已自动更新。 即使是次要版本更新，也会导致 kmpkg 重新生成库。
+
+* 禁用 Visual Studio 自动更新。
+* 将 `--x-abi-tools-use-exact-versions` 添加到 kmpkg 调用。 这样可根据 `kmpkgTools.xml` 中的版本修复工具的 ABI；如有必要，kmpkg 会提取自己的副本。
+
+#### 原因 2：创建该库的计算机与使用该库的计算机是不同的。
+
+创建了一台计算机并将二进制包发布到远程缓存。 另一台通常用于开发的计算机会消耗缓存库。
+
+在本地使用与远程计算机相同的工具版本。
+在本地重新生成依赖项以进行开发。 稍后在持续集成期间测试并解决问题。
+将  `--x-abi-tools-use-exact-versions` 添加到 kmpkg 调用。 这样可根据 `kmpkgTools.xml` 中的版本修复工具的 ABI；如有必要，kmpkg 会提取自己的副本。
+
+#### 原因 3：自托管的映像更新了工具。
+
+用于生成 kmpkg 依赖项的基础映像已更改，因而更新了所使用的任何工具的版本。
+
+- 固定到已进行版本控制的稳定映像。 请确保未提取最新映像，这样它就不会在两次运行之间自动更新基础工具了。
+- 如果需要频繁更新映像，请在创建映像时将任何相关工具固定到特定版本。
+- 将 `--x-abi-tools-use-exact-versions` 添加到 kmpkg 调用。 这样可根据 `kmpkgTools.xml` 中的版本修复工具的 ABI；如有必要，kmpkg 会提取自己的副本。
+
+#### 原因 4：GitHub 托管运行程序更新了基础工具。
+
+托管的 GitHub 运行程序每周都会更新编译器和工具。
+
+将 `--x-abi-tools-use-exact-versions` 添加到 kmpkg 调用。 这样可根据 `kmpkgTools.xml` 中的版本修复工具的 ABI；如有必要，kmpkg 会提取自己的副本。
+
+### 其他选项 {#other-options}
+
+如果上述选项不起作用，请考虑以下解决方法：
+
+* 使用 [`kmpkg export`](../commands/export.mdx) 生成依赖项的独立存档，而不是从清单还原依赖项。
+* 考虑使用 Docker 自托管映像生成库
+* 运行辅助持续集成运行，定期（例如每日或每周）生成 kmpkg 库
+
+## 问题未在此处列出
+
+如果此处未列出你的问题，请访问我们的[GITEE仓库](https://gitee.com/kumo-pub/kmpkg/issues)以创建新问题。

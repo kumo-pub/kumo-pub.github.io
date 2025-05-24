@@ -1,0 +1,1423 @@
+# 测试参考
+
+本页列出了 KumoTest 提供的用于编写测试程序的工具。
+要使用它们，请包含标头`"ktest/ktest.h”`。
+
+## 宏 {#macros}
+
+KumoTest 定义了以下宏来编写测试。
+
+### TEST {#TEST}
+
+```cpp
+TEST(<em>TestSuiteName</em>, <em>TestName</em>) {
+  ... <em>statements</em> ...
+}
+```
+
+在测试套件中定义一个名为 *`TestName`* 的单独测试*`TestSuiteName`*，由给定的语句组成。
+
+参数 *`TestSuiteName`* 和 *`TestName`* 必须是有效的 C++ 标识符并且不得包含下划线 (`_`)。不同测试套件中的测试可以有
+相同的个人名字。
+
+测试主体中的语句可以是任何被测试的代码。[断言](assertions.mdx) 在测试主体内使用确定结果
+测试。
+
+### TEST_F {#TEST_F}
+
+```cpp
+TEST_F(<em>TestFixtureName</em>, <em>TestName</em>) {
+  ... <em>statements</em> ...
+}
+```
+
+定义一个名为 *`TestName`* 的单独测试，该测试使用测试装置类
+*`测试fixture名称`*。测试套件名称是 *`TestFixtureName`*。
+
+参数 *`TestFixtureName`* 和 *`TestName`* 都必须是有效的 C++
+标识符且不得包含下划线 (`_`)。 *`TestFixtureName`* 必须是
+测试fixture类的名称——参见
+[测试装置](../primer.mdx#same-data-multiple-tests)。
+
+测试主体中的语句可以是任何被测试的代码。
+[断言](assertions.mdx) 在测试主体内使用确定结果
+测试。
+
+### TEST_P {#TEST_P}
+
+```cpp
+TEST_P(<em>TestFixtureName</em>, <em>TestName</em>) {
+  ... <em>statements</em> ...
+}
+```
+
+定义一个名为 *`TestName`* 的单独值参数化测试，它使用
+测试fixture类 *`TestFixtureName`*。测试套件名称是
+*`测试fixture名称`*。
+
+参数 *`TestFixtureName`* 和 *`TestName`* 都必须是有效的 C++
+标识符且不得包含下划线 (`_`)。 *`TestFixtureName`* 必须是
+值参数化测试fixture类的名称 - 请参阅
+[值参数化测试](../advanced.mdx#value-parameterized-tests)。
+
+测试主体中的语句可以是任何被测试的代码。测试内
+body 中，测试参数可以通过 `GetParam()` 函数访问（参见
+[`WithParamInterface`](#WithParamInterface))。例如：
+
+```cpp
+TEST_P(MyTestSuite, DoesSomething) {
+  ...
+  EXPECT_TRUE(DoSomething(GetParam()));
+  ...
+}
+```
+
+[断言](assertions.mdx) 在测试主体内使用确定结果
+测试。
+
+另请参阅[`INSTANTIATE_TEST_SUITE_P`](#INSTANTIATE_TEST_SUITE_P)。
+
+### INSTANTIATE_TEST_SUITE_P {#INSTANTIATE_TEST_SUITE_P}
+
+`INSTANTIATE_TEST_SUITE_P(`*`InstantiationName`*`,`*`TestSuiteName`*`,`*`param_generator`*`)`
+\
+`INSTANTIATE_TEST_SUITE_P(`*`InstantiationName`*`,`*`TestSuiteName`*`,`*`param_generator`*`,`*`name_generator`*`)`
+
+实例化值参数化测试套件 *`TestSuiteName`* （定义为
+[`TEST_P`](#TEST_P))。
+
+参数 *`InstantiationName`* 是实例化的唯一名称
+测试套件，以区分多个实例。在测试输出中，
+实例化名称作为前缀添加到测试套件名称中
+*`测试套件名称`*。
+
+参数 *`param_generator`* 是 KumoTest 提供的以下参数之一
+生成测试参数的函数，全部在 `::testing` 中定义
+命名空间：
+
+#### 参数 {#param-generators}
+
+| Parameter Generator | Behavior                                             |
+| ------------------- | ---------------------------------------------------- |
+| `Range(begin, end [, step])` | 产生值`“{begin, begin+step, begin+step+step, ...}”`。这些值不包括“end”。 `step` 默认为 1。 |
+| `Values(v1, v2, ..., vN)`    | 产生值`“{v1, v2, ..., vN}”`。          |
+| `ValuesIn(container)` or `ValuesIn(begin,end)` | 从 C 样式数组、STL 样式容器或迭代器范围`“[begin, end)”`中生成值。 |
+| `Bool()`                     | 产生序列`{false, true}`。           |
+| `Combine(g1, g2, ..., gN)`   | 产生 `std::tuple` *n* 元组由给定 *n* 生成器 `g1`、`g2`、...、`gN` 生成的值的所有组合（笛卡尔积）。 |
+
+可选的最后一个参数 *`name_generator`* 是一个函数或函子，
+根据测试参数生成自定义测试名称后缀。功能必须接受类型的参数
+[`TestParamInfo<class ParamType>`](#TestParamInfo) 并返回 `std::string`。
+测试名称后缀只能包含字母数字字符和下划线。
+KumoTest 提供了 [`PrintToStringParamName`](#PrintToStringParamName)，或者自定义函数可用于更多控制：
+
+```cpp
+INSTANTIATE_TEST_SUITE_P(
+    MyInstantiation, MyTestSuite,
+    ::testing::Values(...),
+    [](const ::testing::TestParamInfo<MyTestSuite::ParamType>& info) {
+      // Can use info.param here to generate the test suffix
+      std::string name = ...
+      return name;
+    });
+```
+
+有关更多信息，请参阅[值参数化测试](../advanced.mdx#value-parameterized-tests)。
+参见
+[`KTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST`](#KTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST)。
+
+### TYPED_TEST_SUITE {#TYPED_TEST_SUITE}
+
+`TYPED_TEST_SUITE(`*`TestFixtureName`*`,`*`Types`*`)`
+
+基于测试fixture *`TestFixtureName`* 定义类型化测试套件。这
+测试套件名称是*`TestFixtureName`*。
+
+参数 *`TestFixtureName`* 是一个固定装置类模板，由
+类型，例如：
+
+```cpp
+template <typename T>
+class MyFixture : public ::testing::Test {
+ public:
+  ...
+  using List = std::list<T>;
+  static T shared_;
+  T value_;
+};
+```
+
+参数 *`Types`* 是一个 [`Types`](#Types) 对象，表示列表运行测试的类型，例如：
+
+```cpp
+using MyTypes = ::testing::Types<char, int, unsigned int>;
+TYPED_TEST_SUITE(MyFixture, MyTypes);
+```
+
+类型别名（`using`或`typedef`）对于`TYPED_TEST_SUITE`是必需的
+宏以正确解析。
+
+另请参阅 [`TYPED_TEST`](#TYPED_TEST) 和
+[类型化测试](../advanced.mdx#typed-tests) 了解更多信息。
+
+### TYPED_TEST {#TYPED_TEST}
+
+```cpp
+TYPED_TEST(<em>TestSuiteName</em>, <em>TestName</em>) {
+  ... <em>statements</em> ...
+}
+```
+
+在类型化测试套件中定义一个名为 *`TestName`* 的单独类型化测试*`测试套件名称`*。测试套件必须定义为
+[`TYPED_TEST_SUITE`](#TYPED_TEST_SUITE)。
+
+在测试主体中，特殊名称“TypeParam”指的是类型参数，`TestFixture` 指的是fixture类。请参见以下示例：
+
+```cpp
+TYPED_TEST(MyFixture, Example) {
+  // Inside a test, refer to the special name TypeParam to get the type
+  // parameter.  Since we are inside a derived class template, C++ requires
+  // us to visit the members of MyFixture via 'this'.
+  TypeParam n = this->value_;
+
+  // To visit static members of the fixture, add the 'TestFixture::'
+  // prefix.
+  n += TestFixture::shared_;
+
+  // To refer to typedefs in the fixture, add the 'typename TestFixture::'
+  // prefix. The 'typename' is required to satisfy the compiler.
+  typename TestFixture::List values;
+
+  values.push_back(n);
+  ...
+}
+```
+
+有关更多信息，请参阅[类型化测试](../advanced.mdx#typed-tests)。
+
+### TYPED_TEST_SUITE_P {#TYPED_TEST_SUITE_P}
+
+`TYPED_TEST_SUITE_P(`*`TestFixtureName`*`)`
+
+基于测试fixture定义类型参数化测试套件
+*`TestFixtureName`*。测试套件名称是 *`TestFixtureName`*。
+
+参数 *`TestFixtureName`* 是一个固定装置类模板，由
+类型。有关示例，请参阅 [`TYPED_TEST_SUITE`](#TYPED_TEST_SUITE)。
+
+另请参阅 [`TYPED_TEST_P`](#TYPED_TEST_P) 和[类型参数化测试](../advanced.mdx#type-parameterized-tests) 了解更多
+信息。
+
+### TYPED_TEST_P {#TYPED_TEST_P}
+
+```cpp
+TYPED_TEST_P(<em>TestSuiteName</em>, <em>TestName</em>) {
+  ... <em>statements</em> ...
+}
+```
+定义一个名为 *`TestName`* 的单独类型参数化测试
+类型参数化测试套件 *`TestSuiteName`*。必须定义测试套件
+与 [`TYPED_TEST_SUITE_P`](#TYPED_TEST_SUITE_P)。
+
+在测试主体中，特殊名称“TypeParam”指的是类型参数，
+`TestFixture` 指的是夹具类。请参阅[`TYPED_TEST`](#TYPED_TEST)
+举个例子。
+
+另请参阅 [`REGISTER_TYPED_TEST_SUITE_P`](#REGISTER_TYPED_TEST_SUITE_P) 和
+[类型参数化测试](../advanced.mdx#type-parameterized-tests) 了解更多
+信息。
+
+### REGISTER_TYPED_TEST_SUITE_P {#REGISTER_TYPED_TEST_SUITE_P}
+
+`REGISTER_TYPED_TEST_SUITE_P(`*`TestSuiteName`*`,`*`TestNames...`*`)`
+
+注册测试套件的类型参数化测试 *`TestNames...`*
+*`测试套件名称`*。测试套件和测试必须定义为
+[`TYPED_TEST_SUITE_P`](#TYPED_TEST_SUITE_P) 和 [`TYPED_TEST_P`](#TYPED_TEST_P)。
+
+例如：
+
+
+```cpp
+// Define the test suite and tests.
+TYPED_TEST_SUITE_P(MyFixture);
+TYPED_TEST_P(MyFixture, HasPropertyA) { ... }
+TYPED_TEST_P(MyFixture, HasPropertyB) { ... }
+
+// Register the tests in the test suite.
+REGISTER_TYPED_TEST_SUITE_P(MyFixture, HasPropertyA, HasPropertyB);
+```
+
+另请参阅 [`INSTANTIATE_TYPED_TEST_SUITE_P`](#INSTANTIATE_TYPED_TEST_SUITE_P) 和
+[类型参数化测试](../advanced.mdx#type-parameterized-tests) 了解更多
+信息。
+
+### INSTANTIATE_TYPED_TEST_SUITE_P {#INSTANTIATE_TYPED_TEST_SUITE_P}
+
+`INSTANTIATE_TYPED_TEST_SUITE_P(`*`InstantiationName`*`,`*`TestSuiteName`*`,`*`Types`*`)`
+
+实例化类型参数化测试套件 *`TestSuiteName`*。测试套件
+必须注册[`REGISTER_TYPED_TEST_SUITE_P`](#REGISTER_TYPED_TEST_SUITE_P)。
+
+参数 *`InstantiationName`* 是实例化的唯一名称测试套件，以区分多个实例。在测试输出中，
+实例化名称作为前缀添加到测试套件名称中
+*`测试套件名称`*。
+
+参数 *`Types`* 是一个 [`Types`](#Types) 对象，表示列表
+运行测试的类型，例如：
+
+```cpp
+using MyTypes = ::testing::Types<char, int, unsigned int>;
+INSTANTIATE_TYPED_TEST_SUITE_P(MyInstantiation, MyFixture, MyTypes);
+```
+
+类型别名（`using`或`typedef`）对于
+`INSTANTIATE_TYPED_TEST_SUITE_P` 宏可以正确解析。
+
+For more information, see
+[Type-Parameterized Tests](../advanced.mdx#type-parameterized-tests).
+
+### FRIEND_TEST {#FRIEND_TEST}
+
+`FRIEND_TEST(`*`TestSuiteName`*`,`*`TestName`*`)`
+
+在类体内，将单个测试声明为类的友元，
+使测试能够访问私有类成员。
+
+如果类是在命名空间中定义的，那么为了成为该类的友元
+类、测试装置和测试必须定义在完全相同的命名空间中，没有内联或匿名名称空间。
+
+例如，如果类定义如下所示：
+
+```cpp
+namespace my_namespace {
+
+class MyClass {
+  friend class MyClassTest;
+  FRIEND_TEST(MyClassTest, HasPropertyA);
+  FRIEND_TEST(MyClassTest, HasPropertyB);
+  ... definition of class MyClass ...
+};
+
+}  // namespace my_namespace
+```
+
+那么测试代码应该如下所示：
+
+```cpp
+namespace my_namespace {
+
+class MyClassTest : public ::testing::Test {
+  ...
+};
+
+TEST_F(MyClassTest, HasPropertyA) { ... }
+TEST_F(MyClassTest, HasPropertyB) { ... }
+
+}  // namespace my_namespace
+```
+
+有关更多信息，请参阅[测试私有代码](../advanced.mdx#testing-private-code)信息。
+
+### SCOPED_TRACE {#SCOPED_TRACE}
+
+`SCOPED_TRACE(`*`message`*`)`
+
+Causes the current file name, line number, and the given message *`message`* to
+be added to the failure message for each assertion failure that occurs in the
+scope.
+
+For more information, see
+[Adding Traces to Assertions](../advanced.mdx#adding-traces-to-assertions).
+
+See also the [`ScopedTrace` class](#ScopedTrace).
+
+导致当前文件名、行号和给定消息*`message`*
+被添加到失败消息中发生的每个断言失败
+范围。
+
+有关更多信息，请参阅
+[向断言添加跟踪](../advanced.mdx#adding-traces-to-assertions)。
+
+另请参阅 [`ScopedTrace` 类](#ScopedTrace)。
+
+### KTEST_SKIP {#KTEST_SKIP}
+
+`KTEST_SKIP()`
+
+Prevents further test execution at runtime.
+
+Can be used in individual test cases or in the `SetUp()` methods of test
+environments or test fixtures (classes derived from the
+[`Environment`](#Environment) or [`Test`](#Test) classes). If used in a global
+test environment `SetUp()` method, it skips all tests in the test program. If
+used in a test fixture `SetUp()` method, it skips all tests in the corresponding
+test suite.
+
+Similar to assertions, `KTEST_SKIP` allows streaming a custom message into it.
+
+See [Skipping Test Execution](../advanced.mdx#skipping-test-execution) for more
+information.
+
+防止在运行时进一步执行测试。
+
+可用于单个测试用例或测试的`SetUp()`方法中环境或测试装置（派生自的类
+[`Environment`](#Environment) 或 [`Test`](#Test) 类）。如果在全局中使用
+测试环境`SetUp()`方法，它会跳过测试程序中的所有测试。如果
+在测试装置`SetUp()`方法中使用时，它会跳过相应的所有测试
+测试套件。
+
+与断言类似，`KTEST_SKIP`允许将自定义消息流式传输到其中。
+
+有关更多信息，请参阅[跳过测试执行](../advanced.mdx#skipping-test-execution)
+信息。
+
+
+### KTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST {#KTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST}
+
+`KTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(`*`TestSuiteName`*`)`
+
+允许值参数化测试套件 *`TestSuiteName`* 为
+未实例化。
+
+默认情况下，每个没有相应的 [`TEST_P`](#TEST_P) 调用
+[`INSTANTIATE_TEST_SUITE_P`](#INSTANTIATE_TEST_SUITE_P) 调用导致失败
+在测试套件“GoogleTestVerification”中进行测试。
+`KTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST` 会抑制此失败
+给定的测试套件。
+
+## 类和类型 {#classes-and-types}
+
+KumoTest 定义了以下类和类型来帮助编写测试。
+
+### AssertionResult {#AssertionResult}
+
+`::testing::AssertionResult`
+
+用于指示断言是否成功的类。
+
+当断言不成功时，`AssertionResult`对象会存储一个
+可以使用对象的`message()`检索的非空失败消息
+方法。
+
+要创建此类的实例，请使用工厂函数之一
+[`AssertionSuccess()`](#AssertionSuccess) 或
+[`AssertionFailure()`](#AssertionFailure)。
+
+### AssertionException {#AssertionException}
+
+`::testing::AssertionException`
+
+可以抛出的异常[`TestEventListener::OnTestPartResult`](#TestEventListener::OnTestPartResult)。
+
+### EmptyTestEventListener {#EmptyTestEventListener}
+
+`::testing::EmptyTestEventListener`
+
+提供了所有方法的空实现
+[`TestEventListener`](#TestEventListener) 接口，这样只有一个子类
+需要重写它关心的方法。
+
+### Environment {#Environment}
+
+`::testing::Environment`
+
+代表全局测试环境。看
+[全局`Set-Up` 和 `Tear-Down`](../advanced.mdx#global-set-up-and-tear-down)。
+
+#### Protected Methods {#Environment-protected}
+
+##### SetUp {#Environment::SetUp}
+
+`virtual void Environment::SetUp()`
+
+覆盖它来定义如何设置环境。
+
+##### TearDown {#Environment::TearDown}
+
+`virtual void Environment::TearDown()`
+
+覆盖它来定义如何拆除环境。
+
+### ScopedTrace {#ScopedTrace}
+
+`::testing::ScopedTrace`
+
+此类的实例会导致每次测试失败时都包含跟踪由`ScopedTrace`生命周期范围内的代码生成的消息实例。该效果会随着实例的破坏而消失。
+
+`ScopedTrace` 构造函数具有以下形式：
+
+```cpp
+template <typename T>
+ScopedTrace(const char* file, int line, const T& message)
+```
+
+用法示例：
+
+```cpp
+::testing::ScopedTrace trace("file.cc", 123, "message");
+```
+
+生成的跟踪包括给定的源文件路径和行号，以及
+给出的消息。 `message`参数可以是任何可传输到的内容
+`std::ostream`。
+
+另请参阅[`SCOPED_TRACE`](#SCOPED_TRACE)。
+
+### Test {#Test}
+
+`::testing::Test`
+
+所有测试都继承自的抽象类。 `测试`不可复制。
+
+#### Public Methods {#Test-public}
+
+##### SetUpTestSuite {#Test::SetUpTestSuite}
+
+`static void Test::SetUpTestSuite()`
+
+为测试套件中的所有测试执行共享设置。 KumoTest 调用
+在运行测试套件中的第一个测试之前执行`SetUpTestSuite()`。
+
+##### TearDownTestSuite {#Test::TearDownTestSuite}
+
+`static void Test::TearDownTestSuite()`
+
+对测试套件中的所有测试执行共享拆卸。 KumoTest 调用
+运行测试套件中的最后一个测试后的`TearDownTestSuite()`。
+
+##### HasFatalFailure {#Test::HasFatalFailure}
+
+`static bool Test::HasFatalFailure()`
+
+当且仅当当前测试发生致命失败时才返回 true。
+
+##### HasNonfatalFailure {#Test::HasNonfatalFailure}
+
+`static bool Test::HasNonfatalFailure()`
+
+当且仅当当前测试出现非致命失败时才返回 true。
+
+##### HasFailure {#Test::HasFailure}
+
+`static bool Test::HasFailure()`
+
+当且仅当当前测试失败时返回 true，无论是致命的还是失败的非致命的。
+
+##### IsSkipped {#Test::IsSkipped}
+
+`static bool Test::IsSkipped()`
+
+当且仅当跳过当前测试时返回 true。
+
+##### RecordProperty {#Test::RecordProperty}
+
+`static void Test::RecordProperty(const std::string& key, const std::string&
+value)` \
+`static void Test::RecordProperty(const std::string& key, int value)`
+
+记录当前测试、测试套件或整个调用的属性测试程序。仅记录给定键的最后一个值。
+
+key 必须是有效的 XML 属性名称，并且不能与其他名称冲突
+KumoTest 已使用（`name`、`file`、`line`、`status`、`time`、
+`classname`、`type_param` 和 `value_param`）。
+
+`RecordProperty` 是 `public static`，因此可以从实用程序函数中调用它
+不是测试装置的成员。
+
+在测试的生命周期内（从那一刻起）调用`RecordProperty`
+它的构造函数开始到它的析构函数完成）都以 XML 形式输出
+作为`<testcase>`元素的属性。从灯具记录的属性
+`SetUpTestSuite` 或 `TearDownTestSuite` 方法被记录为
+相应的`<testsuite>`元素。调用`RecordProperty`
+全局上下文（在调用“RUN_ALL_TESTS”之前或之后或从
+已注册`Environment`对象的`SetUp`/`TearDown`方法）输出为
+`<testsuites>` 元素的属性。
+
+#### Protected Methods {#Test-protected}
+
+##### SetUp {#Test::SetUp}
+
+`virtual void Test::SetUp()`
+
+覆盖它以执行测试夹具设置。 KumoTest 之前调用 `SetUp()`
+运行每个单独的测试。
+
+##### TearDown {#Test::TearDown}
+
+`virtual void Test::TearDown()`
+
+覆盖它以执行测试夹具拆卸。 KumoTest 调用 `TearDown()`
+运行每个单独的测试后。
+
+### TestWithParam {#TestWithParam}
+
+`::testing::TestWithParam<T>`
+
+一个继承自 [`Test`](#Test) 和
+[`WithParamInterface<T>`](#WithParamInterface)。
+
+### TestSuite {#TestSuite}
+
+代表一个测试套件。 `TestSuite` 不可复制。
+
+#### Public Methods {#TestSuite-public}
+
+##### name {#TestSuite::name}
+
+`const char* TestSuite::name() const`
+
+获取测试套件的名称。
+
+##### type_param {#TestSuite::type_param}
+
+`const char* TestSuite::type_param() const`
+
+返回参数类型的名称，如果这不是类型或类型，则返回`NULL`类型参数化测试套件。请参阅[类型化测试](../advanced.mdx#typed-tests) 和
+[类型参数化测试](../advanced.mdx#type-parameterized-tests)。
+
+##### should_run {#TestSuite::should_run}
+
+`bool TestSuite::should_run() const`
+
+如果此测试套件中的任何测试应运行，则返回 true。
+
+##### successful_test_count {#TestSuite::successful_test_count}
+
+`int TestSuite::successful_test_count() const`
+
+获取此测试套件中成功测试的数量。
+
+##### skipped_test_count {#TestSuite::skipped_test_count}
+
+`int TestSuite::skipped_test_count() const`
+
+获取此测试套件中跳过的测试数。
+
+##### failed_test_count {#TestSuite::failed_test_count}
+
+`int TestSuite::failed_test_count() const`
+
+获取此测试套件中失败的测试数。
+
+##### reportable_disabled_test_count {#TestSuite::reportable_disabled_test_count}
+
+`int TestSuite::reportable_disabled_test_count() const`
+
+获取将在 XML 报告中报告的已禁用测试的数量。
+
+##### disabled_test_count {#TestSuite::disabled_test_count}
+
+`int TestSuite::disabled_test_count() const`
+
+获取此测试套件中禁用的测试的数量。
+
+##### reportable_test_count {#TestSuite::reportable_test_count}
+
+`int TestSuite::reportable_test_count() const`
+
+获取要在 XML 报告中打印的测试数量。
+
+##### test_to_run_count {#TestSuite::test_to_run_count}
+
+`int TestSuite::test_to_run_count() const`
+
+获取此测试套件中应运行的测试数量。
+
+##### total_test_count {#TestSuite::total_test_count}
+
+`int TestSuite::total_test_count() const`
+
+获取此测试套件中所有测试的数量。
+
+##### Passed {#TestSuite::Passed}
+
+`bool TestSuite::Passed() const`
+
+当且仅当测试套件通过时返回 true。
+
+##### Failed {#TestSuite::Failed}
+
+`bool TestSuite::Failed() const`
+
+当且仅当测试套件失败时返回 true。
+
+##### elapsed_time {#TestSuite::elapsed_time}
+
+`TimeInMillis TestSuite::elapsed_time() const`
+
+返回经过的时间（以毫秒为单位）。
+
+##### start_timestamp {#TestSuite::start_timestamp}
+
+`TimeInMillis TestSuite::start_timestamp() const`
+
+获取测试套件启动的时间，以 UNIX 纪元开始的毫秒为单位。
+
+##### GetTestInfo {#TestSuite::GetTestInfo}
+
+`const TestInfo* TestSuite::GetTestInfo(int i) const`
+
+返回所有测试中第 i 个测试的 [`TestInfo`](#TestInfo)。 `i`
+范围从 0 到 `total_test_count() - 1`。如果“i”不在该范围内，
+返回`NULL`。
+
+##### ad_hoc_test_result {#TestSuite::ad_hoc_test_result}
+
+`const TestResult& TestSuite::ad_hoc_test_result() const`
+
+返回保存记录的测试属性的 [`TestResult`](#TestResult)
+在执行`SetUpTestSuite`和`TearDownTestSuite`期间。
+
+### TestInfo {#TestInfo}
+
+`::testing::TestInfo`
+
+存储有关测试的信息。
+
+#### Public Methods {#TestInfo-public}
+
+##### test_suite_name {#TestInfo::test_suite_name}
+
+`const char* TestInfo::test_suite_name() const`
+
+返回测试套件名称。
+
+##### name {#TestInfo::name}
+
+`const char* TestInfo::name() const`
+
+返回测试名称。
+
+##### type_param {#TestInfo::type_param}
+
+`const char* TestInfo::type_param() const`
+
+返回参数类型的名称，如果这不是类型或类型，则返回“NULL”
+类型参数化测试。请参阅[类型化测试](../advanced.mdx#typed-tests) 和
+[类型参数化测试](../advanced.mdx#type-parameterized-tests)。
+
+##### value_param {#TestInfo::value_param}
+
+`const char* TestInfo::value_param() const`
+
+返回值参数的文本表示形式，如果不是，则返回“NULL”
+值参数化测试。看
+[值参数化测试](../advanced.mdx#value-parameterized-tests)。
+
+##### file {#TestInfo::file}
+
+`const char* TestInfo::file() const`
+
+返回定义此测试的文件名。
+
+##### line {#TestInfo::line}
+
+`int TestInfo::line() const`
+
+返回定义此测试的行。
+
+##### is_in_another_shard {#TestInfo::is_in_another_shard}
+
+`bool TestInfo::is_in_another_shard() const`
+
+如果此测试因位于另一个分片中而不应运行，则返回 true。
+
+##### should_run {#TestInfo::should_run}
+
+`bool TestInfo::should_run() const`
+
+如果应该运行此测试，即如果未禁用该测试（或者它
+已禁用，但已指定`also_run_disabled_tests`标志）及其
+全名与用户指定的过滤器匹配。
+
+KumoTest 允许用户按全名过滤测试。只有
+将运行与过滤器匹配的测试。看
+[运行测试的子集](../advanced.mdx#running-a-subset-of-the-tests)
+了解更多信息。
+
+##### is_reportable {#TestInfo::is_reportable}
+
+`bool TestInfo::is_reportable() const`
+
+当且仅当此测试出现在 XML 报告中时返回 true。
+
+##### result {#TestInfo::result}
+
+`const TestResult* TestInfo::result() const`
+
+返回测试结果。请参阅[`测试结果`](#TestResult)。
+
+### TestParamInfo {#TestParamInfo}
+
+`::testing::TestParamInfo<T>`
+
+描述值参数化测试的参数。类型`T`是参数。
+
+包含字段`param`和`index`，它们保存参数的值
+及其整数索引。
+
+### UnitTest {#UnitTest}
+
+`::testing::UnitTest`
+
+此类包含有关测试程序的信息。
+
+`UnitTest` 是一个单例类。唯一的实例是在以下情况创建的：
+首先调用`UnitTest::GetInstance()`。该实例永远不会被删除。
+
+`UnitTest` 不可复制。
+
+#### Public Methods {#UnitTest-public}
+
+##### GetInstance {#UnitTest::GetInstance}
+
+`static UnitTest* UnitTest::GetInstance()`
+
+获取单例`UnitTest`对象。第一次调用此方法时，
+`UnitTest` 对象被构造并返回。连续调用将返回
+同一个对象。
+
+##### original_working_dir {#UnitTest::original_working_dir}
+
+`const char* UnitTest::original_working_dir() const`
+
+当第一个 [`TEST()`](#TEST) 或
+[`TEST_F()`](#TEST_F) 已执行。 `UnitTest` 对象拥有该字符串。
+
+##### current_test_suite {#UnitTest::current_test_suite}
+
+`const TestSuite* UnitTest::current_test_suite() const`
+
+返回当前测试的 [`TestSuite`](#TestSuite) 对象
+正在运行，如果没有测试正在运行，则为`NULL`。
+
+##### current_test_info {#UnitTest::current_test_info}
+
+`const TestInfo* UnitTest::current_test_info() const`
+
+返回当前测试的 [`TestInfo`](#TestInfo) 对象
+正在运行，如果没有测试正在运行，则为`NULL`。
+
+##### random_seed {#UnitTest::random_seed}
+
+`int UnitTest::random_seed() const`
+
+返回当前测试运行开始时使用的随机种子。
+
+##### successful_test_suite_count {#UnitTest::successful_test_suite_count}
+
+`int UnitTest::successful_test_suite_count() const`
+
+获取成功测试套件的数量。
+
+##### failed_test_suite_count {#UnitTest::failed_test_suite_count}
+
+`int UnitTest::failed_test_suite_count() const`
+
+获取失败的测试套件的数量。
+
+##### total_test_suite_count {#UnitTest::total_test_suite_count}
+
+`int UnitTest::total_test_suite_count() const`
+
+获取所有测试套件的数量。
+
+##### test_suite_to_run_count {#UnitTest::test_suite_to_run_count}
+
+`int UnitTest::test_suite_to_run_count() const`
+
+获取至少包含一项测试的所有测试套件的数量
+跑步。
+
+##### successful_test_count {#UnitTest::successful_test_count}
+
+`int UnitTest::successful_test_count() const`
+
+获取成功测试的数量。
+
+##### skipped_test_count {#UnitTest::skipped_test_count}
+
+`int UnitTest::skipped_test_count() const`
+
+获取跳过的测试数。
+
+##### failed_test_count {#UnitTest::failed_test_count}
+
+`int UnitTest::failed_test_count() const`
+
+获取失败测试的数量。
+
+##### reportable_disabled_test_count {#UnitTest::reportable_disabled_test_count}
+
+`int UnitTest::reportable_disabled_test_count() const`
+
+获取将在 XML 报告中报告的已禁用测试的数量。
+
+##### disabled_test_count {#UnitTest::disabled_test_count}
+
+`int UnitTest::disabled_test_count() const`
+
+获取禁用测试的数量。
+
+##### reportable_test_count {#UnitTest::reportable_test_count}
+
+`int UnitTest::reportable_test_count() const`
+
+获取要在 XML 报告中打印的测试数量。
+
+##### total_test_count {#UnitTest::total_test_count}
+
+`int UnitTest::total_test_count() const`
+
+获取所有测试的数量。
+
+##### test_to_run_count {#UnitTest::test_to_run_count}
+
+`int UnitTest::test_to_run_count() const`
+
+获取应运行的测试数。
+
+##### start_timestamp {#UnitTest::start_timestamp}
+
+`TimeInMillis UnitTest::start_timestamp() const`
+
+Gets the time of the test program start, in ms from the start of the UNIX epoch.
+
+##### elapsed_time {#UnitTest::elapsed_time}
+
+`TimeInMillis UnitTest::elapsed_time() const`
+
+获取经过的时间（以毫秒为单位）。
+
+##### Passed {#UnitTest::Passed}
+
+`bool UnitTest::Passed() const`
+
+当且仅当单元测试通过（即所有测试套件通过）时才返回 true。
+
+##### Failed {#UnitTest::Failed}
+
+`bool UnitTest::Failed() const`
+
+当且仅当单元测试失败（即某些测试套件失败或
+所有测试之外的东西都失败了）。
+
+##### GetTestSuite {#UnitTest::GetTestSuite}
+
+`const TestSuite* UnitTest::GetTestSuite(int i) const`
+
+获取所有测试套件中第 i 个测试套件的 [`TestSuite`](#TestSuite) 对象
+测试套件。 `i` 的范围可以从 0 到 `total_test_suite_count() - 1`。如果`i`
+不在该范围内，返回“NULL”。
+
+##### ad_hoc_test_result {#UnitTest::ad_hoc_test_result}
+
+`const TestResult& UnitTest::ad_hoc_test_result() const`
+
+返回包含测试失败信息的 [`TestResult`](#TestResult)
+以及在各个测试套件之外记录的属性。
+
+##### listeners {#UnitTest::listeners}
+
+`TestEventListeners& UnitTest::listeners()`
+
+返回可用于跟踪内部事件的事件侦听器列表
+kumotest。请参阅[`TestEventListeners`](#TestEventListeners)。
+
+### TestEventListener {#TestEventListener}
+
+`::testing::TestEventListener`
+
+用于跟踪测试执行的接口。下面列出了以下方法
+相应事件的触发顺序。
+
+#### Public Methods {#TestEventListener-public}
+
+##### OnTestProgramStart {#TestEventListener::OnTestProgramStart}
+
+`virtual void TestEventListener::OnTestProgramStart(const UnitTest& unit_test)`
+
+在任何测试活动开始之前触发。
+
+##### OnTestIterationStart {#TestEventListener::OnTestIterationStart}
+
+`virtual void TestEventListener::OnTestIterationStart(const UnitTest& unit_test,
+int iteration)`
+
+在每次测试迭代开始之前触发。可能有不止一个
+如果设置了`KTEST_FLAG(repeat)`，则进行迭代。 `iteration` 是迭代索引，
+从0开始。
+
+##### OnEnvironmentsSetUpStart {#TestEventListener::OnEnvironmentsSetUpStart}
+
+`virtual void TestEventListener::OnEnvironmentsSetUpStart(const UnitTest&
+unit_test)`
+
+在每次测试迭代的环境设置开始之前触发。
+
+##### OnEnvironmentsSetUpEnd {#TestEventListener::OnEnvironmentsSetUpEnd}
+
+`virtual void TestEventListener::OnEnvironmentsSetUpEnd(const UnitTest&
+unit_test)`
+
+每次测试迭代的环境设置结束后触发。
+
+##### OnTestSuiteStart {#TestEventListener::OnTestSuiteStart}
+
+`virtual void TestEventListener::OnTestSuiteStart(const TestSuite& test_suite)`
+
+在测试套件开始之前触发。
+
+##### OnTestStart {#TestEventListener::OnTestStart}
+
+`virtual void TestEventListener::OnTestStart(const TestInfo& test_info)`
+
+在测试开始前触发。
+
+##### OnTestPartResult {#TestEventListener::OnTestPartResult}
+
+`virtual void TestEventListener::OnTestPartResult(const TestPartResult&
+test_part_result)`
+
+在断言失败或“SUCCEED()”调用后触发。如果你想扔
+此函数的异常要跳到下一个测试，它必须是
+[`AssertionException`](#AssertionException) 或继承自它。
+
+##### OnTestEnd {#TestEventListener::OnTestEnd}
+
+`virtual void TestEventListener::OnTestEnd(const TestInfo& test_info)`
+
+测试结束后被触发。
+
+##### OnTestSuiteEnd {#TestEventListener::OnTestSuiteEnd}
+
+`virtual void TestEventListener::OnTestSuiteEnd(const TestSuite& test_suite)`
+
+测试套件结束后触发。
+
+##### OnEnvironmentsTearDownStart {#TestEventListener::OnEnvironmentsTearDownStart}
+
+`virtual void TestEventListener::OnEnvironmentsTearDownStart(const UnitTest&
+unit_test)`
+
+Fired before environment tear-down for each iteration of tests starts.
+
+##### OnEnvironmentsTearDownEnd {#TestEventListener::OnEnvironmentsTearDownEnd}
+
+`virtual void TestEventListener::OnEnvironmentsTearDownEnd(const UnitTest&
+unit_test)`
+
+每次测试迭代的环境拆卸结束后触发。
+
+##### OnTestIterationEnd {#TestEventListener::OnTestIterationEnd}
+
+`virtual void TestEventListener::OnTestIterationEnd(const UnitTest& unit_test,
+int iteration)`
+
+每次测试迭代完成后触发。
+
+##### OnTestProgramEnd {#TestEventListener::OnTestProgramEnd}
+
+`virtual void TestEventListener::OnTestProgramEnd(const UnitTest& unit_test)`
+
+所有测试活动结束后被触发。
+
+### TestEventListeners {#TestEventListeners}
+
+`::testing::TestEventListeners`
+
+允许用户添加侦听器来跟踪 KumoTest 中的事件。
+
+#### Public Methods {#TestEventListeners-public}
+
+##### Append {#TestEventListeners::Append}
+
+`void TestEventListeners::Append(TestEventListener* listener)`
+
+将事件侦听器附加到列表末尾。 KumoTest 取得所有权
+监听器的（即，当测试程序运行时，它将删除监听器）
+完成）。
+
+##### Release {#TestEventListeners::Release}
+
+`TestEventListener* TestEventListeners::Release(TestEventListener* listener)`
+
+从列表中删除给定的事件侦听器并返回它。然后就变成了
+调用者有责任删除监听器。如果返回`NULL`
+列表中未找到侦听器。
+
+##### default_result_printer {#TestEventListeners::default_result_printer}
+
+`TestEventListener* TestEventListeners::default_result_printer() const`
+
+返回负责默认控制台输出的标准侦听器。可以是从侦听器列表中删除以关闭默认控制台输出。注意
+从侦听器列表中删除此对象[`Release()`](#TestEventListeners::Release) 将其所有权转移给
+调用者并使该函数下次返回`NULL`。
+
+##### default_xml_generator {#TestEventListeners::default_xml_generator}
+
+`TestEventListener* TestEventListeners::default_xml_generator() const`
+
+返回负责控制默认 XML 输出的标准侦听器通过 `--ktest_output=xml` 标志。可以通过以下方式从侦听器列表中删除
+想要关闭此标志控制的默认 XML 输出的用户将其替换为自定义的。请注意，从侦听器中删除该对象
+带有 [`Release()`](#TestEventListeners::Release) 的列表将其所有权转移到
+调用者并使该函数下次返回`NULL`。
+
+### TestPartResult {#TestPartResult}
+
+`::testing::TestPartResult`
+
+表示测试部分结果的可复制对象（即断言或
+显式的`FAIL()`、`ADD_FAILURE()`或`SUCCESS()`）。
+
+#### Public Methods {#TestPartResult-public}
+
+##### type {#TestPartResult::type}
+
+`Type TestPartResult::type() const`
+
+获取测试部分的结果。
+
+返回类型“Type”是一个枚举，定义如下：
+
+```cpp
+enum Type {
+  kSuccess,          // Succeeded.
+  kNonFatalFailure,  // Failed but the test can continue.
+  kFatalFailure,     // Failed and the test should be terminated.
+  kSkip              // Skipped.
+};
+```
+
+##### file_name {#TestPartResult::file_name}
+
+`const char* TestPartResult::file_name() const`
+
+获取发生测试部分的源文件的名称，如果是则获取`NULL`
+这是未知的。
+
+##### line_number {#TestPartResult::line_number}
+
+`int TestPartResult::line_number() const`
+
+获取源文件中发生测试部分的行，如果是，则获取`-1`
+未知。
+
+##### summary {#TestPartResult::summary}
+
+`const char* TestPartResult::summary() const`
+
+获取失败消息的摘要。
+
+##### message {#TestPartResult::message}
+
+`const char* TestPartResult::message() const`
+
+获取与测试部分关联的消息。
+
+##### skipped {#TestPartResult::skipped}
+
+`bool TestPartResult::skipped() const`
+
+当且仅当测试部分被跳过时返回 true。
+
+##### passed {#TestPartResult::passed}
+
+`bool TestPartResult::passed() const`
+
+当且仅当测试部分通过时返回 true。
+
+##### nonfatally_failed {#TestPartResult::nonfatally_failed}
+
+`bool TestPartResult::nonfatally_failed() const`
+
+当且仅当测试部分非致命失败时返回 true。
+
+##### fatally_failed {#TestPartResult::fatally_failed}
+
+`bool TestPartResult::fatally_failed() const`
+
+当且仅当测试部分严重失败时才返回 true。
+
+##### failed {#TestPartResult::failed}
+
+`bool TestPartResult::failed() const`
+
+当且仅当测试部分失败时返回 true。
+
+### TestProperty {#TestProperty}
+
+`::testing::TestProperty`
+
+表示用户指定的测试属性的可复制对象，可以是
+输出为键/值字符串对。
+
+#### Public Methods {#TestProperty-public}
+
+##### key {#key}
+
+`const char* key() const`
+
+获取用户提供的密钥。
+
+##### value {#value}
+
+`const char* value() const`
+
+获取用户提供的值。
+
+##### SetValue {#SetValue}
+
+`void SetValue(const std::string& new_value)`
+
+设置一个新值，覆盖前一个值。
+
+### TestResult {#TestResult}
+
+`::testing::TestResult`
+
+包含有关单个测试结果的信息。
+
+`TestResult` 不可复制。
+
+#### Public Methods {#TestResult-public}
+
+##### total_part_count {#TestResult::total_part_count}
+
+`int TestResult::total_part_count() const`
+
+获取所有测试零件的数量。这是成功次数的总和
+测试零件和失败测试零件的数量。
+
+##### test_property_count {#TestResult::test_property_count}
+
+`int TestResult::test_property_count() const`
+
+返回测试属性的数量。
+
+##### Passed {#TestResult::Passed}
+
+`bool TestResult::Passed() const`
+
+当且仅当测试通过（即没有测试部分失败）时才返回 true。
+
+##### Skipped {#TestResult::Skipped}
+
+`bool TestResult::Skipped() const`
+
+当且仅当跳过测试时返回 true。
+
+##### Failed {#TestResult::Failed}
+
+`bool TestResult::Failed() const`
+
+当且仅当测试失败时返回 true。
+
+##### HasFatalFailure {#TestResult::HasFatalFailure}
+
+`bool TestResult::HasFatalFailure() const`
+
+当且仅当测试严重失败时才返回 true。
+
+##### HasNonfatalFailure {#TestResult::HasNonfatalFailure}
+
+`bool TestResult::HasNonfatalFailure() const`
+
+当且仅当测试出现非致命失败时才返回 true。
+
+##### elapsed_time {#TestResult::elapsed_time}
+
+`TimeInMillis TestResult::elapsed_time() const`
+
+返回经过的时间（以毫秒为单位）。
+
+##### start_timestamp {#TestResult::start_timestamp}
+
+`TimeInMillis TestResult::start_timestamp() const`
+
+获取测试用例开始的时间，以毫秒为单位，从 UNIX 纪元开始算起。
+
+##### GetTestPartResult {#TestResult::GetTestPartResult}
+
+`const TestPartResult& TestResult::GetTestPartResult(int i) const`
+
+返回第 i 个测试部分结果的 [`TestPartResult`](#TestPartResult)
+在所有结果中。 `i` 的范围可以从 0 到 `total_part_count() - 1`。如果‘i’
+不在该范围内，则中止程序。
+
+##### GetTestProperty {#TestResult::GetTestProperty}
+
+`const TestProperty& TestResult::GetTestProperty(int i) const`
+
+返回第 i 个测试属性的 [`TestProperty`](#TestProperty) 对象。
+`i` 的范围可以从 0 到 `test_property_count() - 1`。如果“i”不在其中
+范围，中止程序。
+
+### TimeInMillis {#TimeInMillis}
+
+`::testing::TimeInMillis`
+
+表示时间（以毫秒为单位）的整数类型。
+
+### Types {#Types}
+
+`::testing::Types<T...>`
+
+表示用于类型化测试和类型参数化测试的类型列表。
+
+模板参数 `T...` 可以是任意数量的类型，例如：
+
+```
+::testing::Types<char, int, unsigned int>
+```
+
+请参阅[类型化测试](../advanced.mdx#typed-tests) 和
+[类型参数化测试](../advanced.mdx#type-parameterized-tests) 了解更多
+信息。
+
+### WithParamInterface {#WithParamInterface}
+
+`::testing::WithParamInterface<T>`
+
+所有值参数化测试都继承自的纯接口类。
+
+值参数化测试夹具类必须继承自 [`Test`](#Test)
+和`WithParamInterface`。在大多数情况下，这仅意味着继承自
+[`TestWithParam`](#TestWithParam)，但更复杂的测试层次结构可能
+需要在不同级别继承`Test`和`WithParamInterface`。
+
+该接口为参数类型`T`定义了类型别名`ParamType`，并且
+支持通过`GetParam()`方法访问测试参数值：
+
+```
+static const ParamType& GetParam()
+```
+
+有关更多信息，请参阅
+[值参数化测试](../advanced.mdx#value-parameterized-tests)。
+
+## Functions
+
+KumoTest定义了以下函数来帮助编写和运行测试。
+
+### InitKumoTest {#InitKumoTest}
+
+`void ::testing::InitKumoTest(int* argc, char** argv)` \
+`void ::testing::InitKumoTest(int* argc, wchar_t** argv)` \
+`void ::testing::InitKumoTest()`
+
+初始化 KumoTest。这必须在调用之前调用
+[`RUN_ALL_TESTS()`](#RUN_ALL_TESTS)。特别是，它解析命令行
+用于 KumoTest 识别的标志。每当看到 KumoTest 标志时，它
+从 `argv` 中删除，并且 `*argc` 被递减。
+
+没有返回值。相反，KumoTest 标志变量会被更新。
+
+`InitKumoTest(int* argc, wchar_t** argv)` 重载可以在 Windows 中使用
+以“UNICODE”模式编译的程序。
+
+无参数 `InitKumoTest()` 重载可用于 Arduino/嵌入式
+没有 `argc`/`argv` 的平台。
+
+### AddGlobalTestEnvironment {#AddGlobalTestEnvironment}
+
+`Environment* ::testing::AddGlobalTestEnvironment(Environment* env)`
+
+向测试程序添加测试环境。必须先调用
+调用 [`RUN_ALL_TESTS()`](#RUN_ALL_TESTS)。看
+[全局设置和拆卸](../advanced.mdx#global-set-up-and-tear-down) for
+更多信息。
+
+另请参阅[`环境`](#Environment)。
+
+### RegisterTest {#RegisterTest}
+
+```cpp
+template <typename Factory>
+TestInfo* ::testing::RegisterTest(const char* test_suite_name, const char* test_name,
+                                  const char* type_param, const char* value_param,
+                                  const char* file, int line, Factory factory)
+```
+
+向框架动态注册测试。
+
+`factory` 参数是一个工厂可调用（可移动构造）对象或
+创建`Test”`象的新实例的函数指针。它处理
+所有权归调用者。可调用的签名是`Fixture*()`，其中
+`Fixture` 是测试的测试夹具类。所有测试已在
+相同的`test_suite_name`必须返回相同的装置类型。这是在以下位置检查的
+运行时。
+
+该框架将从工厂推断出固定装置类，并调用
+它的`SetUpTestSuite`和`TearDownTestSuite`方法。
+
+必须在调用 [`RUN_ALL_TESTS()`](#RUN_ALL_TESTS) 之前调用，否则
+行为未定义。
+
+看
+[以编程方式注册测试](../advanced.mdx#registering-tests-programmatically)
+了解更多信息。
+
+### RUN_ALL_TESTS {#RUN_ALL_TESTS}
+
+`int RUN_ALL_TESTS()`
+
+在`main()`中使用此函数来运行所有测试。如果所有测试都通过，则返回`0`
+成功，否则为`1`。
+
+应在命令行解析后调用`RUN_ALL_TESTS()`
+[`InitKumoTest()`](#InitKumoTest)。
+
+该函数以前是一个宏；因此，它位于全局命名空间中并且具有
+全部大写的名称。
+
+### AssertionSuccess {#AssertionSuccess}
+
+`AssertionResult ::testing::AssertionSuccess()`
+
+创建成功的断言结果。看[`断言结果`](#AssertionResult)。
+
+### AssertionFailure {#AssertionFailure}
+
+`AssertionResult ::testing::AssertionFailure()`
+
+创建失败的断言结果。使用`<<`运算符存储失败
+信息：
+
+```cpp
+::testing::AssertionFailure() << "My failure message";
+```
+
+请参阅[`AssertionResult`](#AssertionResult)。
+
+### StaticAssertTypeEq {#StaticAssertTypeEq}
+
+`::testing::StaticAssertTypeEq<T1, T2>()`
+
+类型相等的编译时断言。当且仅当“T1”和“T2”时才编译
+是同一类型。它返回的值是无关紧要的。
+
+有关更多信息，请参阅[类型断言](../advanced.mdx#type-assertions)。
+
+### PrintToString {#PrintToString}
+
+`std::string ::testing::PrintToString(x)`
+
+使用 KumoTest 的值打印机打印任何值`x`。
+
+看[教 KumoTest 如何打印您的值](../advanced.mdx#teaching-kumotest-how-to-print-your-values)
+了解更多信息。
+
+### PrintToStringParamName {#PrintToStringParamName}
+
+`std::string ::testing::PrintToStringParamName(TestParamInfo<T>& info)`
+
+内置参数化测试名称生成器，返回结果
+[`PrintToString`](#PrintToString) 调用了 `info.param`。当
+测试参数是 `std::string` 或 C 字符串。看
+[指定值参数化测试参数的名称](../advanced.mdx#specifying-names-for-value-parameterized-test-parameters)
+了解更多信息。
+
+另请参阅 [`TestParamInfo`](#TestParamInfo) 和
+[`INSTANTIATE_TEST_SUITE_P`](#INSTANTIATE_TEST_SUITE_P)。

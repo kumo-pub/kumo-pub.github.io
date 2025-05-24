@@ -1,0 +1,115 @@
+---
+date: 01/10/2024
+---
+# 环境变量
+
+使用环境变量来控制 kmpkg 的工作方式以及在何处查找文件。
+
+## KMPKG_DOWNLOADS
+
+可以将此环境变量设置为用于存储下载的现有目录，而不是内部目录`downloads/` 目录。应始终将其设置为绝对路径。
+
+## KMPKG_FEATURE_FLAGS
+
+该环境变量可以设置为 kmpkg 中默认关闭功能的逗号分隔列表。这些功能是
+如有更改，恕不另行通知，并且应被视为高度不稳定。
+
+目前没有默认关闭的功能标志。
+
+## EDITOR
+
+可以将此环境变量设置为用于“kmpkg edit”的可执行文件的完整路径。请参阅
+`kmpkg help edit` 获取特定于命令的帮助。
+## KMPKG_ROOT
+
+可以将此环境变量设置为用作 kmpkg 实例的根目录。仅当以下情况时才会使用
+kmpkg 可执行文件未位于有效根目录中，并且未使用命令行开关“--kmpkg-root”。
+
+## KMPKG_VISUAL_STUDIO_PATH
+
+可以将此环境变量设置为计算机上 Visual Studio 实例的完整路径。此 Visual Studio 实例
+如果三元组未通过 [`KMPKG_VISUAL_STUDIO_PATH`](triplets.mdx#kmpkg_visual_studio_path) 三元组设置覆盖它，则将使用该三元组。
+
+示例：`D:\2017`
+
+## KMPKG_DEFAULT_TRIPLET
+
+可以将此环境变量设置为三元组名称，该名称将用于命令行中的非限定三元组引用。
+
+## KMPKG_DEFAULT_HOST_TRIPLET
+
+可以将此环境变量设置为三元组名称，该名称将用于命令行中的非限定主机端口引用以及依赖项列表中的所有主机端口引用。有关详细信息，请参阅[主机依赖项文档](host-dependencies.mdx)。
+
+## KMPKG_OVERLAY_PORTS
+
+此环境变量添加了在命令行列出的路径之后考虑的其他 [覆盖端口](../maintainers/registries.mdx) 路径。使用列出覆盖层的路径
+平台相关路径分隔符（Windows `;` | 其他 `:`）
+
+示例 (ubuntu)：`/opt/custom-ports/boost/opt/custom-ports/sqlite3`
+
+## KMPKG_OVERLAY_TRIPLETS
+
+此环境变量允许用户添加目录来搜索三元组。
+
+使用依赖于平台的路径分隔符列出覆盖层的路径（Windows `;`，其他 `:`）
+
+有关示例，请参阅[示例：覆盖三元组](../users/examples/overlay-triplets-linux-dynamic.mdx)。
+
+## KMPKG_FORCE_SYSTEM_BINARIES
+
+如果设置此环境变量，则会抑制 CMake 和 Ninja 的下载并强制使用系统二进制文件。
+
+## KMPKG_FORCE_DOWNLOADED_BINARIES
+
+如果设置了此环境变量，则会忽略系统二进制文件的使用，并且将始终下载并使用 kmpkg 定义的版本。
+
+## KMPKG_KEEP_ENV_VARS
+
+该环境变量可以设置为环境变量列表，以`;`分隔，该列表将被传播到
+构建环境。
+
+保留变量的值不会在包 ABI 中进行跟踪，并且在更改时不会导致重建。到
+传入应导致更改后重建的环境变量，请参阅 [`KMPKG_ENV_PASSTHROUGH`](triplets.mdx#kmpkg_env_passthrough)。
+
+示例：`FOO_SDK_DIR;BAR_SDK_DIR`
+
+## KMPKG_MAX_CONCURRENCY
+
+此环境变量限制底层构建系统使用的并发量。如果未指定，则默认为逻辑核心 + 1。
+
+## KMPKG_DEFAULT_BINARY_CACHE
+
+此环境变量重定向存储二进制包的默认位置。有关更多详细信息，请参阅[Binary Caching][]。
+
+## KMPKG_BINARY_SOURCES
+
+此环境变量添加或删除二进制源。有关更多详细信息，请参阅[Binary Caching][]。
+
+## X_KMPKG_ASSET_SOURCES
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+此环境变量允许对所有 SHA512 标记的资产使用私有镜像。有关更多详细信息，请参阅[资源缓存](assetcaching.mdx)。
+
+## KMPKG_NO_CI
+
+设置“KMPKG_NO_CI”会禁用 kmpkg 的 CI 环境检测启发式。
+
+[Binary Caching]: ../reference/binarycaching.mdx
+
+## VSLANG
+
+此环境变量设置 kmpkg 用于显示消息的语言。应将其设置为 14 个受支持的 LCID（区域设置标识符，与语言对应的 4 字节值）之一。
+
+例如：1033 对应于英语（美国）。
+有关支持的 LCID 的完整列表，请参阅[本地化](https://gitee.com/kumo-pub/kmpkg-tool/blob/main/docs/localization.md)。
+
+## ACTIONS_CACHE_URL
+
+此环境变量是 GitHub Actions 缓存的 URL。有关更多详细信息，请参阅[Binary Caching](../reference/binarycaching.mdx#gha)。
+
+## ACTIONS_RUNTIME_TOKEN
+
+此环境变量是 GitHub Actions 缓存的访问令牌。有关更多详细信息，请参阅[Binary Caching](../reference/binarycaching.mdx#gha)。

@@ -1,0 +1,76 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+
+# 语音搜索
+
+您可以将简短的音频剪辑发送到 kumosearch，并将其作为查询文本的基础。音频剪辑需以 Base64 编码的形式发送，kumosearch 会通过预先配置的语音搜索模型对其进行转录。
+
+## 配置语音搜索模型
+
+要使用语音搜索功能，首先需要将语音搜索模型与索引表关联起来：
+
+```json
+{
+    "name": "products",
+    "fields": [
+        {"name": "name", "type": "string"}
+    ],
+    "voice_query_model": {
+        "model_name": "ts/whisper/base.en"
+    }
+}
+```
+
+## 使用语音搜索进行多重搜索
+
+音频文件必须采用 16 khz 16 位 WAV 格式。需在对音频文件进行 Base64 编码之前将其转换为此格式。可以使用以下脚本通过 `ffmpeg` 进行转换：
+
+```shell
+ffmpeg -i <your_file> -ar 16000 -ac 1 -c:a pcm_s16le voice_query.wav
+```
+
+然后，您可以通过 multi_search API 发送 Base64 编码的音频数据。
+
+:::tip
+由于 `GET /documents/search` 端点对查询文本长度有限制，因此建议对语音搜索使用多重搜索。
+:::
+
+```json
+{
+    "searches": [
+        {
+            "collection": "products",
+            "query_by": "name",
+            "voice_query": "<base64 encoded audio file>"
+        }
+    ]
+}
+```
+<!-- TODO
+](../../kmsearch/install-kumosearch.mdx#using-a-gpu-optional)
+-->
+与文本嵌入模型一样，如果您为 kumosearch 配置 GPU 支持，Whisper 模型将在 GPU 上运行；或者，您也可以在 kumosearch Cloud 上选择支持 GPU 的实例。
+
+以下是一个简单的脚本，您可以使用 `sox` 从命令行录制 5 秒的语音片段，对其进行 base64 编码，并通过 `curl` 请求将其发送到 kumosearch：
+
+```shell
+VOICE_QUERY=$(sox -d -r 16000 -b 16 -c 1 -e signed-integer output.wav trim 0 5 && cat output.wav | base64)
+
+curl 'http://localhost/multi_search' \
+      -X 'POST' \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      --data-binary '
+          {
+            "searches": [
+              {
+                "collection": "products",
+                "query_by": "name",
+                "voice_query": "'${VOICE_QUERY}'"
+              }
+            ]
+          }
+      '
+```

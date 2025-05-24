@@ -1,0 +1,154 @@
+---
+date: 01/10/2024
+---
+# 常用命令行选项
+
+kmpkg 的常用命令行选项参考。
+
+大多数 kmpkg 命令接受一组控制工具横切方面的常用选项。并非所有选项都会影响每个命令。例如，不下载任何文件的命令将不会受到更改下载目录的影响。
+
+## 选项
+
+### `--x-asset-sources=<config>` {#asset-sources}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+指定[资产缓存](../users/assetcaching.mdx)的缓存配置。
+
+### `--binarysource=<config>` {#binarysource}
+
+添加[二进制缓存](../users/binarycaching.mdx)的源。
+
+此选项可以多次指定；有关多个二进制源如何交互的信息，请参阅二进制缓存文档。
+
+###  `--x-buildtrees-root=<path>` {#buildtrees-root}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+指定存储中间构建文件（如对象或解压缩的源代码）的临时路径。
+
+默认为 kmpkg 根文件夹下的 `buildtrees/`。
+
+### `--x-cmake-configure-debug=<debugger-pipe>[;semicolon;port;list]` {#cmake-configure-debug}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+
+在上游构建系统的 `CMakeLists.txt` 中启用 CMake 的 [`--debugger`](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-debugger)，
+如在 [`kmpkg_cmake_configure`](../maintainers/functions/kmpkg_cmake_configure.mdx) 内。
+
+`<debugger-pipe>` 值在 CMake 命令行中作为 [`--debugger-pipe`](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-debugger-pipe) 传递。
+
+如果有分号分隔的端口列表，则调试程序仅用于该列表中的端口。 否则，该项将用于所有端口。
+
+三元组变量 `KMPKG_CMAKE_CONFIGURE_OPTIONS` 用于将选项传递给内部 CMake configure 调用。
+因此，它不适用于覆盖 `KMPKG_CMAKE_CONFIGURE_OPTIONS` 的自定义三元组。 手动传递调试选项或改为将选项附加到 `KMPKG_CMAKE_CONFIGURE_OPTIONS`。
+
+与 `--x-cmake-debug` 不同，不会有输出指示构建正在等待调试器连接。 输出会在 `Configuring <triplet>` 处停滞。
+
+尽管所有端口都应在端口文件内部调用 CMake，以从 CMake 工具链获取编译标志。 此命令主要用于实际使用 CMake 作为其构建系统的端口。
+
+###  `--x-cmake-debug=<debugger-pipe>[;semicolon;port;list]` {#cmake-debug}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+启用 CMake 的 [`--debugger`](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-debugger)，同时运行三元组文件（例如：`x64-windows.cmake`）或 `portfile.cmake` 文件等直接调用的 CMake 脚本。
+
+`<debugger-pipe>` 值在 CMake 命令行中作为 [`--debugger-pipe`](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-debugger-pipe) 传递。
+
+如果有分号分隔的端口列表，则调试程序仅用于该列表中的端口。 否则，该项将用于所有端口。
+
+注意：如果在 kmpkg 的输出中观察到 `Waiting for debugger client to connect...`，可以附加调试器，并且执行将暂停，直到调试器已连接。
+
+### `--downloads-root=<path>` {#downloads-root}
+
+指定保留下载的工具和源代码存档的位置。
+
+默认为 [`KMPKG_DOWNLOADS`](../users/config-environment.mdx#kmpkg_downloads) 环境变量。 如果该项未设置，则默认为 `kmpkg` 根文件夹下的 `downloads/`。
+
+###  `--feature-flags=<flag1>,...` {#feature-flags}
+
+可以将此变量设置为功能标志列表，以选择加入试验性行为。
+
+###  `--host-triplet=<triplet>` {#host-triplet}
+
+指定主机[三元组](../users/triplets.mdx)。
+
+默认为 [`KMPKG_DEFAULT_HOST_TRIPLET`](../users/config-environment.mdx#kmpkg_default_host_triplet) 环境变量。 如果该项也未设置，则会根据主机体系结构和操作系统推断该值。
+
+### `--x-install-root=<path>` {#install-root}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+指定布置已安装包的路径。
+
+在 [经典模式](../concepts/classic-mode.mdx)下，默认为 kmpkg 根文件夹下的 `installed/`。
+
+在[清单模式](../concepts/manifest-mode.mdx)下，默认为清单文件夹下的 `kmpkg_installed/`。
+
+### `--x-manifest-root=<path>` {#manifest-root}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+指定包含 [`kmpkg.json`](../concepts/manifest-mode.mdx) 的目录。
+
+默认从当前工作目录向上搜索找到最近的 `kmpkg.json`。
+
+### `--overlay-ports=<path>` {#overlay-ports}
+
+指定包含[覆盖端口](../concepts/package-name-resolution.mdx#overlays)的目录。
+
+可以多次指定此选项；端口将解析为第一个匹配项。
+
+###  `--overlay-triplets=<path>` {#overlay-triplets}
+
+指定包含[覆盖三元组](../concepts/triplets.mdx#custom-triplets)的目录。
+
+可以多次指定此选项以添加多个目录；三元组将按名称解析为第一个匹配项。
+
+### `--x-packages-root=<path>` {#packages-root}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+
+指定在最终安装之前暂存中间包文件的临时路径。
+
+默认为 kmpkg 根文件夹下的 `packages/`。
+
+### `--triplet=<triplet>` {#triplet}
+
+指定目标[体系结构三元组](../users/triplets.mdx)。
+
+默认为 [`KMPKG_DEFAULT_TRIPLET`](../users/config-environment.mdx#kmpkg_default_triplet) 环境变量。 如果该项未设置，则会根据主机体系结构和操作系统推断。
+
+在 Windows 操作系统上，由于遗留原因，体系结构始终推断为 x86。
+
+:::warning
+Windows 上是主机三元组，而不是 x86-windows。
+:::
+
+### `--kmpkg-root=<path>` {#kmpkg-root}
+
+指定 kmpkg 根文件夹。
+
+默认为包含 kmpkg 程序的目录。 目录必须是有效的 kmpkg 实例，例如 `https://gitee.com/kumo-pub/kmpkg` 的 `git clone`。 此选项可用于直接从构建文件夹运行该工具的自定义构建副本。
+
+### Response Files (`@<file>`)
+
+kmpkg 命令行接受包含换行符分隔的命令行参数的文本文件。
+
+该工具的行为就像将文件中的项目拼接到命令行中代替 `@` 引用一样。 响应文件不能包含其他响应文件。

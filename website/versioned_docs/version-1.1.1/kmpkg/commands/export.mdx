@@ -1,0 +1,282 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg export
+
+kmpkg 导出命令的命令行参考。创建独立的 SDK 捆绑包。
+
+## 摘要
+
+```no-highlight
+kmpkg export [options] {<package>... | --x-all-installed}
+```
+
+## 说明
+
+将生成的包从[已安装目录](common-options.mdx#install-root)导出到独立的开发人员 SDK。
+
+`export` 生成独立、可分发的 SDK（软件开发工具包），可在另一台计算机上使用而无需单独获取 kmpkg。 该结构包含：
+
+1. 所选包的预生成二进制文件
+2. 其可转移依赖项
+3. [集成文件](#standard-integration)，例如 [CMake 工具链][cmake]或 [MSBuild 属性/目标][msbuild]
+
+:::warning 重要
+此命令的行为在[经典模式](../concepts/classic-mode.mdx)和[清单模式](../concepts/manifest-mode.mdx)下不同
+:::
+
+`export` 命令不会安装任何包或可转移依赖项。 它仅导出已安装的包。
+
+有关更多详细信息，请参阅[清单模式](export.mdx#Manifest-Mode)或[经典模式](export.mdx#Classic-Mode)。
+
+## 经典模式 {#Classic-Mode}
+
+在经典模式下，`kmpkg export` 接受[三元组限定的包规范参数](install.mdx#package-syntax)（例如：`zlib:x64-windows`）
+
+可以通过向命令行添加 `<port name>:<triplet>` 参数来指定要导出的包。
+
+例如，要导出 `x64-windows` 和 `x64-linux` 的 `sqlite` 包，请使用：
+
+```no-highlight
+kmpkg export sqlite:x64-windows sqlite:x64-linux --zip
+```
+
+此命令以 zip 格式导出指定的包。 在运行 `kmpkg export` 之前，必须安装 `sqlite:x64-windows` 和 `sqlite:x64-linux`。
+
+## 清单模式 {#Manifest-Mode}
+
+在清单模式下，该命令导出所有当前安装的包。 安装目录包括清单 (`kmpkg.json`) 中声明的所有包及其可转移依赖项。 使用此命令之前运行 `kmpkg install`，以确保已安装所有必需的包。
+
+在此模式下，无法指定要导出的单个包。 该命令将整个安装状态作为一个实体进行操作，遵循清单文件中指定的依赖项和版本。
+
+另一个区别是 `--output-dir` 选项的要求。 此选项指定将存储导出包的目录。
+
+例如，从清单目录
+
+```no-highlight
+kmpkg export --zip --output-dir=.\exports
+```
+将所有当前安装的包导出到 zip 文件中的 `.\exports` 目录。 `--zip` 选项指定导出的包应压缩为 `zip` 文件。
+
+### 标准集成 {#standard-integration}
+
+大多数导出格式都包含一组标准集成文件：
+
+- 位于 `/scripts/buildsystems/kmpkg.cmake` 的 [CMake 工具链][cmake]
+- 位于 `/scripts/buildsystems/msbuild/kmpkg.props` 和 `/scripts/buildsystems/msbuild/kmpkg.targets` 的 [MSBuild 属性/目标][msbuild]
+- [安装树][installation]位于 /
+
+某些导出格式与此标准组不同；有关更多详细信息，请参阅下面单独的格式帮助。
+
+### Formats
+
+官方支持的 SDK 格式：
+
+- [原始目录](#raw-directory)
+- [Zip](#zip)
+- [7zip](#7zip)
+
+试验性 SDK 格式（随时可能更改或移除）：
+
+- [IFW](#ifw)
+- [Chocolatey](#chocolatey)
+- [Prefab](#prefab)
+
+#### Raw Directory
+
+```no-highlight
+kmpkg export --raw [options] <package>...
+```
+
+在 `<output-dir>/<output>/` 创建未解压缩的目录布局。
+
+包含[标准集成文件][Standard Integration Files]。
+
+#### Zip
+
+```no-highlight
+kmpkg export --zip [options] <package>...
+```
+
+在 `<output-dir>/<output>.zip` 创建未解压缩的 zip 目录布局。
+
+包含[标准集成文件][Standard Integration Files]。
+
+#### 7Zip
+
+```no-highlight
+kmpkg export --7zip [options] <package>...
+```
+
+在 `<output-dir>/<output>.7z` 处创建 `7zip` 目录布局。
+
+包含[标准集成文件][Standard Integration Files]。
+
+#### IFW
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```no-highlight
+kmpkg export --ifw [options] <package>...
+```
+
+导出到基于 IFW 的安装程序。
+
+格式特定选项：
+
+- [`--ifw-configuration-file-path`](#ifw-configuration-file-path)
+- [`--ifw-installer-file-path`](#ifw-installer-file-path)
+- [`--ifw-packages-directory-path`](#ifw-packages-directory-path)
+- [`--ifw-repository-directory-path`](#ifw-repository-directory-path)
+- [`--ifw-repository-url`](#ifw-repository-url)
+
+#### Chocolatey
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```no-highlight
+kmpkg export --x-chocolatey [options] <package>...
+```
+
+导出 Chocolatey 包。
+
+格式特定选项：
+
+- [`--x-maintainer`](#maintainer)
+- [`--x-version-suffix`](#version-suffix)
+
+#### Prefab
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+```no-highlight
+kmpkg export --prefab [options] <package>...
+```
+
+导出为 Prefab 格式。
+
+格式特定选项：
+
+- [`--prefab-artifact-id`](#prefab-artifact-id)
+- [`--prefab-group-id`](#prefab-group-id)
+- [`--prefab-maven`](#prefab-maven)
+- [`--prefab-min-sdk`](#prefab-min-sdk)
+- [`--prefab-target-sdk`](#prefab-target-sdk)
+- [`--prefab-version`](#prefab-version)
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `<package>`
+
+这是将包含在 SDK 中的顶级生成包的列表。 这些包的所有依赖项也将包含在内，以确保生成的 SDK 是独立的。
+
+### 包语法 {#package-syntax}
+
+```
+<port name>:<triplet>
+```
+
+不带三元组的包引用由[默认目标三元组](common-options.mdx#triplet)自动限定。 注意：在清单模式下使用 `<port name>:<triplet>` 时不允许 `kmpkg export` 参数。
+
+### `--x-all-installed` {#all-installed}
+
+:::warning
+本节介绍 kmpkg 的实验性功能，该功能可能随时更改或删除。
+:::
+
+导出所有已安装的包。 在清单模式下使用 `kmpkg export` 时，隐含此选项。
+
+
+### `--dry-run` {#dry-run}
+
+不要执行导出，只打印导出计划。
+
+### `--ifw-configuration-file-path=` {#ifw-configuration-file-path}
+
+指定安装程序配置的临时文件路径。
+
+
+### `--ifw-installer-file-path=` {#ifw-installer-file-path}
+
+指定导出的安装程序的文件路径。
+
+### `--ifw-packages-directory-path=` {#ifw-packages-directory-path}
+
+指定重新打包包的临时目录路径。
+
+
+### `--ifw-repository-directory-path=` {#ifw-repository-directory-path}
+
+指定导出存储库的目录路径。
+
+
+### `--ifw-repository-url=` {#ifw-repository-url}
+
+指定在线安装程序的远程存储库 URL。
+
+
+### `--x-maintainer=` {#maintainer}
+
+指定导出的 Chocolatey 包的维护者。
+
+### `--output=` {#output}
+
+指定输出基础名称。
+
+每个 SDK 类型使用此基础名称来确定其特定的输出文件。 有关详细信息，请参阅上述 SDK 特定文档。
+
+默认为 `kmpkg-export-<date>-<time>`。 `export` 的脚本化使用应始终传递此标志以确保确定性输出。
+
+### `--output-dir=` {#output-dir}
+
+指定输出目录。
+
+所有顶级 SDK 文件都将在此目录中生成。 此选项在清单模式下是必需的。 在经典模式下，此项是可选的，默认为 [kmpkg 根目录](../users/config-environment.mdx#kmpkg_root)。
+
+
+### `--prefab-artifact-id=` {#prefab-artifact-id}
+
+项目 ID 是根据 Maven 规范的项目名称。
+
+
+### `--prefab-group-id=` {#prefab-group-id}
+
+GroupId 根据 Maven 规范唯一标识项目。
+
+
+### `--prefab-maven` {#prefab-maven}
+
+启用 Maven。
+
+
+### `--prefab-min-sdk=` {#prefab-min-sdk}
+
+Android 最低支持的 SDK 版本。
+
+
+### `--prefab-target-sdk=` {#prefab-target-sdk}
+
+Android 目标支持的 sdk 版本。
+
+
+### `--prefab-version=` {#prefab-version}
+
+版本是根据 Maven 规范的项目版本。
+
+
+### `--x-version-suffix=` {#version-suffix}
+
+指定要为导出的 Chocolatey 包添加的版本后缀。
+
+[cmake]: ../users/buildsystems/cmake-integration.mdx
+[msbuild]: ../users/buildsystems/msbuild-integration.mdx
+[Standard Integration Files]: #standard-integration
+[installation]: ../reference/installation-tree-layout.mdx

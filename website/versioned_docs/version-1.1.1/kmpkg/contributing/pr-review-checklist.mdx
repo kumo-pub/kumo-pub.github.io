@@ -1,0 +1,126 @@
+---
+date: 01/10/2024
+---
+# kmpkg PR审查
+
+使用清单准备 kmpkg 拉取请求以供审核。
+
+## 概述
+
+本文档提供了带批注清单，kmpkg 团队成员使用该清单对传入拉取请求应用“已审查”标签。 如果拉取请求不符合上述任一点，我们可能会要求参与者进行必要的更改，然后才能合并变更集。
+
+如果你觉得此清单可以改进，请随意创建问题或拉取请求。 修改清单内容时，请递增修订号。
+
+## 清单
+
+可以通过复制附加到每个项目代码的链接地址来链接 GitHub 注释中的任何一个清单项。
+
+<details id="c000001">
+    <summary><a href="#c000001">c000001</a>：未使用已弃用的辅助函数</summary>
+
+    有关更多信息，请参阅我们的[维护者指南和政策](maintainer-guide.mdx#avoid-deprecated-helper-functions)。
+
+</details>
+
+<details id="c000002">
+    <summary><a href="#c000002">c000002</a>：“port-version”字段已更新</summary>
+
+    请参阅我们的[维护者指南和政策](maintainer-guide.mdx#versioning) 了解更多信息。
+
+</details>
+
+<details id="c000003">
+    <summary><a href="#c000003">c000003</a>：新端口包含用英语编写的“描述”字段</summary>
+
+    只有一个或几个句子长的描述是有帮助的。如果可能的话，请考虑使用“README.md”中的库的官方描述或类似的描述。自动翻译是可以接受的，我们很乐意为我们的贡献者清理英语翻译。
+
+    有关更多信息，请参阅我们的[清单文件文档](../reference/kmpkg-json.mdx#description)。
+
+</details>
+
+<details id="c000004">
+    <summary><a href="#c000004">c000004</a>：变更集中没有不必要的注释</summary>
+
+    有关更多信息，请参阅我们的[维护者指南和政策](maintainer-guide.mdx#avoid-excessive-comments-in-portfiles)。
+
+</details>
+
+<details id="c000005">
+    <summary><a href="#c000005">c000005</a>：下载的档案有版本（如果有）</summary>
+
+    为了确保存档内容不会更改，下载的存档最好具有关联的版本标签，该版本标签可以与端口的“版本”一起递增。
+
+</details>
+
+<details id="c000006">
+    <summary><a href="#c000006">c000006</a>：新端口通过 CI 检查库正式支持的三元组</summary>
+
+    为了确保 kmpkg 端口具有高质量，我们要求传入端口支持相关库的官方平台。
+
+</details>
+
+<details id="c000007">
+    <summary><a href="#c000007">c000007</a>：补丁仅修复特定于 kmpkg 的问题</summary>
+
+    如果可能，库源代码的补丁应上游到库的官方存储库。在库的存储库上打开拉取请求将有助于为每个人（而不仅仅是 kmpkg 用户）改进库。
+
+</details>
+
+<details id="c000008">
+    <summary><a href="#c000008">c000008</a>：新端口从官方源下载源代码（如果可用）</summary>
+
+    为了尊重库作者并保证代码安全，请让 ports 从官方来源下载源代码。如果原始源代码不可用并且社区对维护相关库有很大兴趣，我们可能会做出例外。
+
+</details>
+
+<details id="c000009">
+    <summary><a href="#c000009">c000009</a>：端口和端口功能命名正确</summary>
+
+    为了用户可访问性，我们希望端口和端口功能的名称直观并接近官方来源和其他包管理器中的对应项。如果您不确定端口或端口功能的命名，我们建议您检查repology.org、packages.ubuntu.com，或使用搜索引擎搜索其他信息。我们还可以帮助我们的贡献者完成此任务，因此，如果您不确定，请随时询问命名建议。
+
+</details>
+
+<details id="c000010">
+    <summary><a href="#c000010">c000010</a>：在适当的时候导出库目标</summary>
+
+    为了向用户提供无缝的构建系统集成，请务必导出并提供一种查找要在下游使用的库目标的方法。不打算导出的目标应标记为私有且不导出。
+
+</details>
+
+<details id="c000011">
+    <summary><a href="#c000011">c000011</a>：端口不使用修改用户系统的应用程序</summary>
+
+    端口应遵守 kmpkg 的合同，即不修改用户的系​​统，避免使用这样做的应用程序。这些应用程序的示例包括“sudo”、“apt”、“brew”或“pip”。请尽可能使用这些类型的程序的替代方案。
+
+</details>
+
+<details id="c000012">
+    <summary><a href="#c000012">c000012</a>：具有系统依赖性的端口在安装过程中包含一条信息消息</summary>
+
+    某些移植具有 kmpkg
+    中不存在的库和工具依赖项。对于这些缺失的依赖项，我们要求贡献者在端口的“portfile.cmake”顶部添加一条消息，说明缺失的依赖项以及如何获取它们。我们要求在完成任何主要工作之前显示该消息，以确保用户可以尽快“尽早退出”安装过程，以防缺少依赖项。
+
+    示例:
+
+    ```cmake
+    message(
+    "${PORT} currently requires the following libraries from the system package manager:
+    autoconf libtool
+    These can be installed on Ubuntu systems via sudo apt install autoconf libtool"
+    )
+    ```
+
+</details>
+
+<details id="c000013">
+
+    <summary><a href="#c000013">c000013</a>：新端口使用清单文件而不是 CONTROL 文件</summary>
+
+    许多现有的移植使用 CONTROL 文件语法；虽然这种语法将在未来一段时间内得到支持，
+    新端口不应使用这些。任何新添加的端口_必须_使用清单文件。
+
+    我们还建议，当对端口进行重大修改时，切换到清单文件；
+    然而，这不是必需的。您可能会发现“kmpkg format-manifest”很有用。
+
+
+</details>

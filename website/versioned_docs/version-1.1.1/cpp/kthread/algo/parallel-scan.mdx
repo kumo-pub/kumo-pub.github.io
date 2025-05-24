@@ -1,0 +1,127 @@
+
+# 并行扫描
+`Taskflow` 提供模板方法来构建任务以对一系列项目执行并行扫描。
+
+## 头文件
+
+```cpp
+#include <kthread/algorithm/scan.h>
+```
+## 什么是扫描操作？
+并行扫描任务执行输入范围的累积和（也称为前缀和或扫描），并将结果写入输出范围。输出
+范围的每个元素都包含使用给定二元运算符进行求和的所有先前元素的累计总和。
+
+import scan from '@site/static/img/kthread/scan.png';
+
+<img src={scan}/>
+
+## 创建并行包容性扫描任务
+
+`kthread::inclusive_scan(B first, E last, D d_first, BOP bop)` 生成一个包含扫描，这意味着输出范围的第 `N` 个元
+素是前 `N` 个输入元素的总和，因此第 N 个输入元素被包括在内。例如，以下代码对五个元素执行包含扫描：
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+std::vector<int> output(input.size())
+taskflow.inclusive_scan(
+  input.begin(), input.end(), output.begin(), std::plus<int>{}
+);
+executor.run(taskflow).wait();
+// output is {1, 3, 6, 10, 15}
+```
+输出范围可能与输入范围相同，其中扫描操作是就地的，结果写入输入范围。例如，以下代码对五个元素执行就地包容性扫描：
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+taskflow.inclusive_scan(
+  input.begin(), input.end(), input.begin(), std::plus<int>{}
+);
+executor.run(taskflow).wait();
+// input is {1, 3, 6, 10, 15}
+```
+与 `kthread::inclusive_scan(B first, E last, D d_first, BOP bop)` 类似，
+`kthread::inclusive_scan(B first, E last, D d_first, BOP bop, T init)` 执行包容性扫描，但带有额
+外的初始值 `init`。例如，以下代码对五个元素加上一个初始值执行包容性扫描：
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+std::vector<int> output(input.size());
+// performs inclusive scan with an initial value
+taskflow.inclusive_scan(
+  input.begin(), input.end(), output.begin(), std::plus<int>{}, -1
+);
+executor.run(taskflow).wait();
+// output is {0, 2, 5, 9, 14}
+```
+## 创建并行转换扫描任务
+
+您可以在运行包容性扫描之前使用 `kthread::transform_inclusive_scan(B first, E last, D d_first, BOP bop, UOP uop)` 和
+`kthread::transform_inclusive_scan(B first, E last, D d_first, BOP bop, UOP uop, T init)` 转换输入范围内的元素。例如，
+以下代码对五个转换后的元素执行包容性扫描：
+
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+std::vector<int> output(input.size());
+taskflow.transform_inclusive_scan(
+  input.begin(), input.end(), output.begin(), std::plus<int>{},
+  [] (int item) { return -item; }
+);
+executor.run(taskflow).wait();
+// output is {-1, -3, -6, -10, -15}
+```
+您还可以使用 `kthread::Taskflow::transform_inclusive_scan(B first, E last, D d_first, BOP bop, UOP uop, T init)`
+将转换包容性扫描与初始值关联起来。只有输入范围内的元素才会使用 `uop` 进行转换，即初始值 `init` 不参与 `uop`。
+
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+std::vector<int> output(input.size());
+taskflow.transform_inclusive_scan(
+  input.begin(), input.end(), output.begin(), std::plus<int>{},
+  [] (int item) { return -item; },
+  -1
+);
+executor.run(taskflow).wait();
+// output is {-2, -4, -7, -11, -16}
+```
+## 创建并行独占扫描任务
+
+`kthread::exclusive_scan(B first, E last, D d_first, T init, BOP bop)` 生成具有给定初始值的独占扫描。输出
+范围的第 `N` 个元素是前 `N-1` 个输入元素的总和，因此包括第 `N` 个输入元素。例如，以下代码对初始值为 `-1` 的
+五个元素执行独占扫描：
+
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+std::vector<int> output(input.size())
+taskflow.exclusive_scan(
+  input.begin(), input.end(), output.begin(), -1, std::plus<int>{}
+);
+executor.run(taskflow).wait();
+// output is {-1, 0, 2, 5, 9}
+```
+输出范围可能与输入范围相同，其中扫描操作是就地的，结果写入输入范围。例如，以下代码对五个元素执行就地独占扫描，初始值为 `-1`：
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+std::vector<int> output(input.size());
+taskflow.exclusive_scan(
+  input.begin(), input.end(), output.begin(), -1, std::plus<int>{}
+);
+executor.run(taskflow).wait();
+// output is {-1, 0, 2, 5, 9}
+```
+
+## 创建并行转换独占扫描任务
+
+您可以在运行独占扫描之前使用 `kthread::transform_exclusive_scan(B first, E last, D d_first, T init, BOP bop, UOP uop)`
+转换输入范围内的元素。例如，以下代码对五个转换后的元素执行独占扫描：
+
+```cpp
+std::vector<int> input = {1, 2, 3, 4, 5};
+std::vector<int> output(input.size());
+taskflow.transform_exclusive_scan(
+  input.begin(), input.end(), input.begin(), -1, std::plus<int>{},
+  [](int item) { return -item; }
+);
+executor.run(taskflow).wait();
+// output is {-1, -2, -4, -7, -11}
+```
+
+:::info
+更多信息请参见[算法索引](../algo.mdx)
+:::

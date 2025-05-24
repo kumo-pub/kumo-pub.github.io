@@ -1,0 +1,43 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_cmake_get_vars
+
+运行使用虚拟项目配置的 cmake 以提取某些 cmake 变量
+
+## 使用情况
+
+```cmake
+kmpkg_cmake_get_vars(<out-var>)
+```
+
+`kmpkg_cmake_get_vars(<out-var>)` 将 `<out-var>`  设置为生成的 CMake 文
+件的路径，将检测到的 `CMAKE_*` 变量重新导出为 `KMPKG_DETECTED_CMAKE_*`。
+
+`RELEASE` 和 `DEBUG` 的其他设置：
+
+- `KMPKG_COMBINED_CXX_FLAGS_<config>`
+- `KMPKG_COMBINED_C_FLAGS_<config>`
+- `KMPKG_COMBINED_SHARED_LINKER_FLAGS_<config>`
+- `KMPKG_COMBINED_STATIC_LINKER_FLAGS_<config>`
+- `KMPKG_COMBINED_EXE_LINKER_FLAGS_<config>`
+
+大多数用户应使用这些预先组合的标志，而不是尝试直接读取 `KMPKG_DETECTED_*` 标志。
+
+## 说明
+
+避免在端口文件中使用。
+
+对 `kmpkg_cmake_get_vars` 所有调用都将得到相同的输出文件；输出文件不会多次生成。
+
+### 基本用法
+
+```cmake
+kmpkg_cmake_get_vars(cmake_vars_file)
+include("${cmake_vars_file}")
+message(STATUS "detected CXX flags: ${KMPKG_DETECTED_CMAKE_CXX_FLAGS}")
+```
+
+## Source
+
+[ports/kmpkg-cmake-get-vars/kmpkg\_cmake\_get\_vars.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-cmake-get-vars/kmpkg_cmake_get_vars.cmake)

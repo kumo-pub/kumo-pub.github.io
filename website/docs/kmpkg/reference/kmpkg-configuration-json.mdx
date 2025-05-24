@@ -1,0 +1,178 @@
+---
+date: 01/10/2024
+---
+# kmpkg-configuration.json 参考
+
+kmpkg-configuration.json 文件格式的参考文档
+
+`kmpkg-configuration.json` 文件构成项目的一部分
+[清单](../concepts/manifest-mode.mdx)，以及
+[`kmpkg.json`](kmpkg-json.mdx)。 `kmpkg-configuration.json` 文件中的所有字段
+仅在顶级项目中使用——`kmpkg-configuration.json`文件任何依赖项都被忽略。
+
+在[清单模式](../concepts/manifest-mode.mdx)中，`kmpkg-configuration.json`可以
+位于 [`kmpkg.json`](kmpkg-json.mdx) 旁边的单独文件中，或者可以嵌入
+在[`“kmpkg-configuration”字段`](kmpkg-json.mdx#kmpkg-configuration)中。
+
+在[经典模式](../concepts/classic-mode.mdx)中，kmpkg将使用中的`kmpkg-configuration.json`文件
+kmpkg 实例的 [root](../commands/common-options.mdx#kmpkg-root)。
+
+有关通过 kmpkg 使用注册表的概述，请参阅[使用注册表](../consume/git-registries.mdx)。
+
+最新的 JSON 架构可在 [https://gitee.com/kumo-pub/kmpkg-tool/raw/master/docs/kmpkg-configuration.schema.json](https://gitee.com/kumo-pub/kmpkg-tool/raw/master/docs/kmpkg-configuration.schema.json)。支持 JSON 架构的 IDE（例如 Visual Studio 和 Visual Studio Code）可以使用此文件提供自动完成和语法检查。对于大多数 IDE，您应该将 `kmpkg-configuration.json` 中的 `"$schema"` 设置为此 URL。
+
+## 示例
+
+```json
+{
+  "$schema": "https://gitee.com/kumo-pub/kmpkg-tool/raw/master/docs/kmpkg-configuration.schema.json",
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://internal/mirror/of/gitee.com/kumo-pub/kmpkg",
+    "baseline": "eefee7408133f3a0fef711ef9c6a3677b7e06fd7"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://gitee.com/kumo-pub/kmpkg-docs",
+      "reference": "kmpkg-registry",
+      "baseline": "768f6a3ad9f9b6c4c2ff390137690cf26e3c3453",
+      "packages": [ "beicode", "beison" ]
+    }
+  ],
+  "overlay-ports": [
+    "./team-ports",
+    "./custom-ports"
+   ],
+  "overlay-triplets": [ "./my-triplets" ]
+}
+```
+
+This example adds a private registry, , as the source for the libraries `beicode` and `beison`. All other ports are found from an internal mirror of the Curated Catalog hosted at `https://internal/mirror/of/github.com/Microsoft/kmpkg`.
+
+The example also configures custom overlays for ports and triplets that are present in the source code repository.
+此示例添加了一个私有注册表 `https://gitee.com/kumo-pub/kmpkg-docs/tree/kmpkg-registry`, 作为库“beicode”和“beison”的源。
+所有其他端口都可以从托管在`https://internal/mirror/of/gitee.com/kumo-pub/kmpkg` 的策划目录的内部镜像中找到。
+
+该示例还为源代码存储库中存在的端口和三元组配置自定义覆盖。
+
+## 顶级字段
+
+| 名称 | 类型   |  描述 |
+|------|--------|-------------|
+| [default-registry](#default-registry) | [注册表][] or null | 供没有特定注册表的所有端口使用的注册表 |
+| [overlay-ports](#overlay-ports) | string[] | 要用作覆盖端口的路径列表 |
+| [overlay-triplets](#overlay-triplets) | string[] | 要用作覆盖三联密码的路径列表 |
+| [registries](#registries) | [注册表][][] | 供端口子网使用的其他注册表 |
+
+### `"default-registry"` {#default-registry}
+
+用于所有端口的注册表，无需更具体的注册表。 [注册表][] 或 null。选修的。
+
+与任何 [`"packages"`](#registry-packages) 模式不匹配的端口将解析为默认注册表。如果默认注册表指定为`null`，
+则不匹配的端口将无法解析。如果省略默认注册表，它将使用 [`"builtin-baseline"`](kmpkg-json.mdx#builtin-baseline) 的值作为 [`"baseline] 隐式设置为 [内置注册表][] “`]（#registry-baseline）。
+
+### `"registries"` {#registries}
+
+用于特定端口的附加注册表。 [注册表](#registry) 数组。选修的。
+
+### `"overlay-ports"` {#overlay-ports}
+
+端口覆盖路径列表。字符串数组。选修的。
+
+数组中的每个路径必须指向：
+
+- 包含`kmpkg.json`和`portfile.cmake`的端口目录
+- 包含以端口命名的端口目录的目录（`zlib`的`kmpkg.json`必须位于`zlib/kmpkg.json`）。
+
+相对路径是相对于`kmpkg-configuration.json`文件解析的。可以使用绝对路径，但不鼓励使用。
+
+### `"overlay-triplets"` {#overlay-triplets}
+
+三元组覆盖路径的列表。字符串数组。选修的。
+
+数组中的每个路径必须指向三元组文件的目录（[请参阅三元组文档](../users/triplets.mdx)）。相对路径是相对于`kmpkg-configuration.json`文件解析的。可以使用绝对路径，但不鼓励使用。
+
+## 注册表字段 {#registry}
+
+| 名称 | 必需 | 类型   | 描述 |
+|------|----------|--------|-------------|
+| [baseline](#registry-baseline) | Git and Builtin Registries | string | 此注册表中所有端口的最小版本约束 |
+| [kind](#registry-kind) | Yes | string | 正在使用的注册表类型 |
+| [packages](#registry-packages) | Yes, if not default | string | 要来自此注册表的端口列表 |
+| [path](#registry-path) | Filesystem Registry | string | Filesystem 注册表的路径 |
+| [reference](#registry-reference) | No | string | 供可用版本使用的 Git 参考 |
+| [repository](#registry-repository) | Git Registry | string | Git 注册表的 URI |
+
+[注册表]: #registry
+
+### [注册表][]: `"kind"` {#registry-kind}
+
+正在使用的注册表类型。一个字符串。必需的。
+
+| `"kind"` Value | Registry Type |
+| ------|---|
+| `"filesystem"` | [Filesystem Registry][] |
+| `"git"` | [Git Registry][] |
+| `"builtin"` | [Builtin Registry][] |
+
+### [注册表][]: `"baseline"` {#registry-baseline}
+
+从此注册表中使用的最低版本的注册表特定标识符。一个字符串。必需的。
+
+对于 [Git 注册表][Git Registry] 和 [Builtin Registry][]，这是注册表存储库中包含 `versions/baseline.json` 的 40 个字符的 git commit sha。
+
+对于[文件系统注册表][Filesystem Registry]，它可以是注册表在其`baseline.json`上定义的任何有效的 json 属性名称。如果文件系统注册表未声明基线，则使用的值是`默认`。
+
+### [注册表][]: `"reference"` {#registry-reference}
+
+用于列出 [Git Registry][] 的可用版本的 Git 参考。一个字符串。选修的。
+
+如果未指定，则默认为`HEAD`。该字段可以是主题分支，用于访问尚未完全发布的版本。
+
+### [注册表][]: `"repository"` {#registry-repository}
+
+[Git Registry][] 的 URI。一个字符串。 Git 注册表必需的。
+
+该字符串可以是 Git 理解的任何 URI 格式：
+
+- `"https://gitee.com/kumo-pub/kmpkg"`
+- `"git@github.com:microsoft/kmpkg"`
+- `"/dev/kmpkg-registry"`
+
+相对路径具有未指定的行为，这些行为将在 kmpkg 的未来版本中发生变化。
+
+### [注册表][]: `"path"` {#registry-path}
+
+[Filesystem Registry][] 的路径。一个字符串。文件系统注册表所需。
+
+相对路径是相对于`kmpkg-configuration.json`解析的。
+
+### [注册表][]: `"packages"` {#registry-packages}
+
+The list of port patterns assigned to this registry. An array of strings. Required for all registries outside [`"default-registry"`](#default-registry).
+
+分配给此注册表的端口模式列表。字符串数组。 [`"default-registry"`](#default-registry) 之外的所有注册表都是必需的。
+
+每个条目必须是：
+* 包的名称
+* 包名称前缀，后接 `*`（工具版本 2022-12-14 中新增）
+
+包模式只能包含小写字母、数字，以及 `-` 可选的尾随 `*`。
+**有效模式的示例：**
+* `*`: 匹配所有端口名称
+* `boost`: 仅匹配端口 `boost`
+* `b*`: 匹配以字母开头的端口 `b`
+* `boost-*`: 匹配以前缀开头的端口  `boost-`
+
+**无效模式的示例：**
+* `*a` (`*` 必须是前缀中的最后一个字符)
+* `a**` (只允许一个 `*`)
+* `a+` (`+` 不是有效的模式字符)
+* `a?` (`?` 不是有效的模式字符)
+
+请参阅使用[注册表文档](../concepts/package-name-resolution.mdx)，详细了解如何解析端口名称。
+
+[Git Registry]: ../maintainers/registries.mdx#git-registries
+[Filesystem Registry]: ../maintainers/registries.mdx#filesystem-registries
+[Builtin Registry]: ../maintainers/registries.mdx#builtin-registries

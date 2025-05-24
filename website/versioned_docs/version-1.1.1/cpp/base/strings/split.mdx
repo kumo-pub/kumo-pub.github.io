@@ -1,0 +1,164 @@
+
+# 字符串分割
+
+## `turbo::str_split()` 分割字符串
+
+`turbo::str_split()` 函数提供了一种将字符串拆分为子字符串的简单方法。
+`str_split()` 接受一个要分割的输入字符串、一个用于分割字符串的分隔符（例如逗号 `,`），
+以及（可选）一个谓词，用于充当过滤器来判断分割元素是否包含在结果集。 `str_split()` 还将返回的集合调整为调用者指定的类型。
+
+
+示例：
+
+```cpp
+// Splits the given string on commas. Returns the results in a
+// vector of strings. (Data is copied once.)
+std::vector<std::string> v = turbo::str_split("a,b,c", ',');  // Can also use ","
+// v[0] == "a", v[1] == "b", v[2] == "c"
+
+// Splits the string as in the previous example, except that the results
+// are returned as `std::string_view` objects, avoiding copies. Note that
+// because we are storing the results within `std::string_view` objects, we
+// have to ensure that the input string outlives any results.
+std::vector<std::string_view> v = turbo::str_split("a,b,c", ',');
+// v[0] == "a", v[1] == "b", v[2] == "c"
+```
+
+`str_split()` 使用传递的 *Delimiter* 对象分割字符串。（请参阅下面的 [Delimiters](#delimiters)。）但是，在许多情况下，
+您可以简单地传递字符串文字作为分隔符（它将隐式转换为 `turbo::ByString` 分隔符）。
+
+示例：
+
+```cpp
+// By default, empty strings are *included* in the output. See the
+// `turbo::SkipEmpty()` predicate below to omit them{#stringSplitting}.
+std::vector<std::string> v = turbo::str_split("a,b,,c", ',');
+// v[0] == "a", v[1] == "b", v[2] == "", v[3] = "c"
+
+// You can also split an empty string
+v = turbo::str_split("", ',');
+// v[0] = ""
+
+// The delimiter need not be a single character
+std::vector<std::string> v = turbo::str_split("aCOMMAbCOMMAc", "COMMA");
+// v[0] == "a", v[1] == "b", v[2] == "c"
+
+// You can also use the empty string as the delimiter, which will split
+// a string into its constituent characters.
+std::vector<std::string> v = turbo::str_split("abcd", "");
+// v[0] == "a", v[1] == "b", v[2] == "c", v[3] = "d"
+```
+
+### 适应返回类型
+
+`str_split()` API 更有用的功能之一是它能够将其结果集调整为所需的返回类型。 `str_split()`
+返回的集合可能包含 `std::string`、`std::string_view` 或任何可以从 `std::string_view`
+显式创建的对象。此模式适用于所有标准 STL 容器，包括 `std::vector`、`std::list`、`std::deque`、`std::set`、`std::multiset`、
+`std::map` ，和`std::multimap`，甚至`std::pair`，它实际上不是一个容器。
+
+示例：
+
+```cpp
+// Stores results in a std::set<std::string>, which also performs de-duplication
+// and orders the elements in ascending order.
+std::set<std::string> s = turbo::str_split("b,a,c,a,b", ',');
+// s[0] == "a", s[1] == "b", s[2] == "c"
+
+// Stores results in a map. The map implementation assumes that the input
+// is provided as a series of key/value pairs. For example, the 0th element
+// resulting from the split will be stored as a key to the 1st element. If
+// an odd number of elements are resolved, the last element is paired with
+// a default-constructed value (e.g., empty string).
+std::map<std::string, std::string> m = turbo::str_split("a,b,c", ',');
+// m["a"] == "b", m["c"] == "" // last component value equals ""
+
+// Stores first two split strings as the members in a std::pair. Any split
+// strings beyond the first two are omitted because std::pair can hold only two
+// elements.
+std::pair<std::string, std::string> p = turbo::str_split("a,b,c", ',');
+// p.first = "a", p.second = "b" ; "c" is omitted
+```
+
+### 分隔符 {#delimiters}
+
+`str_split()` API 提供了许多“分隔符”来提供特殊的分隔符行为。 Delimiter 实现包含一个`Find()`函数，
+该函数知道如何在给定的`std::string_view`中查找其自身的第一次出现。分隔符概念的模型表示特定类型的分隔符，
+例如单个字符、子字符串，甚至正则表达式。
+
+以下分隔符抽象作为“str_split()”的一部分提供应用程序编程接口：
+*   `turbo::ByString()` (default for `std::string` arguments)
+*   `turbo::ByChar()` (default for a `char` argument)
+*   `turbo::ByAnyChar()` (for mixing delimiters)
+*   `turbo::ByLength()` (for applying a delimiter a set number of times)
+*   `turbo::MaxSplits()` (for splitting a specific number of times)
+
+示例：
+
+```cpp
+// Because a `string` literal is converted to an `turbo::ByString`, the following
+// two splits are equivalent.
+std::vector<std::string> v = turbo::str_split("a,b,c", ",");
+std::vector<std::string> v = turbo::str_split("a,b,c", turbo::ByString(","));
+// v[0] == "a", v[1] == "b", v[2] == "c"
+
+// Because a `char` literal is converted to an `turbo::ByChar`, the following two
+// splits are equivalent.
+std::vector<std::string> v = turbo::str_split("a,b,c", ',');
+// v[0] == "a", v[1] == "b", v[2] == "c"
+
+std::vector<std::string> v = turbo::str_split("a,b,c", turbo::ByChar(','));
+// v[0] == "a", v[1] == "b", v[2] == "c"
+
+// Splits on any of the given characters ("," or ";")
+vector<std::string> v = turbo::str_split("a,b;c", turbo::ByAnyChar(",;"));
+// v[0] == "a", v[1] == "b", v[2] == "c"
+
+// Uses the `turbo::MaxSplits` delimiter to limit the number of matches a
+// delimiter can have. In this case, the delimiter of a literal comma is limited
+// to matching at most one time. The last element in the returned collection
+// will contain all unsplit pieces, which may contain instances of the
+// delimiter.
+std::vector<std::string> v = turbo::str_split("a,b,c", turbo::MaxSplits(',', 1));
+// v[0] == "a", v[1] == "b,c"
+
+// Splits into equal-length substrings.
+std::vector<std::string> v = turbo::str_split("12345", turbo::ByLength(2));
+// v[0] == "12", v[1] == "34", v[2] == "5"
+```
+
+### 过滤条件(谓词)
+
+谓词可以通过确定结果元素是否包含在结果集中来过滤`str_split()`操作的结果。过滤谓词可以作为*可选*第三个参数传递给`str_split()`函数。
+
+谓词必须是一元函数（或函数对象，例如 [lambda](https://en.cppreference.com/w/cpp/language/lambda)），它采用单个 `std::string_view` 参数并返回 bool指示是否应包含参数（`true`）或排除参数（`false`）。
+
+使用谓词很有用的一个例子是：过滤掉空子字符串。默认情况下，`str_split()`可以将空子字符串作为结果集中的单独元素返回，这类似于其他编程语言中 split 函数的工作方式。
+
+```cpp
+// Empty strings *are* included in the returned collection.
+std::vector<std::string> v = turbo::str_split(",a,,b,", ',');
+// v[0] == "", v[1] == "a", v[2] == "", v[3] = "b", v[4] = ""
+```
+
+只需将提供的`SkipEmpty()`谓词作为第三个参数传递给`str_split()`函数，即可从结果集中过滤掉这些空字符串。 `SkipEmpty()` 不会将包含所有空格的字符串视为空。对于该行为，请使用`SkipWhitespace()`谓词。
+
+示例：
+
+```cpp
+// Uses turbo::SkipEmpty() to omit empty strings. Strings containing whitespace
+// are not empty and are therefore not skipped.
+std::vector<std::string> v = turbo::str_split(",a, ,b,", ',', turbo::SkipEmpty());
+// v[0] == "a", v[1] == " ", v[2] == "b"
+
+// Uses turbo::SkipWhitespace() to skip all strings that are either empty or
+// contain only whitespace.
+std::vector<std::string> v = turbo::str_split(",a, ,b,", ',',
+                                            turbo::SkipWhitespace());
+// v[0] == "a", v[1] == "b"
+
+// Passes a lambda as the predicate to keep only the lines that don't start
+// with a `#`.
+std::vector<std::string> non_comment_lines = turbo::str_split(
+    file_content, '\n',
+    [](std::string_view line) { return !turbo::StartsWith(line, "#"); });
+```

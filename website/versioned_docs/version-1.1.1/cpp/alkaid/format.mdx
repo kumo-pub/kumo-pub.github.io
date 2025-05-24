@@ -1,0 +1,1275 @@
+
+
+# 列存格式
+
+**Alkaid 列格式** 包括与语言无关的内存数据结构规范、元数据序列化以及用于序列化和通用数据传输的协议。
+
+本文档旨在提供足够的细节，以便在没有现有实现的情况下创建新的列格式实现。我们利用 Google 的 `Flatbuffers`_ 项目进行元数据
+序列化，因此在阅读本文档时有必要参考该项目的 `Flatbuffers 协议定义文件`_。
+
+列式格式具有一些关键特性：
+
+* 顺序访问（扫描）的数据邻接
+* O(1)（常量时间）随机访问
+* SIMD 和矢量化友好
+* 无需“指针交换”即可重定位，从而实现共享内存中的真正零拷贝访问
+
+Alkaid 列式格式提供分析性能和数据局部性保证，但代价是相对更昂贵的变异操作。本文档仅涉及内存中的数据表示
+和序列化细节；诸如协调数据结构变异之类的问题留给实现来处理。
+
+## 术语
+
+由于不同的项目使用不同的词语来描述各种概念，这里有一个小词汇表来帮助消除歧义。
+
+* **数组**或**向量**：具有已知长度的值序列，所有值都具有相同的类型。这些术语在不同的 Alkaid 实现中可互换使用，但我们在本文档中使用“数组”。
+* **槽**：某个特定数据类型数组中的单个逻辑值
+* **缓冲区**或**连续内存区域**：具有给定长度的连续虚拟地址空间。任何字节都可以通过小于该区域长度的单个指针偏移量到达。
+* **物理布局**：数组的底层内存布局，不考虑任何值语义。例如，32 位有符号整数数组和 32 位浮点数组具有相同的布局。
+* **数据类型**：一种面向应用程序的语义值类型，使用某种物理布局实现。例如，Decimal128 值以 16 个字节存储在固定大小的二进制布局中。时间戳可以存储为 64 位固定大小的布局。
+* **原始类型**：没有子类型的数据类型。这包括固定位宽、可变大小二进制和空类型等类型。
+* **嵌套类型**：一种数据类型，其完整结构取决于一个或多个其他子类型。两个完全指定的嵌套类型当且仅当它们的子类型相等时才相等。例如，``List<U>`` 与 ``List<V>`` 不同，当且仅当 U 和 V 是不同的类型。
+* **父**和**子数组**：用于表达嵌套类型结构中物理值数组之间关系的名称。例如，``List<T>`` 类型的父数组有一个 T 类型数组作为其子数组（有关列表的更多信息，请参见下文）。 * **参数类型**：需要附加参
+数才能完全确定其语义的类型。例如，所有嵌套类型都是构造参数化的。时间戳也是参数化的，因为它需要单位（例如微秒）和时区。
+
+## 数据类型 {#data-types}
+
+文件 `Schema.fbs`_ 定义了 Alkaid 列格式支持的内置数据类型。每种数据类型都使用定义良好的物理布局。
+
+`Schema.fbs`_ 是标准 Alkaid 数据类型描述的权威来源。但是，为了方便起见，我们还提供了下表：
+
+
+| Type              | Type Parameters *(1)*                                       | Physical Memory Layout                                |
+|-------------------|-------------------------------------------------------------|-------------------------------------------------------|
+| Null              |                                                             | Null                                                  |
+| Boolean           |                                                             | Fixed-size Primitive                                  |
+| Int               | * bit width <br/>* signedness                               | *" (same as above)*                                   |
+| Floating Point    | * precision                                                 | *"*                                                   |
+| Decimal           | * bit width<br/>* scale<br/>* precision                     | *"*                                                   |
+| Date              | * unit                                                      | *"*                                                   |
+| Time              | * bit width *(2)* <br/> * unit                              | *"*                                                   |
+| Timestamp         | * unit    <br/>* timezone                                   | *"*                                                   |
+| Interval          | * unit                                                      | *"*                                                   |
+| Duration          | * unit                                                      | *"*                                                   |
+| Fixed-Size Binary | * byte width                                                | Fixed-size Binary                                     |
+| Binary            |                                                             | Variable-size Binary with 32-bit offsets              |
+| Utf8              |                                                             | *"*                                                   |
+| Large Binary      |                                                             | Variable-size Binary with 64-bit offsets              |
+| Large Utf8        |                                                             | *"*                                                   |
+| Binary View       |                                                             | Variable-size Binary View                             |
+| Utf8 View         |                                                             | *"*                                                   |
+| Fixed-Size List   | * *value type* <br/>* list size                             | Fixed-size List                                       |
+| List              | * *value type*                                              | Variable-size List with 32-bit offsets                |
+| Large List        | * *value type*                                              | Variable-size List with 64-bit offsets                |
+| List View         | * *value type*                                              | Variable-size List View with 32-bit offsets and sizes |
+| Large List View   | * *value type*                                              | Variable-size List View with 64-bit offsets and sizes |
+| Struct            | * *children*                                                | Struct                                                |
+| Map               | * *children*  <br/>* keys sortedness                        | Variable-size List of Structs                         |
+| Union             | * *children*<br/>* mode <br/>    * type ids                 | Dense or Sparse Union *(3)*                           |
+| Dictionary        | * *index type* *(4)*<br/> * *value type* <br/>* orderedness | Dictionary Encoded                                    |
+| Run-End Encoded   | * *run end type* *(5)* <br/>* *value type*                  | Run-End Encoded                                       |
+
+* \(1) 以 *斜体* 列出的类型参数表示数据类型的子类型。
+
+* \(2) Time 类型的 *位宽* 参数在技术上是多余的，因为
+每个 *单位* 都要求单个位宽。
+
+* \(3) Union 类型使用稀疏布局还是密集布局由其
+*模式* 参数表示。
+
+* \(4) Dictionary 类型的 *索引类型* 只能是整数类型，
+最好是有符号的，宽度为 8 到 64 位。
+
+* \(5) Run-End 编码类型的 *运行结束类型* 只能是宽度为 16 到 64 位的有符号整数类型。
+
+:::info
+有时，术语“逻辑类型”用于表示 Alkaid 数据类型
+并将它们与各自的物理布局区分开来。但是，
+与其他类型系统（例如 [`Apache Parquet`](https://parquet.apache.org/)不同，
+Alkaid 类型系统没有单独的物理类型和
+逻辑类型概念。
+
+Alkaid 类型系统单独提供
+[扩展类型](#format_metadata_extension_types)，允许
+使用更丰富的面向应用程序的语义注释标准 Alkaid 数据类型
+（例如，定义基于标准字符串数据类型的“JSON”类型）。
+:::
+
+## 物理内存布局 {#format_layout}
+
+数组由几部分元数据和数据定义：
+
+* 数据类型。
+* 缓冲区序列。
+* 长度为 64 位有符号整数。实现允许将长度限制为 32 位，有关详细信息，请参见下文。
+* 空计数为 64 位有符号整数。
+* 可选的 **字典**，用于字典编码数组。
+
+嵌套数组还具有一组或多组这些项目的序列，称为 **子数组**。
+
+每种数据类型都有明确定义的物理布局。以下是 Alkaid 定义的不同物理布局：
+
+* **原始（固定大小）**：一系列值，每个值都具有相同的字节或位宽度
+* **可变大小二进制**：一系列值，每个值都具有可变的字节长度。使用 32 位和 64 位长度编码支持此布局的两种变体。
+* **可变大小二进制的视图**：一系列值，每个值都具有可变的字节长度。与可变大小二进制相比，此布局的值分布在潜在的多个缓冲区中，而不是密集且连续地打包在单个缓冲区中。
+* **固定大小列表**：一种嵌套布局，其中每个值都具有相同数量的从子数据类型中获取的元素。
+* **可变大小列表**：一种嵌套布局，其中每个值都是从子数据类型中获取的可变长度值序列。使用 32 位和 64 位长度编码支持此布局的两种变体。
+* **可变大小列表视图**：嵌套布局，其中每个值都是从子数据类型中获取的可变长度值序列。此布局与**可变大小列表**不同，因为它有一个额外的缓冲区，其中包含每个列表值的大小。这消除了对偏移量缓冲区的限制 - 它不需要按顺序排列。
+* **结构**：嵌套布局，由一组命名的子**字段**组成，每个子**字段**的长度相同，但类型可能不同。
+* **稀疏**和**密集联合**：嵌套布局表示值序列，每个值都可以从子数组类型集合中选择类型。
+* **字典编码**：由整数序列（任何位宽）组成的布局，表示字典中的索引，可以是任何类型的。
+* **运行结束编码 (REE)**：由两个子数组组成的嵌套布局，
+一个表示值，一个表示相应值的运行结束的逻辑索引。
+* **Null**：所有空值的序列。
+
+Alkaid 列式内存布局仅适用于 *数据*，而不适用于
+*元数据*。实现可以自由地以任何方便的形式在内存中表示元数据。我们使用
+`Flatbuffers`_ 以独立于实现的方式处理元数据
+**序列化**，详情如下。
+
+### 缓冲区对齐和填充
+
+建议实现在对齐的地址（8 或 64 字节的倍数）上分配内存，并填充（过度分配）到 8 或 64 字
+节的倍数的长度。在序列化 Alkaid 数据以进行进程间通信时，会强制执行这些对齐和填充要求。如
+果可能，我们建议您优先使用 64 字节对齐和填充。除非另有说明，否则填充的字节不需要具有特定值。
+
+对齐要求遵循优化内存访问的最佳实践：
+* 保证通过对齐访问检索数字数组中的元素。
+* 在某些架构上，对齐可以帮助限制部分使用的缓存行。
+
+64 字节对齐的建议来自“英特尔
+性能指南”_，该指南建议对齐内存以匹配 SIMD
+寄存器宽度。选择特定的填充长度是因为它与广泛部署的 x86 架构（英特尔 AVX-512）上可用的最大 SIMD 指令寄存器相匹配。
+
+建议的 64 字节填充允许在循环中一致地使用 `SIMD`_
+指令，而无需额外的条件检查。这应该允许更简单、更高效和 CPU
+缓存友好的代码。换句话说，我们可以将整个 64 字节缓冲区加载到 512 位宽的 SIMD 寄存器中，并在打包到 64 字节
+缓冲区中的所有列值上获得数据级并行性。保证填充还可以允许某些编译器直接生成更优化的代码（例如，可以安全地使用英
+特尔的``-qopt-assume-safe-padding``）。
+
+### 数组长度
+
+数组长度在 Alkaid 元数据中表示为 64 位有符号整数。即使 Alkaid 的实现仅支持最大 32 位有符号整数的长度，也被
+视为有效。如果在多语言环境中使用 Alkaid，我们建议将长度限制为 2 :sup:`31` - 1 个元素或更少。可以使用多
+个数组块来表示较大的数据集。
+
+### 空值计数
+
+空值槽的数量是物理数组的一个属性，并被视为数据结构的一部分。空值计数在 Alkaid 元数据中表示为 64 位有符号整数，因为它可能与数组长度一样大。
+
+### 有效性位图
+
+数组中的任何值在语义上都可能为空，无论是原始类型还是嵌套类型。
+
+所有数组类型（联合类型除外，稍后将详细介绍）都使用专用的内存缓冲区（称为有效性（或“空”）位图）来编码每个值槽的空值或非空值。有效性位图必须足够大，以便每个数组槽至少有 1 位。
+
+任何数组槽是否有效（非空）都编码在此位图的相应位中。索引“j”的 1（设置位）表示该值不为空，而 0（未设置位）表示它为空。位图将在分配时初始化为全部未设置（包括填充）：
+
+```text
+    is_valid[j] -> bitmap[j / 8] & (1 << (j % 8))
+```
+我们使用“最低有效位 (LSB) 编号”_（也称为
+位字节序）。这意味着在一组 8 位中，我们从右到左读取：
+
+```text
+    values = [0, 1, null, 2, null, 3]
+
+    bitmap
+    j mod 8   7  6  5  4  3  2  1  0
+              0  0  1  0  1  0  1  1
+```
+
+具有 0 空计数的数组可以选择不分配有效性位图；如何表示取决于实现（例如，C++ 实现可以使用 NULL 指针
+表示这种“缺失”有效性位图）。实现可以选择始终分配有效性位图，以方便使用。Alkaid 数组的使用者应该准备好处理这两种可能性。
+
+嵌套类型数组（除上述联合类型外）具有自己的
+顶层有效性位图和空值计数，而不管其子数组的空值计数和
+有效位如何。
+
+为空的数组槽不需要具有特定值；
+任何“屏蔽”内存都可以具有任何值，不需要归零，尽管
+实现经常选择将内存归零以表示空值。
+
+### 固定尺寸原始布局
+
+原始值数组表示一个值数组，每个值都具有相同的物理槽宽度，通常以字节为单位，但规范还提供了位打包类型（例如以位编码的布尔值）。
+
+在内部，数组包含一个连续的内存缓冲区，其总大小至少等于槽宽度乘以数组长度。对于位打包类型，大小将四舍五入为最接近的字节。
+
+相关的有效性位图是连续分配的（如上所述），但不需要与值缓冲区在内存中相邻。
+
+**示例布局：Int32 数组**
+
+例如 int32 的原始数组：
+
+```text
+    [1, null, 2, 4, 8]
+```
+看起来像：
+
+```text
+    * Length: 5, Null count: 1
+    * Validity bitmap buffer:
+
+      | Byte 0 (validity bitmap) | Bytes 1-63            |
+      |--------------------------|-----------------------|
+      | 00011101                 | 0 (padding)           |
+
+    * Value Buffer:
+
+      | Bytes 0-3   | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-63           |
+      |-------------|-------------|-------------|-------------|-------------|-----------------------|
+      | 1           | unspecified | 2           | 4           | 8           | unspecified (padding) |
+```
+
+**示例布局：非空 int32 数组**
+
+``[1, 2, 3, 4, 8]`` 有两种可能的布局：
+
+```text
+    * Length: 5, Null count: 0
+    * Validity bitmap buffer:
+
+      | Byte 0 (validity bitmap) | Bytes 1-63            |
+      |--------------------------|-----------------------|
+      | 00011111                 | 0 (padding)           |
+
+    * Value Buffer:
+
+      | Bytes 0-3   | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-63           |
+      |-------------|-------------|-------------|-------------|-------------|-----------------------|
+      | 1           | 2           | 3           | 4           | 8           | unspecified (padding) |
+```
+
+或者省略位图：
+
+```text
+    * Length 5, Null count: 0
+    * Validity bitmap buffer: Not required
+    * Value Buffer:
+
+      | Bytes 0-3   | Bytes 4-7   | Bytes 8-11  | bytes 12-15 | bytes 16-19 | Bytes 20-63           |
+      |-------------|-------------|-------------|-------------|-------------|-----------------------|
+      | 1           | 2           | 3           | 4           | 8           | unspecified (padding) |
+```
+
+### 可变大小的二进制布局
+
+此布局中的每个值由 0 个或更多字节组成。虽然原始数组只有一个值缓冲区，但可变大小的二进制文件有一个**偏移量**缓冲区和**数据**缓冲区。
+
+偏移量缓冲区包含“长度 + 1”有符号整数（32 位或 64 位，取决于数据类型），它们对数据缓冲区中每个槽的起始位置进行编码。每个槽中值的长度是使用该槽
+索引处的偏移量与后续偏移量之间的差值计算的。例如，槽 j 的位置和长度计算如下：
+
+```text
+    slot_position = offsets[j]
+    slot_length = offsets[j + 1] - offsets[j]  // (for 0 <= j < length)
+```
+需要注意的是，空值可能具有正的槽长度。
+也就是说，空值可能占用数据缓冲区中的**非空**内存空间。当这种情况发生时，相应内存空间的内容是未定义的。
+
+偏移量必须单调递增，即`0 <= j < length` 时`offsets[j+1] >= offsets[j]`，即使对于空槽也是如此。此属性可确保所有值的位置有效且定义明确。
+
+通常，偏移量数组中的第一个槽为 0，最后一个槽为值数组的长度。序列化此布局时，我们建议将偏移量标准化为从 0 开始。
+
+**示例布局：“VarBinary”**
+
+``['joe', null, null, 'mark']``
+
+将表示如下：
+
+```text
+  * Length: 4, Null count: 2
+  * Validity bitmap buffer:
+
+    | Byte 0 (validity bitmap) | Bytes 1-63            |
+    |--------------------------|-----------------------|
+    | 00001001                 | 0 (padding)           |
+
+  * Offsets buffer:
+
+    | Bytes 0-19     | Bytes 20-63           |
+    |----------------|-----------------------|
+    | 0, 3, 3, 3, 7  | unspecified (padding) |
+
+   * Value buffer:
+
+    | Bytes 0-6      | Bytes 7-63            |
+    |----------------|-----------------------|
+    | joemark        | unspecified (padding) |
+```
+
+### 可变大小的二进制视图布局
+
+此布局中的每个值由 0 个或更多字节组成。这些字节的位置使用 **views** 缓冲区指示，该缓冲区可能指向多个 **data** 缓冲区之一，也可能包含内联字符。
+
+views 缓冲区包含具有以下布局的 ``length`` 视图结构：
+
+```text
+    * Short strings, length <= 12
+      | Bytes 0-3  | Bytes 4-15                            |
+      |------------|---------------------------------------|
+      | length     | data (padded with 0)                  |
+
+    * Long strings, length > 12
+      | Bytes 0-3  | Bytes 4-7  | Bytes 8-11 | Bytes 12-15 |
+      |------------|------------|------------|-------------|
+      | length     | prefix     | buf. index | offset      |
+```
+
+在长字符串和短字符串的情况下，前四个字节对字符串的长度进行编码，并可用于确定应如何解释视图的其余部分。
+
+在短字符串的情况下，字符串的字节是内联的 - 存储在视图本身内部，长度后面的十二个字节中。字符串本身之后的任何剩余字节都用“0”填充。
+
+在长字符串的情况下，缓冲区索引指示哪个数据缓冲区存储数据字节，偏移量指示数据字节在该缓冲区中的开始位置。缓冲区索引 0 指的是第
+一个数据缓冲区，即有效性缓冲区和视图缓冲区**之后**的第一个缓冲区。
+半开范围“[偏移量，偏移量 + 长度)”必须完全包含在指示的缓冲区内。字符串前四个字节的副本以内联方式存储在前缀中，长度之后。此前缀
+为字符串比较提供了一条有利的快速路径，这些比较通常在前四个字节内确定。
+
+所有整数（长度、缓冲区索引和偏移量）都是有符号的。
+
+此布局改编自慕尼黑工业大学的“UmbraDB”。
+
+请注意，此布局使用一个额外的缓冲区来存储 `Alkaid C 数据接口 <c-data-interface-binary-view-arrays>`中的可变缓冲区长度。
+
+
+### 可变大小列表布局 {#variable-size-list-layout}
+
+列表是一种嵌套类型，其语义类似于可变大小的二进制。有两种列表布局变体 — “列表”和“列表视图” —
+并且每种变体都可以由 32 位或 64 位偏移整数分隔。
+
+#### 列表布局
+
+List 布局由两个缓冲区、一个有效性位图和一个偏移量缓冲区以及一个子数组定义。偏移量与可变大小二进制情况下的偏移量相同，并且 32 位和 64 位有符号整数偏移量都是偏移量的支持选项。这些偏移量不是引用额外的数据缓冲区，而是引用子数组。
+
+与可变大小二进制的布局类似，空值可能对应于子数组中的**非空**段。当这是真的时，相应段的内容可以是任意的。
+
+列表类型指定为`List<T>`，其中“T”是任何类型（原始或嵌套）。在这些示例中，我们使用 32 位偏移量，其中 64 位偏移量版本将由`LargeList<T>`表示。
+
+**示例布局：``List<Int8>`` 数组**
+
+我们举例说明长度为 4 的 ``List<Int8>`` 具有值:
+
+```text
+ [[12, -7, 25], null, [0, -127, 127, 50], []]
+```
+
+```text
+    * Length: 4, Null count: 1
+    * Validity bitmap buffer:
+
+      | Byte 0 (validity bitmap) | Bytes 1-63            |
+      |--------------------------|-----------------------|
+      | 00001101                 | 0 (padding)           |
+
+    * Offsets buffer (int32)
+
+      | Bytes 0-3  | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-63           |
+      |------------|-------------|-------------|-------------|-------------|-----------------------|
+      | 0          | 3           | 3           | 7           | 7           | unspecified (padding) |
+
+    * Values array (Int8Array):
+      * Length: 7,  Null count: 0
+      * Validity bitmap buffer: Not required
+      * Values buffer (int8)
+
+        | Bytes 0-6                    | Bytes 7-63            |
+        |------------------------------|-----------------------|
+        | 12, -7, 25, 0, -127, 127, 50 | unspecified (padding) |
+```
+
+**示例布局：``List<List<Int8>>``**
+
+```[[[1, 2], [3, 4]], [[5, 6, 7], null, [8]], [[9, 10]]]```
+
+将表示如下：
+
+```text
+ * Length 3
+    * Nulls count: 0
+    * Validity bitmap buffer: Not required
+    * Offsets buffer (int32)
+
+      | Bytes 0-3  | Bytes 4-7  | Bytes 8-11 | Bytes 12-15 | Bytes 16-63           |
+      |------------|------------|------------|-------------|-----------------------|
+      | 0          |  2         |  5         |  6          | unspecified (padding) |
+
+    * Values array (`List<Int8>`)
+      * Length: 6, Null count: 1
+      * Validity bitmap buffer:
+
+        | Byte 0 (validity bitmap) | Bytes 1-63  |
+        |--------------------------|-------------|
+        | 00110111                 | 0 (padding) |
+
+      * Offsets buffer (int32)
+
+        | Bytes 0-27           | Bytes 28-63           |
+        |----------------------|-----------------------|
+        | 0, 2, 4, 7, 7, 8, 10 | unspecified (padding) |
+
+      * Values array (Int8):
+        * Length: 10, Null count: 0
+        * Validity bitmap buffer: Not required
+
+          | Bytes 0-9                     | Bytes 10-63           |
+          |-------------------------------|-----------------------|
+          | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 | unspecified (padding) |
+```
+
+#### 列表视图布局
+
+ListView 布局由三个缓冲区定义：一个有效性位图、一个偏移量缓冲区和一个附加大小缓冲区。大小和偏移量具有相同的位宽，并且支持 32 位和 64 位有符号整数选项。
+
+与 List 布局一样，偏移量对子数组中每个插槽的起始位置进行编码。与 List 布局相反，列表长度明确存储在大小缓冲区中，而不是推断。这允许偏移量无序。
+子数组的元素不必按照它们在父数组的列表元素中逻辑出现的顺序存储。
+
+每个列表视图值（包括空值）都必须保证以下不变量：
+
+```text
+    0 <= offsets[i] <= length of the child array
+    0 <= offsets[i] + size[i] <= length of the child array
+```
+
+列表视图类型指定为 ``ListView<T>``，其中 ``T`` 是任何类型
+（原始或嵌套）。在这些示例中，我们使用 32 位偏移量和大小，其中
+64 位版本将用 ``LargeListView<T>`` 表示。
+
+**示例布局：``ListView<Int8>`` 数组**
+
+我们举例说明长度为 4 的 ``ListView<Int8>`` 具有值:
+
+```text
+[[12, -7, 25], null, [0, -127, 127, 50], []]
+```
+它可能具有以下表示形式：
+
+```text
+* Length: 4, Null count: 1
+    * Validity bitmap buffer:
+
+      | Byte 0 (validity bitmap) | Bytes 1-63            |
+      |--------------------------|-----------------------|
+      | 00001101                 | 0 (padding)           |
+
+    * Offsets buffer (int32)
+
+      | Bytes 0-3  | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-63           |
+      |------------|-------------|-------------|-------------|-----------------------|
+      | 0          | 7           | 3           | 0           | unspecified (padding) |
+
+    * Sizes buffer (int32)
+
+      | Bytes 0-3  | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-63           |
+      |------------|-------------|-------------|-------------|-----------------------|
+      | 3          | 0           | 4           | 0           | unspecified (padding) |
+
+    * Values array (Int8Array):
+      * Length: 7,  Null count: 0
+      * Validity bitmap buffer: Not required
+      * Values buffer (int8)
+
+        | Bytes 0-6                    | Bytes 7-63            |
+        |------------------------------|-----------------------|
+        | 12, -7, 25, 0, -127, 127, 50 | unspecified (padding) |
+```
+
+**示例布局：``ListView<Int8>`` 数组**
+
+我们继续使用 ``ListView<Int8>`` 类型，但此实例说明了无序偏移和子数组值
+的共享。它是一个长度为 5 的数组，具有逻辑值:
+
+```text
+[[12, -7, 25], null, [0, -127, 127, 50], [], [50, 12]]
+```
+
+它可能具有以下表示:
+
+```text
+* Length: 5, Null count: 1
+    * Validity bitmap buffer:
+
+      | Byte 0 (validity bitmap) | Bytes 1-63            |
+      |--------------------------|-----------------------|
+      | 00011101                 | 0 (padding)           |
+
+    * Offsets buffer (int32)
+
+      | Bytes 0-3  | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-63           |
+      |------------|-------------|-------------|-------------|-------------|-----------------------|
+      | 4          | 7           | 0           | 0           | 3           | unspecified (padding) |
+
+    * Sizes buffer (int32)
+
+      | Bytes 0-3  | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-63           |
+      |------------|-------------|-------------|-------------|-------------|-----------------------|
+      | 3          | 0           | 4           | 0           | 2           | unspecified (padding) |
+
+    * Values array (Int8Array):
+      * Length: 7,  Null count: 0
+      * Validity bitmap buffer: Not required
+      * Values buffer (int8)
+
+        | Bytes 0-6                    | Bytes 7-63            |
+        |------------------------------|-----------------------|
+        | 0, -127, 127, 50, 12, -7, 25 | unspecified (padding) |
+```
+
+### 固定大小列表布局
+
+固定大小列表是一种嵌套类型，其中每个数组槽包含一个固定大小的值序列，所有值都具有相同的类型。
+
+固定大小列表类型指定为 ``FixedSizeList<T>[N]``，其中 ``T`` 是任何类型（原始或嵌套），``N`` 是一个 32 位有符号整数，表示列表的长度。
+
+固定大小列表数组由值数组表示，它是类型 T 的子数组。T 也可以是嵌套类型。固定大小列表数组的槽 ``j`` 中的值存储在值数组的 ``N`` 长切片中，从偏移量 ``j * N`` 开始。
+
+**示例布局：``FixedSizeList<byte>[4]`` 数组**
+
+这里我们说明 ``FixedSizeList<byte>[4]``。
+
+对于长度为 4 且具有相应值的数组：
+
+```text
+    [[192, 168, 0, 12], null, [192, 168, 0, 25], [192, 168, 0, 1]]
+```
+将具有以下表示：
+
+```text
+    * Length: 4, Null count: 1
+    * Validity bitmap buffer:
+
+      | Byte 0 (validity bitmap) | Bytes 1-63            |
+      |--------------------------|-----------------------|
+      | 00001101                 | 0 (padding)           |
+
+    * Values array (byte array):
+      * Length: 16,  Null count: 0
+      * validity bitmap buffer: Not required
+
+        | Bytes 0-3       | Bytes 4-7   | Bytes 8-15                      |
+        |-----------------|-------------|---------------------------------|
+        | 192, 168, 0, 12 | unspecified | 192, 168, 0, 25, 192, 168, 0, 1 |
+```
+
+### 结构布局
+
+结构体是一种嵌套类型，由一系列有序的类型（可以完全不同）参数化，这些类型称为字段。每个字段都必须有一个 UTF8 编码的名称，这些字段名称是类型元数据的一部分。
+
+从物理上讲，结构体数组的每个字段都有一个子数组。子数组是独立的，不需要在内存中彼此相邻。结构体数组还具有有效性位图，用于对顶级有效性信息进行编码。
+
+例如，结构体（此处显示为字符串的字段名称，以便于说明）
+
+```text
+    Struct <
+      name: VarBinary
+      age: Int32
+    >
+```
+有两个子数组，一个 ``VarBinary`` 数组（使用可变大小二进制布局）和一个具有 ``Int32`` 逻辑类型的 4 字节原始值数组。
+
+**示例布局：``Struct<VarBinary, Int32>``**
+
+``[{'joe', 1}, {null, 2}, null, {'mark', 4}]`` 的布局，具有子
+数组 ``['joe', null, 'alice', 'mark']`` 和 ``[1, 2, null, 4]``，将是：
+
+```text
+* Length: 4, Null count: 1
+    * Validity bitmap buffer:
+
+      | Byte 0 (validity bitmap) | Bytes 1-63            |
+      |--------------------------|-----------------------|
+      | 00001011                 | 0 (padding)           |
+
+    * Children arrays:
+      * field-0 array (`VarBinary`):
+        * Length: 4, Null count: 1
+        * Validity bitmap buffer:
+
+          | Byte 0 (validity bitmap) | Bytes 1-63            |
+          |--------------------------|-----------------------|
+          | 00001101                 | 0 (padding)           |
+
+        * Offsets buffer:
+
+          | Bytes 0-19     | Bytes 20-63           |
+          |----------------|-----------------------|
+          | 0, 3, 3, 8, 12 | unspecified (padding) |
+
+         * Value buffer:
+
+          | Bytes 0-11     | Bytes 12-63           |
+          |----------------|-----------------------|
+          | joealicemark   | unspecified (padding) |
+
+      * field-1 array (int32 array):
+        * Length: 4, Null count: 1
+        * Validity bitmap buffer:
+
+          | Byte 0 (validity bitmap) | Bytes 1-63            |
+          |--------------------------|-----------------------|
+          | 00001011                 | 0 (padding)           |
+
+        * Value Buffer:
+
+          | Bytes 0-3   | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-63           |
+          |-------------|-------------|-------------|-------------|-----------------------|
+          | 1           | 2           | unspecified | 4           | unspecified (padding) |
+```
+
+#### 结构效度
+
+结构数组具有其自己的有效性位图，该位图独立于其子数组的有效性位图。当结构数组的一个或多个子数组在其相应位置具有非空值时，结构数组的有效性位图可能指示为空；或者相反，子数组可能在其有效性位图中指示为空，而结构数组的有效性位图显示非空值。
+
+因此，要知道特定子条目是否有效，必须对两个有效性位图（结构数组和子数组的有效性位图）中的相应位进行逻辑与运算。
+
+上例说明了这一点，其中一个子数组具有空结构的有效条目“alice”，但它被结构数组的有效性位图“隐藏”。但是，当单独处理时，子数组的相应条目将为非空。
+
+#### Dense Union
+
+密集联合表示混合类型数组，每个值有 5 个字节的开销。其物理布局如下：
+
+* 每种类型一个子数组
+* 类型缓冲区：8 位有符号整数的缓冲区。联合中的每种类型都有相应的类型 ID，其值可在此缓冲区中找到。具有超过 127 种可能类型的联合可以建模为联合的联合。
+* 偏移缓冲区：有符号 Int32 值的缓冲区，指示给定槽中类型的相应子数组的相对偏移量。每个子值数组的相应偏移量必须按顺序/递增。
+
+**示例布局：``DenseUnion<f: Float32, i: Int32>``**
+
+对于联合数组：
+
+```text
+    [{f=1.2}, null, {f=3.4}, {i=5}]
+```
+
+将具有以下布局：
+
+```text
+ * Length: 4, Null count: 0
+    * Types buffer:
+
+      | Byte 0   | Byte 1      | Byte 2   | Byte 3   | Bytes 4-63            |
+      |----------|-------------|----------|----------|-----------------------|
+      | 0        | 0           | 0        | 1        | unspecified (padding) |
+
+    * Offset buffer:
+
+      | Bytes 0-3 | Bytes 4-7   | Bytes 8-11 | Bytes 12-15 | Bytes 16-63           |
+      |-----------|-------------|------------|-------------|-----------------------|
+      | 0         | 1           | 2          | 0           | unspecified (padding) |
+
+    * Children arrays:
+      * Field-0 array (f: Float32):
+        * Length: 3, Null count: 1
+        * Validity bitmap buffer: 00000101
+
+        * Value Buffer:
+
+          | Bytes 0-11     | Bytes 12-63           |
+          |----------------|-----------------------|
+          | 1.2, null, 3.4 | unspecified (padding) |
+
+
+      * Field-1 array (i: Int32):
+        * Length: 1, Null count: 0
+        * Validity bitmap buffer: Not required
+
+        * Value Buffer:
+
+          | Bytes 0-3 | Bytes 4-63            |
+          |-----------|-----------------------|
+          | 5         | unspecified (padding) |
+```
+
+#### Sparse Union
+
+稀疏联合具有与密集联合相同的结构，但省略了偏移量数组。在这种情况下，每个子数组的长度都等于联合的长度。
+
+虽然稀疏联合可能比密集联合占用更多的空间，但它具有某些优点，在​​某些用例中可能是可取的：
+
+* 在某些用例中，稀疏联合更适合矢量化表达式评估。
+* 只需定义类型数组，即可将等长数组解释为联合。
+
+**示例布局：`SparseUnion<i: Int32, f: Float32, s: VarBinary>`**
+
+对于联合数组：
+
+```text
+    [{i=5}, {f=1.2}, {s='joe'}, {f=3.4}, {i=4}, {s='mark'}]
+```
+
+将具有以下布局：
+
+```text
+* Length: 6, Null count: 0
+    * Types buffer:
+
+     | Byte 0     | Byte 1      | Byte 2      | Byte 3      | Byte 4      | Byte 5       | Bytes  6-63           |
+     |------------|-------------|-------------|-------------|-------------|--------------|-----------------------|
+     | 0          | 1           | 2           | 1           | 0           | 2            | unspecified (padding) |
+
+    * Children arrays:
+
+      * i (Int32):
+        * Length: 6, Null count: 4
+        * Validity bitmap buffer:
+
+          | Byte 0 (validity bitmap) | Bytes 1-63            |
+          |--------------------------|-----------------------|
+          | 00010001                 | 0 (padding)           |
+
+        * Value buffer:
+
+          | Bytes 0-3   | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-23  | Bytes 24-63           |
+          |-------------|-------------|-------------|-------------|-------------|--------------|-----------------------|
+          | 5           | unspecified | unspecified | unspecified | 4           |  unspecified | unspecified (padding) |
+
+      * f (Float32):
+        * Length: 6, Null count: 4
+        * Validity bitmap buffer:
+
+          | Byte 0 (validity bitmap) | Bytes 1-63            |
+          |--------------------------|-----------------------|
+          | 00001010                 | 0 (padding)           |
+
+        * Value buffer:
+
+          | Bytes 0-3    | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-23 | Bytes 24-63           |
+          |--------------|-------------|-------------|-------------|-------------|-------------|-----------------------|
+          | unspecified  | 1.2         | unspecified | 3.4         | unspecified | unspecified | unspecified (padding) |
+
+      * s (`VarBinary`)
+        * Length: 6, Null count: 4
+        * Validity bitmap buffer:
+
+          | Byte 0 (validity bitmap) | Bytes 1-63            |
+          |--------------------------|-----------------------|
+          | 00100100                 | 0 (padding)           |
+
+        * Offsets buffer (Int32)
+
+          | Bytes 0-3  | Bytes 4-7   | Bytes 8-11  | Bytes 12-15 | Bytes 16-19 | Bytes 20-23 | Bytes 24-27 | Bytes 28-63            |
+          |------------|-------------|-------------|-------------|-------------|-------------|-------------|------------------------|
+          | 0          | 0           | 0           | 3           | 3           | 3           | 7           | unspecified (padding)  |
+
+        * Values buffer:
+
+          | Bytes 0-6  | Bytes 7-63            |
+          |------------|-----------------------|
+          | joemark    | unspecified (padding) |
+```
+仅考虑数组中与类型索引相对应的插槽。所有“未选中”的值都将被忽略，并且可以是任何语义正确的数组值。
+
+### 空布局
+
+我们为 Null 数据类型提供了一种简化的内存高效布局，其中所有值都为空。在这种情况下，不会分配任何内存缓冲区。
+
+### 字典编码布局 {#dictionary-encoded-layout}
+
+字典编码是一种数据表示技术，用引用通常由唯一值组成的**字典**的整数来表示值。当您的数据包含许多重复值时，这种方法非常有效。
+
+任何数组都可以进行字典编码。字典存储为数组的可选属性。当字段进行字典编码时，值由非负整数数组表示，表示字典中值的索引。字典编码数组的内存布局与原始整数布局相同。字典作为单独的列数组处理，具有各自的布局。
+
+例如，您可能有以下数据：
+
+```text
+type: VarBinary
+
+    ['foo', 'bar', 'foo', 'bar', null, 'baz']
+```
+
+以字典编码形式显示如下：
+
+```text
+    data VarBinary (dictionary-encoded)
+       index_type: Int32
+       values: [0, 1, 0, 1, null, 2]
+
+    dictionary
+       type: VarBinary
+       values: ['foo', 'bar', 'baz']
+```
+
+请注意，字典可以包含重复值或
+空值：
+
+```text
+    data VarBinary (dictionary-encoded)
+       index_type: Int32
+       values: [0, 1, 3, 1, 4, 2]
+
+    dictionary
+       type: VarBinary
+       values: ['foo', 'bar', 'baz', 'foo', null]
+```
+
+此类数组的空值计数仅由其索引的有效性位图决定，与字典中的任何空值无关。
+
+由于无符号整数在某些情况下可能更难处理（例如在 JVM 中），因此我们建议优先使用有符号整数而不是无符号整数来表示字典索引。此外，我们建议避免使用 64 位无符号整数索引，除非应用程序需要它们。
+
+我们将在下文进一步讨论与序列化相关的字典编码。
+
+### 运行端编码布局
+
+运行结束编码 (REE) 是运行长度编码 (RLE) 的一种变体。这些
+
+编码非常适合表示包含相同值序列（称为运行）的数据。在运行结束编码中，每个运行都表示为一个
+
+值和一个整数，该整数给出运行在数组中结束的索引。
+
+任何数组都可以进行运行结束编码。运行结束编码数组本身没有缓冲区，但有两个子数组。第一个子数组称为运行结束数组，
+
+保存 16、32 或 64 位有符号整数。每个运行的实际值保存在第二个子数组中。
+
+为了确定字段名称和模式，这些子数组
+
+分别规定了 **run_ends** 和 **values** 的标准名称。
+
+第一个子数组中的值表示从第一个到当前运行的所有运行的累计长度，即当前运行结束的逻辑索引。这样就可以使用二进制搜索从逻辑索引中进
+行相对高效的随机访问。单个运行的长度可以通过减去两个相邻值来确定。（与运行长度编码相比，运行长度编码直接表示运行的长度，随机访问效率较低。）
+
+:::info
+因为 ``run_ends`` 子数组不能为空，所以有理由考虑为什么 ``run_ends`` 是子数组，而不仅仅是一个缓冲区，就像 [variable-size-list-layout](#variable-size-list-layout) 的偏移量一样。我们考虑过这种布局，但决定使用子数组。
+
+子数组允许我们保留与父数组关联的“逻辑长度”（解码长度）和与子数组关联的“物理长度”（运行结束的数量）。如果 ``run_ends`` 是父数组中的缓冲区，那么缓冲区的大小将与数组的长度无关，这会令人困惑。
+:::
+
+运行的长度必须至少为 1。这意味着
+运行结束数组中的值都是正数，并且严格按升序排列。运行结束不能为
+空。
+
+REE 父级没有有效性位图，并且其空计数字段应始终为 0。
+空值被编码为具有空值的运行。
+
+例如，您可以拥有以下数据：
+
+```text
+ type: Float32
+    [1.0, 1.0, 1.0, 1.0, null, null, 2.0]
+```
+
+在运行端编码形式中，这可能显示为：
+
+```text
+ * Length: 7, Null count: 0
+    * Child Arrays:
+
+      * run_ends (Int32):
+        * Length: 3, Null count: 0 (Run Ends cannot be null)
+        * Validity bitmap buffer: Not required (if it exists, it should be all 1s)
+        * Values buffer
+
+          | Bytes 0-3   | Bytes 4-7   | Bytes 8-11  | Bytes 12-63           |
+          |-------------|-------------|-------------|-----------------------|
+          | 4           | 6           | 7           | unspecified (padding) |
+
+      * values (Float32):
+        * Length: 3, Null count: 1
+        * Validity bitmap buffer:
+
+          | Byte 0 (validity bitmap) | Bytes 1-63            |
+          |--------------------------|-----------------------|
+          | 00000101                 | 0 (padding)           |
+
+        * Values buffer
+
+          | Bytes 0-3   | Bytes 4-7   | Bytes 8-11  | Bytes 12-63           |
+          |-------------|-------------|-------------|-----------------------|
+          | 1.0         | unspecified | 2.0         | unspecified (padding) |
+```
+
+### 每个布局的缓冲区列表
+
+为了避免歧义，我们列出了每个布局的内存缓冲区的顺序和类型。
+
+| Layout Type          | Buffer 0 | Buffer 1       | Buffer 2 | Variadic Buffers |
+|----------------------|----------|----------------|----------|------------------|
+| Primitive            | validity | data           |          |                  |
+| Variable Binary      | validity | offsets        | data     |                  |
+| Variable Binary View | validity | views          |          | data             |
+| List                 | validity | offsets        |          |                  |
+| List View            | validity | offsets        | sizes    |                  |
+| Fixed-size List      | validity |                |          |                  |
+| Struct               | validity |                |          |                  |
+| Sparse Union         | type ids |                |          |                  |
+| Dense Union          | type ids | offsets        |          |                  |
+| Null                 |          |                |          |                  |
+| Dictionary-encoded   | validity | data (indices) |          |                  |
+| Run-end encoded      |          |                |          |                  |
+
+## 序列化和进程间通信 (IPC) {#format-ipc}
+
+列式格式的序列化数据的基本单位是“记录批次”。从语义上讲，记录批次是数组的有序集合，称为其**字段**，每个字段的长度相同，但数据类型可能不同。记录批次的字段名称和类型共同构成批次的**架构**。
+
+在本节中，我们定义了一个协议，用于将记录批次序列化为二进制有效负载流，并从这些有效负载中重建记录批次，而无需进行内存复制。
+
+列式 IPC 协议使用以下类型的单向二进制消息流：
+
+* 架构
+* 记录批次
+* 字典批次
+
+我们指定了一种所谓的“封装 IPC 消息”格式，其中包括一个序列化的 Flatbuffer 类型以及一个可选的消息主体。我们在描述如何序列化每个组成 IPC 消息类型之前定义了此消息格式。
+
+### 封装的消息格式
+
+对于简单的流式传输和基于文件的序列化，我们为进程间通信定义了一种“封装”消息格式。此类消息可以通过仅检查消息元数据而“反序列化”为内存中的 Alkaid 数组对象，而无需复制或移动任何实际数据。
+
+封装的二进制消息格式如下：
+
+* 32 位连续指示符。值 ``0xFFFFFFFF`` 表示有效消息。此组件在版本 0.15.0 中引入，部分是为了解决 Flatbuffers 的 8 字节对齐要求
+* 32 位小端长度前缀，指示元数据大小
+* 使用 `Message.fbs`_ 中定义的 ``Message`` 类型的消息元数据
+* 将字节填充到 8 字节边界
+* 消息正文，其长度必须是 8 字节的倍数
+
+从示意图上看，我们有：
+
+```text
+    <continuation: 0xFFFFFFFF>
+    <metadata_size: int32>
+    <metadata_flatbuffer: bytes>
+    <padding>
+    <message body>
+```
+
+完整的序列化消息必须是 8 字节的倍数，以便消息可以在流之间重新定位。否则，元数据和消息正文之间的填充量可能是不确定的。
+
+``metadata_size`` 包括 ``Message`` 的大小加上填充。``metadata_flatbuffer`` 包含序列化的 ``Message`` Flatbuffer 值，其内部包括：
+
+* 版本号
+* 特定消息值（“Schema”、“RecordBatch”或
+``DictionaryBatch`` 之一）
+* 消息正文的大小
+* 任何应用程序提供的元数据的 ``custom_metadata`` 字段
+
+从输入流读取时，通常会首先解析和验证 ``Message`` 元数据以获取正文大小。然后可以读取正文。
+
+### 架构消息
+
+Flatbuffers 文件 `Schema.fbs`_ 包含所有内置数据类型的定义和 ``Schema`` 元数据类型，该类型表示给定记录批次的架构。架构由有序的字段序列组成，每个字段都有名称和类型。序列化的 ``Schema`` 不包含任何数据缓冲区，只包含类型元数据。
+
+``Field`` Flatbuffers 类型包含单个数组的元数据。这包括：
+
+* 字段的名称
+* 字段的数据类型
+* 字段在语义上是否可空。虽然这与数组的物理布局无关，但许多系统区分可空和不可空字段，我们希望允许它们保留此元数据以实现忠实的架构往返。
+* 嵌套类型的子 ``Field`` 值集合
+* 指示字段是否为字典编码的 ``dictionary`` 属性。如果是，则分配一个字典“id”，以允许将后续字典 IPC 消息与相应字段进行匹配。
+
+我们还提供了架构级和字段级的``custom_metadata``属性，允许系统插入自己定义的应用程序元数据来定制行为。
+
+### 批量消息 {#ipc-record-batch-message}
+
+RecordBatch 消息包含与架构确定的物理内存布局相对应的实际数据缓冲区。此消息的元数据提供了每个缓冲区的位置和大小，允许使用指针算法重建数组数据结构，因此无需复制内存。
+
+记录批次的序列化形式如下：
+
+* ``数据头``，定义为 ``Message.fbs`_ 中的 ``RecordBatch`` 类型。
+
+* ``主体``，一个扁平的内存缓冲区序列，以端到端的形式写入，并带有适当的填充，以确保至少 8 字节对齐
+
+数据头包含以下内容：
+
+* 记录批次中每个扁平字段的长度和空计数
+* 记录批次主体中每个组成 ``缓冲区`` 的内存偏移量和长度
+
+字段和缓冲区通过对记录批次中的字段进行前序深度优先遍历来扁平化。例如，让我们考虑一下
+架构
+
+```text
+    col1: Struct<a: Int32, b: List<item: Int64>, c: Float64>
+    col2: Utf8
+```
+
+其扁平版本如下：
+
+```text
+    FieldNode 0: Struct name='col1'
+    FieldNode 1: Int32 name='a'
+    FieldNode 2: List name='b'
+    FieldNode 3: Int64 name='item'
+    FieldNode 4: Float64 name='c'
+    FieldNode 5: Utf8 name='col2'
+```
+
+对于生产的缓冲液，我们将有以下内容（参见上表）：
+
+```text
+    buffer 0: field 0 validity
+    buffer 1: field 1 validity
+    buffer 2: field 1 values
+    buffer 3: field 2 validity
+    buffer 4: field 2 offsets
+    buffer 5: field 3 validity
+    buffer 6: field 3 values
+    buffer 7: field 4 validity
+    buffer 8: field 4 values
+    buffer 9: field 5 validity
+    buffer 10: field 5 offsets
+    buffer 11: field 5 data
+```
+
+``Buffer`` Flatbuffers 值描述了一块内存的位置和大小。通常，这些是相对于下面定义的**封装消息格式**进行解释的。
+
+``Buffer`` 的 ``size`` 字段不需要考虑填充字节。由于此元数据可用于在库之间传递内存指针地址，因此建议将 ``size`` 设置为实际内存大小，而不是填充大小。
+
+### 可变参数缓冲区
+
+某些类型（例如 Utf8View）使用可变数量的缓冲区表示。
+
+对于预排序扁平逻辑架构中的每个此类字段，在“variadicBufferCounts”中都会有一个条目，用于指示当前 RecordBatch 中属于该字段的可变缓冲区的数量。
+
+例如，考虑架构
+
+```text
+    col1: Struct<a: Int32, b: BinaryView, c: Float64>
+    col2: Utf8View
+```
+这有两个带有可变缓冲区的字段，因此 ``variadicBufferCounts`` 将在每个 RecordBatch 中有两个条目。对于具有 ``variadicBufferCounts = [3, 2]``
+的此架构的 RecordBatch，扁平化缓冲区将是
+
+```text
+    buffer 0:  col1    validity
+    buffer 1:  col1.a  validity
+    buffer 2:  col1.a  values
+    buffer 3:  col1.b  validity
+    buffer 4:  col1.b  views
+    buffer 5:  col1.b  data
+    buffer 6:  col1.b  data
+    buffer 7:  col1.b  data
+    buffer 8:  col1.c  validity
+    buffer 9:  col1.c  values
+    buffer 10: col2    validity
+    buffer 11: col2    views
+    buffer 12: col2    data
+    buffer 13: col2    data
+```
+
+### 压缩
+
+记录批处理主体缓冲区的压缩有三种不同的选项：缓冲区可以不压缩、缓冲区可以用 ``lz4`` 压缩编解码器压缩或缓冲区可以用 ``zstd`` 压缩编解码器压缩。
+消息主体平面序列中的缓冲区必须使用相同的编解码器单独压缩。压缩缓冲区序列中的特定缓冲区可以保持未压缩状态（例如，如果压缩这些特定缓冲区不会明显减小其大小）。
+
+使用的压缩类型在 [`ipc-recordbatch-message`](#ipc-record-batch-message) 的 ``data header`` 中可选的 ``compression`` 字段中定义，默认为未压缩。
+
+:::info
+``lz4`` 压缩编解码器是指
+[LZ4 帧格式](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md)
+，不要将其与
+[`“原始”（也称为“块”）格式`](https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md) 相混淆。
+:::
+
+序列化形式的压缩和未压缩缓冲区之间的区别如下：
+
+* 如果 [`ipc-recordbatch-message`](#ipc-record-batch-message) 中的缓冲区是 **压缩**
+
+- ``数据头`` 包括记录批次主体中每个 **压缩缓冲区** 的长度和内存偏移量以及压缩类型
+
+- ``主体`` 包括扁平的 **压缩缓冲区** 序列以及 **未压缩缓冲区的长度**，作为 64 位小端有符号整数存储在序列中每个缓冲区的前 8 个字节中。此未压缩长度可以设置为 ``-1``，以指示该特定缓冲区未压缩。
+
+* 如果 [`ipc-recordbatch-message`](#ipc-record-batch-message) 中的缓冲区未经过**压缩**
+
+- ``数据头`` 包含记录批次主体中每个 **未压缩缓冲区** 的长度和内存偏移量
+
+- ``主体`` 包含一串扁平的 **未压缩缓冲区**。
+
+:::info
+某些 Alkaid 实现不支持使用上面列出的一个或两个编解码器通过压缩缓冲区生成和使用 IPC 数据。有关详细信息，请参
+阅 [Status](../base/status.mdx)。某些应用程序可能会在用于存储或传输 Alkaid IPC 数据的协议中应用压缩。（例如，HTTP 服
+务器可能会提供 gzip 压缩的 Alkaid IPC 流。）已在其存储或传输协议中使用压缩的应用程序应避免使用缓冲区压缩。双重压缩通常会降低性能，并且不会显著提高压缩率。
+:::
+
+### 字节顺序 {#endianness}
+
+Alkaid 格式默认为小端序。
+
+序列化 Schema 元数据具有一个字节序字段，指示
+RecordBatches 的字节序。通常，这是生成 RecordBatch 的系统的字节序。主要用例是在具有相同字节序的系统之间交换 RecordBatches。
+首先，当我们尝试读取与底层系统不匹配的字节序的 Schema 时，我们会返回错误。参考实现专注于 Little Endian 并为其提供测试。最终，我们可能会
+通过字节交换提供自动转换。
+
+### IPC 流格式
+
+我们为记录批次提供流式协议或`format`。它以封装消息序列的形式呈现，每个消息都遵循上述格式。模式首先出现在流中，并且对于所有后续记录批次都相
+同。如果模式中的任何字段都是字典编码的，则将包含一个或多个`DictionaryBatch`消息。`DictionaryBatch`和`RecordBatch`消息可以交错
+，但在`RecordBatch`中使用任何字典键之前，应在`DictionaryBatch`中定义它。
+
+
+```text
+    <SCHEMA>
+    <DICTIONARY 0>
+    ...
+    <DICTIONARY k - 1>
+    <RECORD BATCH 0>
+    ...
+    <DICTIONARY x DELTA>
+    ...
+    <DICTIONARY y DELTA>
+    ...
+    <RECORD BATCH n - 1>
+    <EOS [optional]: 0xFFFFFFFF 0x00000000>
+```
+
+:::info
+当记录批次包含完全为空的字典编码数组时，会发生字典和记录批次交错的极端情况。在这种情况下，编码列的字典可能会出现在第一个记录批次之后。
+:::
+
+当流读取器实现读取流时，在每条消息之后，它可能会读取接下来的 8 个字节，以确定流是否继续以及随后的消息元数据的大小。读取消息平面缓冲区后，您就可以读取消息正文了。
+
+流写入器可以通过写入包含 4 字节延续指示符（`0xFFFFFFFF`）的 8 个字节，后跟 0 元数据长度（“0x00000000”）或关闭流接口来发出流结束 (EOS) 信号。我们建议为
+流格式使用`.ipcs`文件扩展名，尽管在许多情况下，这些流永远不会存储为文件。
+
+### IPC 文件格式
+
+我们定义了一种支持随机访问的“文件格式”，它是流格式的扩展。文件以魔术字符串“ALKAID1”（加上填充）开始和结束。文件中的后续内容与流格式相同。
+在文件末尾，我们编写了一个*页脚*，其中包含架构的冗余副本（它是流格式的一部分）以及文件中每个数据块的内存偏移量和大小。这可以随机访问文件中的任何记录批次。有关文件页脚的
+精确详细信息，请参阅`File.fbs`_。
+
+从示意图上看，我们有：
+
+```text
+    <magic number "ALKAID1">
+    <empty padding bytes [to 8 byte boundary]>
+    <STREAMING FORMAT with EOS>
+    <FOOTER>
+    <FOOTER SIZE: int32>
+    <magic number "ALKAID1">
+```
+
+在文件格式中，只要在文件中的某个位置定义了键，就不需要在``DictionaryBatch``中定义字典键，然后再将它们用于``RecordBatch``。此外，每个
+字典 ID 有多个**非增量**字典批次是无效的（即不支持字典替换）。增量字典按它们在文件页脚中出现的顺序应用。我们建议使用“.ipc”扩展名创建使
+用此格式的文件。请注意，使用此格式创建的文件有时称为“Feather V2”或带有“.feather”扩展名，名称和扩展名源自“Feather (V1)”，这是 Alkaid 项目早
+期用于 Python (pandas) 和 R 的语言无关快速数据帧存储的概念证明。
+
+
+### 字典消息
+
+字典以流和文件格式编写为一系列记录批次，每个批次都有一个字段。因此，一系列记录批次的完整语义模式由模式以及所有字
+典组成。字典类型可以在模式中找到，因此有必要首先阅读模式以确定字典类型，以便正确解释字典：
+
+```text
+    table DictionaryBatch {
+      id: long;
+      data: RecordBatch;
+      isDelta: boolean = false;
+    }
+
+```
+
+消息元数据中的字典 ``id`` 可以在架构中引用一次或多次，因此字典甚至可以用于多个字段。有关字典编码数据的语义的更多信息，请参
+阅 [字典编码布局](#dictionary-encoded-layout) 部分。
+
+字典 ``isDelta`` 标志允许扩展现有字典，以便将来实现记录批次实现。设置了 ``isDelta`` 的字典批次表示其向量应与任何具有
+相同 ``id`` 的先前批次的向量连接起来。在对一列进行编码的流中，具有增量字典批次的字符串列表 ``["A", "B", "C", "B",
+"D", "C", "E", "A"]`` 可以采用以下形式：
+
+```text
+    <SCHEMA>
+    <DICTIONARY 0>
+    (0) "A"
+    (1) "B"
+    (2) "C"
+
+    <RECORD BATCH 0>
+    0
+    1
+    2
+    1
+
+    <DICTIONARY 0 DELTA>
+    (3) "D"
+    (4) "E"
+
+    <RECORD BATCH 1>
+    3
+    2
+    4
+    0
+    EOS
+```
+
+或者，如果`isDelta`设置为 false，则该字典将替换相同 ID 的现有字典。使用与上述相同的示例，替代编码可以是：
+
+```text
+<SCHEMA>
+    <DICTIONARY 0>
+    (0) "A"
+    (1) "B"
+    (2) "C"
+
+    <RECORD BATCH 0>
+    0
+    1
+    2
+    1
+
+    <DICTIONARY 0>
+    (0) "A"
+    (1) "C"
+    (2) "D"
+    (3) "E"
+
+    <RECORD BATCH 1>
+    2
+    1
+    3
+    0
+    EOS
+```
+
+### 自定义应用程序元数据
+
+我们在三个级别提供了 ``custom_metadata`` 字段，为开发人员提供了一种在 Alkaid 协议消息中传递特定于应用程序的元数据的机制。这包括 ``Field``、``Schema`` 和 ``Message``。
+
+冒号符号 ``:`` 将用作命名空间分隔符。它可以在键中多次使用。
+
+``ALKAID`` 模式是为 ``custom_metadata`` 字段中的 Alkaid 内部使用而保留的命名空间。例如，
+``ALKAID:extension:name``。
+
+### 扩展类型 {#format_metadata_extension_types}
+
+用户定义的“扩展”类型可以通过在`Field`元数据结构中的`custom_metadata`中设置某些`KeyValue`对来定义。这些扩展键是：
+
+* `ALKAID:extension:name`用于标识自定义数据类型的字符串名称。我们建议您对扩展类型名称使用`命名空间`样式的前缀，以尽量减少与同
+一应用程序中的多个 Alkaid 读取器和写入器发生冲突的可能性。例如，使用`myorg.name_of_type`而不是简单的`name_of_type`
+* `ALKAID:extension:metadata`用于重建自定义类型所需的`ExtensionType`的序列化表示
+
+:::info
+以“ipc.”开头的扩展名是为
+:ref:`规范扩展类型 <format_canonical_extensions>` 保留的，
+不应将其用于第三方扩展类型。
+:::
+
+此扩展元数据可以注释任何内置 Alkaid 逻辑类型。例如，Alkaid 指定一个规范扩展类型，将 UUID 表示为 ``FixedSizeBinary(16)``。Alkaid
+实现不需要支持规范扩展，因此不支持此 UUID 类型的实现将简单地将其解释为 ``FixedSizeBinary(16)`` 并在后续 Alkaid 协议消息中传递 ``custom_metadata``。
+
+扩展类型可能会或可能不会使用 ``'ALKAID:extension:metadata'`` 字段。让我们考虑一些示例扩展类型：
+
+* ``uuid`` 表示为 ``FixedSizeBinary(16)``，元数据为空
+* ``latitude-longitude`` 表示为 ``struct<latitude: double,
+longitude: double>``，元数据为空
+* ``tensor``（多维数组）存储为 ``Binary`` 值，并具有序列化元数据，指示每个值的数据类型和形状。对于 4x5 单元张量，这可能是 JSON，例如 ``{'type': 'int8', 'shape': [4,
+5]}``。
+* ``trading-time`` 表示为 ``Timestamp``，序列化元数据指示数据对应的市场交易日历
+
+## 实施指南
+
+执行引擎（或框架、UDF 执行器或存储引擎等）只能实现 Alkaid 规范的子集和/或对其进行扩展，但必须满足以下限制.
+
+### 实现规范的子集
+
+* **如果仅生成（而不是使用）箭头向量**：可以实现向量规范和相应元数据的任何子集。
+* **如果使用和生成向量**：需要支持的向量子集最小。生成向量子集及其相应的元数据始终是可以的。向量的使用至少应将不受支持的输
+入向量转换为受支持的子集（例如，将 Timestamp.millis 转换为 timestamp.micros 或将 int32 转换为 int64）。
+
+### 可扩展性
+
+执行引擎实现者还可以使用自己的向量在内部扩展其内存表示，只要这些向量从未暴露即可。在将数据发送到需要 Alkaid 数据的另一个
+系统之前，应将这些自定义向量转换为 Alkaid 规范中存在的类型。
+
+[Flatbuffers:](http://github.com/google/flatbuffers)
+[Flatbuffers protocol definition files:](https://github.com/apache/arrow/tree/main/format)
+[Schema.fbs](https://github.com/apache/arrow/blob/main/format/Schema.fbs)
+[least-significant bit (LSB) numbering](https://en.wikipedia.org/wiki/Bit_numbering)
+[Intel performance guide](https://web.archive.org/web/20151101074635/https://software.intel.com/en-us/articles/practical-intel-avx-optimization-on-2nd-generation-intel-core-processors)
+[Endianness](https://en.wikipedia.org/wiki/Endianness)
+[SIMD](https://www.intel.com/content/www/us/en/docs/cpp-compiler/developer-guide-reference/2021-8/simd-data-layout-templates.html)
+[Parquet](https://parquet.apache.org/docs/)
+[UmbraDB](https://db.in.tum.de/~freitag/papers/p29-neumann-cidr20.pdf)

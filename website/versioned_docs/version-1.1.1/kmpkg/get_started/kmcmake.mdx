@@ -1,0 +1,210 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程： kmcmake 工程生成
+
+本教程向您展示如何通过 CMake 和 kmcmake 创建使用 C++“Hello World”程序。您将一键生成一个基于`CMake`构建系统的简单的应用程序。
+
+## 先决条件
+
+- 一个终端
+- C++ 编译器
+- [CMake](https://cmake.org/download/)
+- [Git](https://git-scm.com/downloads)
+- [安装 kmpkg](setup-kmpkg.mdx)
+
+:::warning 重要
+
+cmake 最低要求 `3.24.3`，请正确安装cmake
+
+:::
+
+## 1 - 创建项目 {#1-create-project}
+
+创建项目目录:
+
+<Tabs>
+    <TabItem value="shell" label="shell">
+        ```shell
+        mkdir hello
+        ```
+    </TabItem>
+</Tabs>
+
+进入到目录中：
+
+<Tabs>
+    <TabItem value="shell" label="shell">
+        ```shell
+        cd hello
+        ```
+    </TabItem>
+</Tabs>
+
+## 2 - 初始化项目 {#2-init-project}
+
+初始化项目名称为 `"hello"` 的c++项目：
+
+<Tabs>
+    <TabItem value="shell" label="shell">
+        ```shell
+        >kmcmake hello
+        kmpkg root directory "/data/package/kmpkg"
+        current project directory "/data/gitee/kumo-pub/pkg-temp"
+        your project name is hello
+        -- The CXX compiler identification is GNU 9.4.0
+        -- Detecting CXX compiler ABI info
+        -- Detecting CXX compiler ABI info - done
+        -- Check for working CXX compiler: /usr/bin/c++ - skipped
+        -- Detecting CXX compile features
+        -- Detecting CXX compile features - done
+        -- Configuring done
+        -- Generating done
+        -- Build files have been written to: /data/gitee/kumo-pub/pkg-temp/kmncmake_temp_build
+        -- Install configuration: ""
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/deb
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/deb/postrm
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/deb/.gitignore
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/deb/preinst
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/deb/prerm
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/deb/postinst.in
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/hello_cpack_config.cmake
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/rpm
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/rpm/postrm
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/rpm/.gitignore
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/rpm/preinst
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/rpm/prerm
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/rpm/postinst.in
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/hello_cxx_config.cmake
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/hello_test.cmake
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/hello_deps.cmake
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./cmake/hello_config.cmake.in
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/examples/foo_ex.cc
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/examples/CMakeLists.txt
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./CMakeLists.txt
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./LICENSE
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./README.md
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./benchmark
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./benchmark/CMakeLists.txt
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/README.md
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/copts
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/copts/generate_copts.py
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/copts/copts.py
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/kmcmake_module.cmake
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/package
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/package/pkg_dump_template.pc.in
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/package/CPack.STGZ_Header.sh.in
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/./kmcmake/package/README.md
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/hello/api.h
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/hello/CMakeLists.txt
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/hello/foo.h
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/hello/main.cc
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/hello/version.h.in
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/hello/foo.cc
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/tests/foo_test.cc
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/tests/foo_doctest.cc
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/tests/args_test.cc
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/tests/CMakeLists.txt
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/tests/pass_test.cc
+        -- Installing: /data/gitee/kumo-pub/pkg-temp/tests/raw_test.cc
+        ```
+    </TabItem>
+</Tabs>
+
+## 3 - 编译以及运行项目 {#3-run-project}
+
+### 1 - 配置 `cmake`
+
+配置cmake configure：
+
+<Tabs>
+    <TabItem value="without-shell" label="不编译测试">
+        ```shell
+        cmake -S . -B build
+        ```
+    </TabItem>
+    <TabItem value="with-shell" label="编译测试">
+        ```shell
+        cmake -S . -B build -DKMCMAKE_BUILD_TEST=ON
+        ```
+    </TabItem>
+</Tabs>
+
+### 2 - 编译项目
+
+编译项目命令：
+
+<Tabs>
+    <TabItem value="shell" label="编译">
+        ```shell
+        cmake --build build -j 4
+        ```
+    </TabItem>
+</Tabs>
+
+### 3 - 运行项目
+
+编译项目命令：
+
+<Tabs>
+    <TabItem value="shell" label="运行">
+        ```shell
+        ./build/hello/shared_main
+        ```
+    </TabItem>
+    <TabItem value="test" label="运行测试">
+        ```shell
+        >ctest --test-dir build
+        Internal ctest changing into directory: /data/gitee/kumo-pub/pkg-temp/build
+        Test project /data/gitee/kumo-pub/pkg-temp/build
+        Start  1: base_raw_test
+        1/11 Test  #1: base_raw_test ....................   Passed    0.00 sec
+        Start  2: base_pass_test_1
+        2/11 Test  #2: base_pass_test_1 .................   Passed    0.00 sec
+        Start  3: base_pass_test_2
+        3/11 Test  #3: base_pass_test_2 .................   Passed    0.00 sec
+        Start  4: base_pass_test_foo
+        4/11 Test  #4: base_pass_test_foo ...............   Passed    0.00 sec
+        Start  5: base_pass_test_bar
+        5/11 Test  #5: base_pass_test_bar ...............   Passed    0.00 sec
+        Start  6: base_args_test_fail
+        6/11 Test  #6: base_args_test_fail ..............***Failed  Error regular expression found in output. Regex=[Failed]  0.00 sec
+        Start  7: base_args_test_fail_args
+        7/11 Test  #7: base_args_test_fail_args .........***Failed  Error regular expression found in output. Regex=[Failed]  0.00 sec
+        Start  8: base_args_test_skip_fail
+        8/11 Test  #8: base_args_test_skip_fail .........***Failed  Error regular expression found in output. Regex=[Failed]  0.00 sec
+        Start  9: base_args_test_skip
+        9/11 Test  #9: base_args_test_skip ..............***Skipped   0.00 sec
+        Start 10: base_args_test_skip_pass
+        10/11 Test #10: base_args_test_skip_pass .........   Passed    0.00 sec
+        Start 11: base_args_test_skip_diabled
+        11/11 Test #11: base_args_test_skip_diabled ......   Passed    0.00 sec
+
+        73% tests passed, 3 tests failed out of 11
+
+        Total Test time (real) =   0.01 sec
+
+        The following tests did not run:
+        9 - base_args_test_skip (Skipped)
+
+        The following tests FAILED:
+        6 - base_args_test_fail (Failed)
+        7 - base_args_test_fail_args (Failed)
+        8 - base_args_test_skip_fail (Failed)
+        Errors while running CTest
+        Output from these tests are in: /data/gitee/kumo-pub/pkg-temp/build/Testing/Temporary/LastTest.log
+        Use "--rerun-failed --output-on-failure" to re-run the failed cases verbosely.
+
+        ```
+        :::warning 重要
+        运行测试会有三个失败的测试，这是正常的，是我们有意做的失败测试案例
+        :::
+    </TabItem>
+</Tabs>

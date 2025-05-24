@@ -1,0 +1,32 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_clean_executables_in_bin
+
+移除在 `${CURRENT_PACKAGES_DIR}/bin` 和 `${CURRENT_PACKAGES_DIR}/debug/bin` 中找到的指定可执行文件。 如果移除所有指定的可执行文件后，`bin` 和 `debug/bin` 目录为空，则还要删除 `bin` 和 `debug/bin` 目录。
+
+## 使用情况
+
+```cmake
+kmpkg_clean_executables_in_bin(
+    FILE_NAMES <file1>...
+)
+```
+
+## 参数
+
+### FILE_NAMES
+
+可执行文件名（不含扩展名）列表。
+
+## 说明
+
+通常无需手动调用此函数。 相反地，在调用 `kmpkg_copy_tools` 时传递额外的 `AUTO_CLEAN` 参数。
+
+## 示例
+
+- [czmq](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/czmq/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_clean\_executables\_in\_bin.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_clean_executables_in_bin.cmake)

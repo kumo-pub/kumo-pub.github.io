@@ -1,0 +1,38 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_replace_string
+
+替换文件中的字符串。
+
+## 使用情况
+
+```cmake
+kmpkg_replace_string(<filename> <match> <replace> [REGEX] [IGNORE_UNCHANGED])
+```
+
+## 参数
+
+### `<filename>`
+
+要修改的文件的路径。
+
+### `<match>`
+
+要匹配的字符串。
+
+### `<replace>`
+
+用于替换所有匹配序列的字符串。
+
+### `[REGEX]`
+
+如果存在此参数，则`<match>`参数将被视为正则表达式。
+
+### `[IGNORE_UNCHANGED]`
+
+如果文件未更改，则禁用警告。
+
+## Source
+
+[scripts/cmake/kmpkg\_replace\_string.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_replace_string.cmake)

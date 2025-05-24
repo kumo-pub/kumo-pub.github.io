@@ -1,0 +1,281 @@
+---
+date: 01/10/2024
+---
+# 教程： 创建注册表
+
+了解如何为 kmpkg 创建注册表。
+
+有关使用注册表的信息，请参阅[使用注册表](../consume/git-registries.mdx)。
+
+## 概述
+
+注册表是端口及其版本的集合。如果您想创建自己的注册表，那么有两种主要的注册表实现选择：git 注册表和文件系统注册表。
+
+Git 注册表是简单的 git 存储库，可以通过 git 存储库的正常机制公开或私下共享。例如，[kmpkg 存储库](https://gitee.com/kumo-pub/kmpkg) 是一个 git 注册表。
+
+文件系统注册表更多地被设计为一个测试场。鉴于它们确实存在于您的文件系统上，因此共享它们的唯一方法是通过共享目录。但是，文件系统注册表可以作为表示非 git 版本控制系统中保存的注册表的一种有用方法，假设有某种方法将注册表存储到磁盘上。
+
+我们预计注册表类型集会随着时间的推移而增长；如果您希望支持您最喜欢的公共版本控制系统中内置的注册表，请不要犹豫，打开 PR。
+
+注册表的基本结构是：
+
+- 在历史上的某些时间被认为是“最新”的版本集，称为“基线”。
+- 所有端口的所有版本的集合，以及在注册表中找到每个版本的位置。
+
+### Git 注册表 {#git-registries}
+
+当您按照本文档进行操作时，以下内容可能会有所帮助
+一个可供参考的工作示例。我们写了一篇并将其放在这里：
+
+[kumo-docs：kmpkg 注册表](https://gitee.com/kumo-pub/kmpkg-docs/tree/kmpkg-registry)。
+
+All git registries must have a `versions/baseline.json` file. This file contains the set of "latest versions" at a certain commit. It is laid out as a top-level object containing only the `"default"` field. This field should contain an object mapping port names to the version which is currently the latest.
+
+Here's an example of a valid baseline.json:
+
+```json
+{
+  "default": {
+    "kitten": {
+      "baseline": "2.6.2",
+      "port-version": 0
+    },
+    "port-b": {
+      "baseline": "19.00",
+      "port-version": 2
+    }
+  }
+}
+```
+`versions` 目录包含有关注册表中包含哪些包的哪些版本以及这些版本的存储位置的所有信息。就 kmpkg 而言，注册表的其余部分仅充当后备存储：只有 `versions` 目录中的内容将用于指导 kmpkg 如何查看注册表。
+
+注册表中的每个端口都应以`<端口的首字母>-/<端口的名称>.json`形式存在于版本目录中；换句话说，有关`kitten`端口的信息将位于`versions/k-/kitten.json`中。这应该是一个只有一个字段的顶级对象：`"versions"`。该字段应包含版本对象的数组：
+
+- 相关端口的版本；应与`kmpkg.json`文件完全相同，包括版本字段和 `"port-version"`。
+- `"git-tree"` 字段，这是一个 git 树；换句话说，当你写 `git rev-parse COMMIT-ID:path/to/port` 时你会得到什么。
+
+:::warning 重要
+注册表的一个非常重要的部分是版本永远不应该更改。更新到更高版本的参考不应删除或更改现有版本。更新注册表必须始终安全。
+:::
+
+以下是具有一个版本的`kitten`端口的有效版本数据库示例：
+
+```json
+{
+  "versions": [
+    {
+      "version": "2.6.2",
+      "port-version": 0,
+      "git-tree": "67d60699c271b7716279fdea5a5c6543929eb90e"
+    }
+  ]
+}
+```
+
+一般来说，端口目录放置在哪里并不重要。然而，kmpkg 中的习惯用法是遵循内置 kmpkg 注册表的作用：您的`kitten`端口应放置在`ports/kitten`中。
+
+:::warning 重要
+另一件需要记住的事情是，当您更新注册表时，所有以前的版本也应该可以访问。由于您的用户将其基线设置为提交 ID，因此该提交 ID 必须始终存在，
+并且可以从您的 HEAD 提交进行访问，这是实际获取的内容。这意味着您的 HEAD 提交应该是所有先前 HEAD 提交的子项。
+:::
+
+### 内置注册表 {#builtin-registries}
+
+内置注册表被视为特殊的 [Git 注册表](#git-registries)。内置注册表不是从远程 URL 获取，而是查阅 kmpkg 克隆的`$KMPKG_ROOT/.git`目录。他们使用当前签出的`$KMPKG_ROOT/versions`目录作为版本控制信息的来源。
+
+####添加新版本
+
+创建新版本的 port 涉及到一些 git 技巧。首先要做的就是进行一些更改，根据需要更新`port-version`和常规版本字段，然后使用`overlay-ports`进行测试：
+
+  `kmpkg install kitten --overlay-ports=ports/kitten`.
+
+完成测试后，您需要确保该目录处于 git 的权限范围内。您将通过创建临时提交来完成此操作：
+
+```powershell
+> git add .
+> git commit -m '[kitten] update port'
+```
+
+然后，获取目录的 git 树 ID：
+
+```powershell
+> git rev-parse HEAD:ports/kitten
+73ad3c823ef701c37421b450a34271d6beaf7b07
+```
+
+然后，您可以将此版本添加到版本数据库中。在 `versions/k-/kitten.json` 的顶部，您可以添加（假设您要添加版本 `2.6.3#0`）：
+
+```json
+{
+  "versions": [
+    {
+      "version": "2.6.3",
+      "port-version": 0,
+      "git-tree": "73ad3c823ef701c37421b450a34271d6beaf7b07"
+    },
+    {
+      "version": "2.6.2",
+      "port-version": 0,
+      "git-tree": "67d60699c271b7716279fdea5a5c6543929eb90e"
+    }
+  ]
+}
+```
+
+然后，您还需要使用新版本修改`versions/baseline.json`：
+
+```json
+{
+  "default": {
+    "kitten": {
+      "baseline": "2.6.3",
+      "port-version": 0
+    },
+    "port-b": {
+      "baseline": "19.00",
+      "port-version": 2
+    }
+  }
+}
+```
+
+并修改您当前的提交：
+
+```powershell
+> git add .
+> git commit --amend --no-edit
+```
+
+然后分享出去！
+
+### 文件系统注册表 {#filesystem-registries}
+
+当您按照本文档进行操作时，有一个可供参考的工作示例可能会有所帮助。我们写了一篇并将其放在这里：
+
+[示例文件系统注册表](https://github.com/kmpkg/example-filesystem-registry)。
+
+所有文件系统注册表都必须有一个 `versions/baseline.json` 文件。该文件包含特定版本的注册表的一组“最新版本”。它被布置为包含从版本名称到“基线对象”的映射的顶级对象，该映射将端口名称映射到被认为是该版本的注册表的“最新”版本。
+
+文件系统注册表需要决定版本控制方案。与具有 refs 隐式版本控制方案的 git 注册表不同，文件系统注册表不能依赖此处的版本控制系统。一种可能的选择是每天发布一次，并让您的 `"versions"` 为日期。
+
+:::warning 重要
+基线一旦发布就不得修改。如果要更改或更新版本，则需要在“baseline.json”文件中创建新基线。
+:::
+
+以下是一个有效的“baseline.json”示例，适用于已决定其版本日期的注册表：
+
+```json
+{
+  "2021-04-16": {
+    "kitten": {
+      "baseline": "2.6.2",
+      "port-version": 0
+    },
+    "port-b": {
+      "baseline": "19.00",
+      "port-version": 2
+    }
+  },
+  "2021-04-15": {
+    "kitten": {
+      "baseline": "2.6.2",
+      "port-version": 0
+    },
+    "port-b": {
+      "baseline": "19.00",
+      "port-version": 1
+    }
+  }
+}
+```
+
+`versions` 目录包含有关注册表中包含哪些包的哪些版本以及这些版本的存储位置的所有信息。就 kmpkg 而言，注册表的其余部分仅充当后备存储：只有 `versions` 目录中的内容将用于指导 kmpkg 如何查看注册表。
+
+注册表中的每个端口都应以 `<端口的首字母>-/<端口的名称>.json` 形式存在于版本目录中；换句话说，有关 `kitten` 端口的信息将位于 `versions/k-/kitten.json` 中。这应该是一个只有一个字段的顶级对象：`"versions"`。该字段应包含版本对象的数组：
+
+- The version of the port in question; should be exactly the same as the `kmpkg.json` file, including the version fields and `"port-version"`.
+- The `"path"` field: a relative directory, rooted at the base of the registry (in other words, the directory where `versions` is located), to the port directory. It should look something like `"$/path/to/port/dir`"
+
+The version field for ports with deprecated `CONTROL` files is `"version-string"`.
+
+In general, it's not important where you place port directories. However, the idiom in kmpkg is to follow somewhat closely to what the built in kmpkg registry does: your `kitten` port at version `x.y.z` should be placed in `ports/kitten/x.y.z`, with port versions appended as you see fit (although since `#` is not a good character to use for file names, perhaps use `_`).
+
+> [!WARNING]
+> One very important part of registries is that versions should _never_ be changed. One should never remove or change an existing version. Your changes to your registry shouldn't change behavior to downstream users.
+
+Here's an example of a valid version database for a `kitten` port with one version:
+
+```json
+{
+  "versions": [
+    {
+      "version": "2.6.2",
+      "port-version": 0,
+      "path": "$/ports/kitten/2.6.2_0"
+    }
+  ]
+}
+```
+
+#### 添加新版本
+
+与 git 注册表不同，向文件系统注册表添加新版本主要涉及大量复制。首先要做的是将端口的最新版本复制到新版本目录中，根据需要更新版本和`port-version`字段，然后使用`overlay-ports`进行测试：
+
+  `kmpkg install kitten --overlay-ports=ports/kitten/new-version`.
+
+完成测试后，您可以将此新版本添加到 `versions/k-/kitten.json` 的顶部：
+```json
+{
+  "versions": [
+    {
+      "version": "2.6.3",
+      "port-version": 0,
+      "path": "$/ports/kitten/2.6.3_0"
+    },
+    {
+      "version": "2.6.2",
+      "port-version": 0,
+      "path": "$/ports/kitten/2.6.2_0"
+    }
+  ]
+}
+```
+
+然后，您还需要使用新版本修改`versions/baseline.json`（请记住不要修改现有基线）：
+
+```json
+{
+  "2021-04-17": {
+    "kitten": {
+      "baseline": "2.6.3",
+      "port-version": 0
+    },
+    "port-b": {
+      "baseline": "19.00",
+      "port-version": 2
+    }
+  },
+  "2021-04-16": {
+    "kitten": {
+      "baseline": "2.6.2",
+      "port-version": 0
+    },
+    "port-b": {
+      "baseline": "19.00",
+      "port-version": 2
+    }
+  },
+  "2021-04-15": {
+    "kitten": {
+      "baseline": "2.6.2",
+      "port-version": 0
+    },
+    "port-b": {
+      "baseline": "19.00",
+      "port-version": 1
+    }
+  }
+}
+```
+
+你就完成了！

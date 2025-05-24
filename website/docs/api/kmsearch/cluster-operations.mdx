@@ -1,0 +1,305 @@
+---
+sidebarDepth: 1
+sitemap:
+  priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 集群操作
+
+## 创建快照（用于备份）
+
+在指定目录中创建 kumosearch 节点状态和数据的时间点快照。
+
+然后，您可以备份创建的快照目录，并在需要时将其恢复为数据目录。
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript">
+
+```js
+client.operations.perform('snapshot', {'snapshot_path': '/tmp/kumosearch-data-snapshot'})
+```
+
+  </TabItem>
+
+    <TabItem value="Python" label="Python">
+
+```py
+client.operations.perform('snapshot', {'snapshot_path': '/tmp/kumosearch-data-snapshot'})
+```
+
+    </TabItem>
+      <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/operations/snapshot?snapshot_path=/tmp/kumosearch-data-snapshot" -X POST \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+      </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "success": true
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`POST ${KUMOSEARCH_HOST}/operations/snapshot`
+
+### 参数
+| 参数             | 必选   | 描述                |
+|----------------|------|----------------|
+| snapshot_path	 | 是	 | 服务器上应保存快照的目录。 |
+
+## 压缩磁盘数据库
+
+kumosearch 使用 RocksDB 将文档存储在磁盘上。如果您经常进行写入或更新，可以运行底层 RocksDB 数据库的压缩，这可以减少数据库的大小并降低读取延迟。
+
+虽然数据库在此操作期间不会阻塞，但仍然建议在非高峰时段运行该操作。
+
+```shell
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X POST http://localhost:8868/operations/db/compact
+```
+
+#### 定义
+`POST ${KUMOSEARCH_HOST}/operations/db/compact`
+
+## 重新选举leader
+
+触发follower节点发起raft投票过程，从而触发重新选举leader。
+
+一旦此命令成功，运行此操作的follower节点将成为新的leader节点。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript">
+
+```js
+client.operations.perform('vote')
+```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python">
+
+```py
+client.operations.perform('vote')
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/operations/vote" -X POST \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "success": true
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`POST ${KUMOSEARCH_HOST}/operations/vote`
+
+## 启用/禁用慢速请求日志 {#start-disable-slow-log}
+
+启用对超过定义时间阈值的请求的日志记录。
+
+默认值：`-1`，表示禁用慢速请求日志记录。
+
+慢速请求将记录到主日志文件中，并带有前缀 `SLOW REQUEST`。
+
+<Tabs>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/config" \
+        -X POST \
+        -H 'Content-Type: application/json' \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{"log-slow-requests-time-ms": 2000}'
+```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+      <TabItem value="json" label="json">
+
+```json
+{
+  "success": true
+}
+```
+
+      </TabItem>
+</Tabs>
+
+#### 定义
+`POST ${KUMOSEARCH_HOST}/config`
+
+## 清除缓存
+
+使用 `use_cache` 参数发送的搜索请求的响应被缓存在 LRU 缓存中。要完全清除此缓存：
+
+```shell
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -X POST \
+  http://localhost:8868/operations/cache/clear
+```
+
+#### 定义
+`POST ${KUMOSEARCH_HOST}/operations/cache/clear`
+
+## 集群指标 {#cluster-metrics}
+
+获取当前 RAM、CPU、磁盘和网络使用指标。
+
+<Tabs>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/metrics.json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+    </TabItem>
+
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "system_cpu1_active_percentage": "0.00",
+  "system_cpu2_active_percentage": "0.00",
+  "system_cpu3_active_percentage": "0.00",
+  "system_cpu4_active_percentage": "0.00",
+  "system_cpu_active_percentage": "0.00",
+  "system_disk_total_bytes": "1043447808",
+  "system_disk_used_bytes": "561152",
+  "system_memory_total_bytes": "2086899712",
+  "system_memory_used_bytes": "1004507136",
+  "system_memory_total_swap_bytes": "1004507136",
+  "system_memory_used_swap_bytes": "0.00",
+  "system_network_received_bytes": "1466",
+  "system_network_sent_bytes": "182",
+  "kumosearch_memory_active_bytes": "29630464",
+  "kumosearch_memory_allocated_bytes": "27886840",
+  "kumosearch_memory_fragmentation_ratio": "0.06",
+  "kumosearch_memory_mapped_bytes": "69701632",
+  "kumosearch_memory_metadata_bytes": "4588768",
+  "kumosearch_memory_resident_bytes": "29630464",
+  "kumosearch_memory_retained_bytes": "25718784"
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/metrics.json`
+
+## API 统计 {#api-stats}
+
+获取有关 API 端点的统计信息。
+
+此端点返回过去 10 秒内所有请求的平均每秒请求数和延迟。
+
+<Tabs>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/stats.json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+```
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs >
+    <TabItem value="json" label="json">
+
+```json
+{
+  "latency_ms": {
+    "GET /collections/products": 0.0,
+    "POST /collections": 4.0,
+    "POST /collections/products/documents/import": 1166.0
+  },
+  "requests_per_second": {
+    "GET /collections/products": 0.1,
+    "POST /collections": 0.1,
+    "POST /collections/products/documents/import": 0.1
+  }
+}
+```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/stats.json`
+
+## 健康检查 {#healthy-check}
+
+获取有关 kumosearch 节点的健康信息。
+
+<Tabs>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/health"
+```
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "ok": true
+}
+```
+
+    </TabItem>
+</Tabs>
+
+当节点内存/磁盘不足时，API 响应将包含一个额外的 `resource_error` 字段，其值设置为 `OUT_OF_DISK` 或 `OUT_OF_MEMORY`。
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/health`

@@ -1,0 +1,150 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_cmake_configure
+
+配置基于 CMake 的项目。
+
+## 使用情况
+
+```cmake
+kmpkg_cmake_configure(
+    SOURCE_PATH <source-path>
+    [DISABLE_PARALLEL_CONFIGURE]
+    [NO_CHARSET_FLAG]
+    [WINDOWS_USE_MSBUILD]
+    [GENERATOR <generator>]
+    [LOGFILE_BASE <logname-base>]
+    [OPTIONS
+        <configure-setting>...]
+    [OPTIONS_RELEASE
+        <configure-setting>...]
+    [OPTIONS_DEBUG
+        <configure-setting>...]
+    [MAYBE_UNUSED_VARIABLES
+        <option-name>...]
+)
+```
+
+要使用此函数，必须依赖于帮助程序端口 `kmpkg-cmake`：
+
+```json
+"dependencies": [
+  {
+    "name": "kmpkg-cmake",
+    "host": true
+  }
+]
+```
+
+## 参数
+
+### SOURCE_PATH
+
+指定包含 `CMakeLists.txt` 的目录。
+
+该值通常作为调用 [`kmpkg_from_github()`](kmpkg_from_github.mdx) 或者[`kmpkg_from_gitee()`](kmpkg_from_gitee.mdx)等源采集命令的结果获得。
+
+### DISABLE_PARALLEL_CONFIGURE
+
+禁用并行运行 CMake 配置步骤。
+
+默认情况下，kmpkg 会禁用回写到源目录（通过未记录的 CMake 标志
+`CMAKE_DISABLE_SOURCE_CHANGES`），并且（在 Windows 上）并行配置发
+布和调试。 此标志指示 kmpkg 允许源目录写入并按顺序执行配置步骤。
+
+### NO_CHARSET_FLAG
+
+使用[内置 Windows 工具链](../../users/triplets.mdx#kmpkg_chainload_toolchain_file)时禁用传递 `/utf-8`。
+
+这对于在面向 MSVC 时设置自己源代码字符集的库来说是必需的。 有关详细信息，请参阅 `/utf-8` 的 [MSVC 文档](https://learn.microsoft.com/zh-cn/cpp/build/reference/utf-8-set-source-and-executable-character-sets-to-utf-8?view=msvc-170)。
+
+### WINDOWS_USE_MSBUILD
+
+面向 Windows 平台时，请使用 MSBuild 而不是其他构建器。
+
+默认情况下，kmpkg 更愿意使用 [Ninja](https://ninja-build.org/) 作为所有平台的 CMake 生成器。 但是，在某些极端情况下，
+MSBuild 的行为与 [Ninja](https://ninja-build.org/) 不同。 仅当项目需要 MSBuild 正确构建时，才应传递此标志。 此标志对 MinGW 目标无效。
+
+### GENERATOR
+
+指定要使用的生成器。
+
+默认情况下，kmpkg 首选使用 Ninja 作为所有平台的 CMake 生成器，或者在 Ninja
+不可用时将“Unix 生成文件”用于非 Windows 平台。 此参数可用于依赖于特定构建器的项目特定构建系统的极端情况。
+
+### LOGFILE_BASE
+
+配置日志的备用根目录名。
+
+默认为 `config-${TARGET_TRIPLET}`。 该项不应包含任何路径分隔符。 将生成与模式 `${CURRENT_BUILDTREES_DIR}/${LOGFILE_BASE}-<suffix>.log` 匹配的日志
+
+### OPTIONS
+
+配置期间要传递给 CMake 的其他选项。
+
+另请参阅[隐式选项](#implicit-options)。
+
+### OPTIONS_RELEASE
+
+发布配置期间要传递给 CMake 的其他选项。
+
+这些是对 `OPTIONS` 的补充。
+
+### OPTIONS_DEBUG
+
+调试配置期间要传递给 CMake 的其他选项。
+
+这些是对 `OPTIONS` 的补充。
+
+### MAYBE_UNUSED_VARIABLES
+
+配置步骤过程中可能无法读取的 CMake 选项列表。
+
+kmpkg 将对此列表之外在 `CMake` 配置步骤过程中无法读取任何选项发出警告。
+此列表应包含仅在某些配置期间（例如 `KMPKG_LIBRARY_LINKAGE` 为 `"static"` 时或启用某些功能时）读取的选项。
+
+## 隐式选项 {#implicit-options}
+
+此命令自动为 CMake 提供多个选项。
+
+- [`CMAKE_BUILD_TYPE`](https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html) 根据需要设置为 "Release" 或 "Debug"。
+- [`BUILD_SHARED_LIBS`](https://cmake.org/cmake/help/latest/variable/BUILD_SHARED_LIBS.html) 设置为根据 [`KMPKG_LIBRARY_LINKAGE`](../../users/triplets.mdx#kmpkg_library_linkage) 的值。
+- [`CMAKE_INSTALL_PREFIX=${CURRENT_PACKAGES_DIR}</debug>`](https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html) 根据配置需要
+- [`CMAKE_TOOLCHAIN_FILE`](https://cmake.org/cmake/help/latest/variable/CMAKE_TOOLCHAIN_FILE.html) and `KMPKG_CHAINLOAD_TOOLCHAIN_FILE`  和 [kmpkg toolchain file](../../users/buildsystems/cmake-integration.mdx#cmake_toolchain_file) 设置为包含 kmpkg 工具链文件和[三元组工具链](../../users/triplets.mdx#kmpkg_chainload_toolchain_file)。
+- [`CMAKE_SYSTEM_NAME=${KMPKG_CMAKE_SYSTEM_NAME}`](https://cmake.org/cmake/help/latest/variable/CMAKE_SYSTEM_NAME.html). 如果 `KMPKG_CMAKE_SYSTEM_NAME` 未设置，则默认为 "Windows"。
+- [`CMAKE_SYSTEM_VERSION=${KMPKG_CMAKE_SYSTEM_VERSION}`](https://cmake.org/cmake/help/latest/variable/CMAKE_SYSTEM_VERSION.html) 如果 `KMPKG_CMAKE_SYSTEM_VERSION` 已设置。
+- [`CMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON`](https://cmake.org/cmake/help/latest/variable/CMAKE_EXPORT_NO_PACKAGE_REGISTRY.html)
+- [`CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON`](https://cmake.org/cmake/help/latest/variable/CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY.html)
+- [`CMAKE_FIND_PACKAGE_NO_SYSTEM_PACKAGE_REGISTRY=ON`](https://cmake.org/cmake/help/latest/variable/CMAKE_FIND_PACKAGE_NO_SYSTEM_PACKAGE_REGISTRY.html)
+- [`CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP=TRUE`](https://cmake.org/cmake/help/latest/module/InstallRequiredSystemLibraries.html)
+- [`CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION=ON`](https://cmake.org/cmake/help/latest/variable/CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION.html)
+- [`CMAKE_INSTALL_LIBDIR:STRING=lib`](https://cmake.org/cmake/help/latest/module/GNUInstallDirs.html)
+- [`CMAKE_INSTALL_BINDIR:STRING=bin`](https://cmake.org/cmake/help/latest/module/GNUInstallDirs.html)
+- [`FETCHCONTENT_FULLY_DISCONNECTED=ON`](https://cmake.org/cmake/help/latest/module/FetchContent.html#variable:FETCHCONTENT_FULLY_DISCONNECTED) （自版本 2024-08-30 起）
+
+此命令还会传递 [`KMPKG_CMAKE_CONFIGURE_OPTIONS`](../../users/triplets.mdx#kmpkg_cmake_configure_options) 中的所有选项以及 `KMPKG_CMAKE_CONFIGURE_OPTIONS_RELEASE` 或 `KMPKG_CMAKE_CONFIGURE_OPTIONS_DEBUG` 中的配置特定选项。
+
+最后，还有不应依赖的其他内部选项（带有 `KMPKG_` 前缀）传入。
+
+## 示例
+
+```cmake
+kmpkg_from_github(OUT_SOURCE_PATH source_path ...)
+kmpkg_cmake_configure(
+    SOURCE_PATH "${source_path}"
+    OPTIONS
+        -DBUILD_EXAMPLES=OFF
+        -DBUILD_TESTS=OFF
+)
+kmpkg_cmake_install()
+```
+
+[Search microsoft/kmpkg for Examples](https://gitee.com/kumo-pub/kmpkg/search?q=kmpkg_cmake_configure+path%3A%2Fports)
+
+## 备注
+
+
+## Source
+
+[ports/kmpkg-cmake/kmpkg\_cmake\_configure.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-cmake/kmpkg_cmake_configure.cmake)

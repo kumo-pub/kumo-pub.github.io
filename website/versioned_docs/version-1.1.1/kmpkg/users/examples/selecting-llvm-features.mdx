@@ -1,0 +1,96 @@
+---
+date: 01/10/2024
+---
+# 用例： 为依赖项启用可选功能
+
+了解如何使用 kmpkg 中的功能自定义 llvm 包。
+
+
+## 安装库
+
+我们将以 [llvm](https://llvm.org/) 为例。您可以使用以下方式安装它：
+
+```powershell
+> kmpkg install llvm
+```
+
+或通过清单：
+
+```json
+{
+  "dependencies": ["llvm"]
+}
+```
+
+现在安装了 llvm，我们可以执行：
+
+```powershell
+> installed\x86-windows\bin\llc.exe --version
+```
+
+我们看到：
+
+```powershell
+  Registered Targets:
+    x86    - 32-bit X86: Pentium-Pro and above
+    x86-64 - 64-bit X86: EM64T and AMD64
+```
+
+## 安装附加功能
+
+但是 [llvm 支持更多目标](https://llvm.org/docs/GettingStarted.html#local-llvm-configuration)，从 ARM 到 SPARC 到 SystemZ。
+然而，显然我们当前的安装不包括 ARM 作为目标；
+因此，我们需要了解 kmpkg 如何允许我们安装其他 LLVM 目标。
+llvm 端口通过“target-*”功能允许这样做。
+
+如果我们这样做：
+
+```powershell
+> kmpkg search llvm
+```
+
+我们可以看到：
+
+```powershell
+llvm                 10.0.0#6         The LLVM Compiler Infrastructure
+llvm[clang]                           Build C Language Family Front-end.
+llvm[clang-tools-extra]               Build Clang tools.
+...
+llvm[target-all]                      Build with all backends.
+llvm[target-amdgpu]                   Build with AMDGPU backend.
+llvm[target-arm]                      Build with ARM backend.
+...
+```
+
+我们可以使用 install-feature 语法安装任何这些目标：
+
+```powershell
+> kmpkg install llvm[target-arm] # Installs LLVM with the ARM target
+```
+
+```json
+{
+  "dependencies": [{ "name": "llvm", "features": ["target-arm"] }]
+}
+```
+
+## 选择退出默认功能
+
+llvm 端口包含一些您作为用户可能不想要的默认功能：例如，`clang` 功能是默认的，这意味着 `kmpkg install llvm` 也将构建并安装 clang。
+如果您正在编写一个使用 LLVM 作为后端的编译器，你可能对安装 clang 也不感兴趣，我们可以通过使用特殊的“核心”“功能”禁用默认功能来做到这一点：
+
+```powershell
+> kmpkg install llvm[core,target-arm] # removing the default-feature with "core" also removes all of the default targets you get
+```
+
+或在清单文件中：
+
+```json
+{
+  "dependencies": [{
+    "name": "llvm",
+    "default-features": false,
+    "features": ["target-arm"]
+  }]
+}
+```

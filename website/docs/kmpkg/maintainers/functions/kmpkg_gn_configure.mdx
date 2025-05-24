@@ -1,0 +1,39 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_gn_configure
+
+生成 Ninja (GN) 目标。
+
+## 使用情况
+
+```cmake
+kmpkg_gn_configure(
+    SOURCE_PATH <SOURCE_PATH>
+    [OPTIONS <OPTIONS>]
+    [OPTIONS_DEBUG <OPTIONS_DEBUG>]
+    [OPTIONS_RELEASE <OPTIONS_RELEASE>]
+)
+```
+
+## 参数
+
+### SOURCE_PATH (required)
+
+GN 项目的路径。
+
+### OPTIONS
+
+要传递给调试和发布目标的选项。 必须以由空格分隔的字符串形式提供这些选项。
+
+### OPTIONS_DEBUG (space-separated string)
+
+要传递给调试目标的选项。
+
+### OPTIONS_RELEASE (space-separated string)
+
+要传递给发布目标的选项。
+
+## Source
+
+[ports/kmpkg-gn/kmpkg\_gn\_configure.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-gn/kmpkg_gn_configure.cmake)

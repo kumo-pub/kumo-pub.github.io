@@ -1,0 +1,52 @@
+---
+date: 7/16/2024
+---
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程： 编译可执行文件
+
+该页面内容为如何编译二进制可执行文件。
+
+## 编译可执行文件
+
+`kmcmake_cc_binary`函数将编译可执行二进制文件。与[`kmcmake_cc_library`](library.mdx#build-library)相似，默认
+会集成安装和导出对象的配置。
+
+函数： kmcmake_cc_binary
+
+参数：
+
+- [NAMESPACE](general-parameters.mdx#general-parameter-namespace) 参见上文
+- [NAME](general-parameters.mdx#general-parameter-name) 参见上文
+- [SOURCES](general-parameters.mdx#general-parameter-sources) 参见上文
+- [CXXOPTS](general-parameters.mdx#general-parameter-cxxopts) 参见上文
+- [DEPS](general-parameters.mdx#general-parameter-deps) 参见上文
+- [HEADERS](general-parameters.mdx#general-parameter-headers) 参见上文
+- [INCLUDES](general-parameters.mdx#general-parameter-includes) 参见上文
+- [DEFINES](general-parameters.mdx#general-parameter-defines) 参见上文
+- [LINKS](general-parameters.mdx#general-parameter-links) 参见上文
+
+示例：
+
+<Tabs>
+    <TabItem value="header-only" label="header-only">
+        ```cmake
+        kmcmake_cc_binary(
+            NAMESPACE ${PROJECT_NAME}
+            NAME shared_main
+            SOURCES
+            main.cc
+            CXXOPTS
+            ${KMCMAKE_CXX_OPTIONS}
+            DEPS
+            ${PROJECT_NAME}::foo
+            LINKS
+            ${KMCMAKE_DEPS_LINK}
+            ${PROJECT_NAME}::foo
+            PUBLIC
+        )
+        ```
+    </TabItem>
+</Tabs>

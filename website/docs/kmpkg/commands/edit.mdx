@@ -1,0 +1,66 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg edit
+
+kmpkg edit 命令的命令行参考。在文本编辑器窗口中打开端口的内容。
+
+## 摘要
+
+```Console
+kmpkg edit <ports> [--all] [--buildtrees] [options]
+```
+
+## 示例
+
+### 打开多个端口
+
+```Console
+kmpkg edit fmt zlib
+```
+
+### 打开相关文件夹
+
+```Console
+kmpkg install fmt
+kmpkg edit fmt --all
+```
+
+## 说明
+
+打开端口以在文本编辑器窗口（默认为 `Visual Studio Code`）中编辑。
+
+如果提供了多个端口名，则所有端口都在同一窗口中打开。 此命令不适用于外部注册表的端口。 只能打开内置注册表的端口。
+
+`--buildtrees` 选项将打开包的 `buildtrees` 文件夹，而不是端口的内容。 `--all` 选项还会在同一窗口中打开端口的相关 `packages` 和 `buildtrees` 文件夹。
+
+默认情况下，kmpkg 将在已知安装路径中搜索 Visual Studio Code。 设置 `EDITOR` 环境变量以指定要使用的文本编辑器程序。
+
+在 Windows 上，kmpkg 在以下位置搜索 Visual Studio Code 或 Visual Studio Code Insiders 安装：
+
+* `%ProgramFiles% 和 %ProgramFiles(x86)%` 文件夹
+* `%APPDATA%\Local\Programs` 文件夹
+* Windows 注册表
+
+在 Linux 上，kmpkg 在以下位置搜索 Visual Studio Code 可执行文件：
+
+* `/usr/bin/code`
+* `/usr/share/code/bin/code`
+
+在 MacOS 上，kmpkg 在 `Applications` 文件夹中搜索 Visual Studio Code 或 Visual Studio Code Insiders 安装。
+
+如果未找到 Visual Studio Code，kmpkg 将尝试使用为系统配置的默认文本编辑器。
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--all`
+
+打开端口的相关 `buildtrees` 和 `packages` 文件夹。
+
+### `--buildtrees`
+
+打开端口的 `buildtrees` 文件夹，而不是端口的内容。 `buildtrees` 文件夹在安装过程中创建，包含包提取的源代码和日志文件。
+
+与 `kmpkg install --editable <port>` 命令结合使用，以获取适合调试和创建修补程序文件的包源代码的干净副本。

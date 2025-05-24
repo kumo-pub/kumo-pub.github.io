@@ -1,0 +1,66 @@
+---
+date: 7/16/2024
+---
+# 教程：使用文件系统目录设置 kmpkg 二进制缓存
+
+了解如何设置本地二进制缓存以减少重建时间。
+
+您不限于 [默认二进制缓存](binary-caching-default.mdx) 位置作为您唯一的位置
+本地二进制缓存，可以将多个文件系统位置配置为二进制缓存。你
+甚至可以设置具有不同权限的特定缓存，例如只读、只写或读取
+和写入权限。
+
+所有二进制缓存均通过 `KMPKG_BINARY_SOURCES` 环境变量进行配置。价值
+`KMPKG_BINARY_SOURCES` 遵循特定的 [配置语法](../reference/binarycaching.mdx#configuration-syntax)。
+
+在本教程中，您将学习如何：
+
+* [创建二进制缓存目录](#create-a-binary-cache-directory)
+* [配置 `KMPKG_BINARY_SOURCES`](#configure-kmpkg_binary_sources)
+
+## 先决条件
+
+* 命令行
+* kmpkg
+
+## 1 - 创建二进制缓存目录 {#create-a-binary-cache-directory}
+
+使用 [`files`](../reference/binarycaching.mdx#files) 后端时，可以使用文件系统
+存储二进制包的目录，包括网络位置。
+
+在本教程中，您将创建两个二进制缓存位置，其中一个具有读写功能访问权限，第二个只有读访问权限。
+
+创建两个二进制缓存位置（替换为您选择的任何位置）：
+
+```bash
+mkdir /home/kmpkg/binary-cache
+mkdir /mnt/remote/shared/kmpkg/binary-cache
+```
+
+## 2 - 配置 `KMPKG_BINARY_SOURCES` {#configure-kmpkg_binary_sources}
+
+接下来设置“KMPKG_BINARY_SOURCES”的值，如下所示：
+
+```console
+set "KMPKG_BINARY_SOURCES=clear;files,\\remote\shared\kmpkg\binary-cache,read;files,D:\kmpkg\binary-cache,readwrite"
+```
+
+
+```bash
+export KMPKG_BINARY_SOURCES="clear;files,/mnt/remote/shared/kmpkg/binary-cache,read;files,/home/kmpkg/binary-cache,readwrite"
+```
+
+此`KMPKG_BINARY_SOURCES`配置添加以下源字符串：
+
+* `clear`，禁用任何先前配置的二进制缓存，在这种情况下，它禁用[默认二进制缓存](binary-caching-local.mdx)。
+* `files,/mnt/remote/shared/kmpkg/binary-cache,read`，使用文件系统后端设置二进制缓存，`files`，
+位于`/mnt/remote/shared/kmpkg/binary-cache`，并赋予其只读权限（`读取`是默认权限）。
+* `files,/home/kmpkg/binary-cache,readwrite`，设置第二个文件系统二进制缓存，位于
+`/home/kmpkg/binary-cache`，并为其授予读写权限（`readwrite`）。
+
+
+## 后续步骤
+
+以下是接下来要尝试的其他任务：
+
+* [更改默认二进制缓存位置](binary-caching-default.mdx)

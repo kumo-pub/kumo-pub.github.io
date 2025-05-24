@@ -1,0 +1,178 @@
+---
+date: 02/21/2024
+---
+
+# Concept: 功能
+
+本文详细解释了功能的概念、功能及其预期内容。
+
+## 功能
+
+功能代表一组功能、行为和依赖项，可以在安装时有选择地添加到包或项目中。
+
+根据设计，功能应遵循以下原则：
+
+- 附加性：启用某个功能应提供新功能，否则软件包中将缺少该功能，而无需禁用任何其他功能。
+- 非排他性：启用某个功能不应妨碍其他功能的安装。
+
+特性不应该被用来定义替代的功能集。例如，图形库不应使用在专有图形后端之间进行选择的功能，因为不可能同时安装所有这些后端。
+
+功能会对包的依赖关系产生以下影响：
+
+- 添加新的依赖项，包括对同一包中其他功能的依赖项。
+- 在现有依赖项上启用新功能。
+
+可用的功能集由 [`"features"` 字段](../reference/kmpkg-json.mdx#features) 定义。
+
+### 示例 1：多种文件格式
+
+例如，图像处理库可能通过依赖不同的其他库集来支持几种不同的图像类型。
+
+```json
+{
+  "name": "my-image-lib",
+  "version": "0.1",
+  "features": {
+    "png": { "description": "Support PNG files", "dependencies": ["libpng"]},
+    "jpeg": { "description": "Support JPEG files", "dependencies": ["libjpeg-turbo"]},
+    "tiff": { "description": "Support TIFF files", "dependencies": ["libtiff"]},
+  }
+}
+```
+
+
+## 默认功能
+
+默认功能是一组自动激活的功能，如果顶级项目没有明确请求构建没有这些功能的话。默认功能旨在确保最低水平的功能，无论项目的依赖关系图变得多么复杂和可定制。
+
+:::info
+默认功能并不是为了模拟`管理`或`建议`。
+:::
+
+例如，考虑一个库`extract-any`，它支持 10 多种不同的存档格式，其中包括一些非常晦涩的格式。因
+为它们都是可选的，所以如果没有选择，则库将不起作用：它无法提取任何文件。
+
+默认功能确保用户只需将`extract-any`添加到其`kmpkg.json`中的依赖项列表中即可获得基线级别的功能；例如，自动选择`.zip`和`.tar.gz`解压缩器。
+
+### 示例 2：运行中的默认功能
+
+当用户将`extract-any`添加到`kmpkg.json`而不指定功能时，将自动包含默认功能（例如，支持`.zip`和`.tar.gz`格式），以确保基本功能。
+
+```
+{
+  "name": "my-application",
+  "version": "0.15.2",
+  "dependencies": [
+    "extract-any"
+  ]
+}
+```
+
+如果用户想要显式禁用默认功能，他们可以通过将`default-features`: false 添加到依赖项来实现：
+
+```json
+{
+  "name": "my-application",
+  "version": "0.15.2",
+  "dependencies": [
+    {
+      "name": "extract-any",
+      "default-features": false
+    }
+  ]
+}
+```
+
+或者，如果在 [经典模式](../consume/classic-mode.mdx) 中使用 kmpkg，您可以通过`core`功能禁用默认功能。例如，`kmpkg install extract-any[core]`安装`extract-any`，没有任何默认功能，因为`[core]`明确排除它们。
+
+有关更多信息，请查看[默认功能文章](default-features.mdx)。
+
+
+## 依赖解析
+
+使用 kmpkg 时，依赖关系解析起着至关重要的作用，尤其是在处理具有相互依赖关系的功能时。为了说明这一点，请考虑以下涉及图像处理库的场景：
+
+```json
+{
+  "name": "my-image-lib",
+  "version": "0.1",
+  "features": {
+    "png": { "description": "Support PNG files", "dependencies": ["libpng"]},
+    "jpeg": { "description": "Support JPEG files", "dependencies": ["libjpeg-turbo"]},
+    "tiff": { "description": "Support TIFF files", "dependencies": ["libtiff"]},
+  }
+}
+```
+
+在不同的库依赖于公共库的各种功能的情况下，kmpkg 确保考虑所有必需的功能和依赖关系。例如，
+如果`library-a`需要`png`功能，而`library-b`需要`my-image-lib`中的`jpeg`功能，则依赖关系图将如下所示：
+
+```json
+{
+  "name": "library-a",
+  "version": "1",
+  "dependencies": [{"name": "my-image-lib", "features": ["png"]}]
+}
+```
+
+```json
+{
+  "name": "library-b",
+  "version": "1",
+  "dependencies": [{"name": "my-image-lib", "features": ["jpeg"]}]
+}
+```
+
+```json
+{
+  "name": "project-using-a-and-b",
+  "version": "1",
+  "dependencies": [
+    "library-a",
+    "library-b"
+  ]
+}
+```
+
+当这些依赖关系得到解决后，kmpkg 会结合所有必要的功能和依赖关系来形成一个全面的安装计划。在此示例中，依赖于`library-a`和`library-b`的项目将导致安装计划包含`my-image-lib`中的`PNG`和`JPEG`支持，但不包含`TIFF`：
+```
+libjpeg-turbo[core]
+libpng[core]
+library-a[core]
+library-b[core]
+my-image-lib[core,png,jpeg]
+```
+
+此机制可确保`my-image-lib`的构建针对所需功能进行优化，提供对`PNG`和`JPEG`的支持，同时排除不必要的`TIFF`支持。
+
+## 高级用法
+
+### 示例 3：单个存储库中的多个相关项目
+
+当单个存储库包含多个单独的可构建组件（例如具有某些共享代码的客户端和服务器应用程序）时，每个部分的开发人员可能希望避免安装其他部分所需的昂贵的依赖项。
+
+```json
+{
+  "name": "my-game",
+  "dependencies": ["grpc"],
+  "features": {
+    "client": { "description": "Client Game Executable", "dependencies": ["sdl2", "bullet3"]},
+    "server": { "description": "Multiplayer Server Executable", "dependencies": ["proxygen"]},
+    "tests": { "description": "Build tests", "dependencies": ["gtest"] }
+  }
+}
+```
+
+然后，个人开发人员可以选择要安装的功能：
+
+- 在[安装命令行](../commands/install.mdx)上，传递[`--x-feature=`](../commands/install.mdx#feature)
+- 使用 [CMake 集成](../users/buildsystems/cmake-integration.mdx) 时，在 `project()` 之前设置 [`KMPKG_MANIFEST_FEATURES`](../users/buildsystems/cmake-integration.mdx#kmpkg_manifest_features) 命令。
+- 使用 [MSBuild 集成](../users/buildsystems/msbuild-integration.mdx) 时，通过 [`KmpkgAdditionalInstallOptions`](../users/buildsystems/msbuild-integration.mdx#kmpkg-additional-install-options) 传递 `--x-feature=`
+
+有关详细信息，请参阅以下内容：
+
+* [依赖信息](../commands/depend-info.mdx)
+* [覆盖](../reference/kmpkg-json.mdx#overrides)
+* [基线](../users/versioning.mdx#baselines)
+* [版本控制](../users/versioning.mdx)
+

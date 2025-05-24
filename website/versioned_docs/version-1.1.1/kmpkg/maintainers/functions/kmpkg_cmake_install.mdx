@@ -1,0 +1,57 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_cmake_install
+
+构建并安装 CMake 项目。
+
+## 使用情况
+
+```cmake
+kmpkg_cmake_install(
+    [DISABLE_PARALLEL]
+    [ADD_BIN_TO_PATH]
+)
+```
+
+要使用此函数，必须依赖于帮助程序端口 `kmpkg-cmake`：
+
+```json
+"dependencies": [
+  {
+    "name": "kmpkg-cmake",
+    "host": true
+  }
+]
+```
+
+## 参数 {#parameters}
+
+### DISABLE_PARALLEL
+
+禁用并行运行构建。
+
+默认情况下，构建最多可以运行 [`KMPKG_MAX_CONCURRENCY`](../../users/config-environment.mdx#kmpkg_max_concurrency) 个作业。 此选项将构建限制为单个作业，并且仅当基础构建无法正确并发运行时才应使用。
+### ADD_BIN_TO_PATH
+
+在构建过程中，将配置特定 `bin/` 目录添加到 `PATH`。
+
+为 Windows 动态三元组构建时，新构建的可执行文件可能不会立即执行，因为可能无法从构建环境中找到其依
+赖项 DLL。 此标志指示 kmpkg 将定位这些依赖项 DLL 所需的任何其他路径添加到 `PATH` 环境变量。 如果项目需要在构
+建过程中执行新构建的二进制文件（例如构建代码），则需要执行此操作。
+
+## 示例
+
+```cmake
+kmpkg_from_github(OUT_SOURCE_PATH source_path ...)
+kmpkg_cmake_configure(SOURCE_PATH "${source_path}")
+kmpkg_cmake_install()
+```
+
+[Search microsoft/kmpkg for Examples](https://gitee.com/kumo-pub/kmpkg/search?q=kmpkg_cmake_install+path%3A%2Fports)
+
+## 备注
+
+## Source
+
+[ports/kmpkg-cmake/kmpkg\_cmake\_install.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-cmake/kmpkg_cmake_install.cmake)

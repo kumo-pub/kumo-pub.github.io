@@ -1,0 +1,4109 @@
+# kmock 教程
+
+您可以在此处找到使用 kMock 的教程。如果您还没有阅读过，请阅读
+[入门教程](kmock_for_dummies.mdx) 首先确保您了解
+基础知识。
+
+:::info
+**注意：** kMock 存在于 `testing` 命名空间中。为了可读性，它是
+建议在使用之前在文件中写入一次`using ::testing::Foo;`
+名称 `Foo` 由 kMock 定义。我们在本节中省略此类“using”语句
+简洁，但您应该在自己的代码中执行此操作。
+:::
+
+## 创建模拟类 {#creating-mock-classes}
+
+模拟类被定义为普通类，使用`MOCK_METHOD`宏来
+生成模拟方法。该宏有 3 或 4 个参数：
+
+```cpp
+class MyMock {
+ public:
+  MOCK_METHOD(ReturnType, MethodName, (Args...));
+  MOCK_METHOD(ReturnType, MethodName, (Args...), (Specs...));
+};
+```
+
+前 3 个参数只是方法声明，分为 3 部分。
+第四个参数接受限定符的封闭列表，这会影响
+生成方法：
+
+* **`const`** - 使模拟方法成为“const”方法。必需的，如果
+重写 `const` 方法。
+* **`override`** - 用“override”标记方法。如果覆盖则推荐
+一个“虚拟”方法。
+* **`noexcept`** - 用“noexcept”标记方法。如果覆盖则需要
+`noexcept` 方法。
+* **`Calltype(...)`** - 设置方法的调用类型（例如
+`STDMETHODCALLTYPE`)，在 Windows 中很有用。
+* **`ref(...)`** - 使用参考限定标记方法
+指定的。如果重写具有引用的方法，则为必需
+资格。例如“ref(&)”或“ref(&&)”。
+
+### 处理不受保护的逗号 {#dealing-with-unprotected-commas}
+
+不受保护的逗号，即没有被括号包围的逗号，可以防止
+正确解析其参数的`MOCK_METHOD`：
+
+`{: .bad}`
+```cpp
+class MockFoo {
+ public:
+  MOCK_METHOD(std::pair<bool, int>, GetPair, ());  // Won't compile!
+  MOCK_METHOD(bool, CheckMap, (std::map<int, double>, bool));  // Won't compile!
+};
+```
+
+解决方案 1 - 用括号括起来：
+
+`{: .good}`
+```cpp
+class MockFoo {
+ public:
+  MOCK_METHOD((std::pair<bool, int>), GetPair, ());
+  MOCK_METHOD(bool, CheckMap, ((std::map<int, double>), bool));
+};
+```
+
+请注意，一般来说，用括号包装返回或参数类型是：
+无效的 C++。 `MOCK_METHOD` 删除括号。
+
+解决方案 2 - 定义别名：
+
+`{: .good}`
+```cpp
+class MockFoo {
+ public:
+  using BoolAndInt = std::pair<bool, int>;
+  MOCK_METHOD(BoolAndInt, GetPair, ());
+  using MapIntDouble = std::map<int, double>;
+  MOCK_METHOD(bool, CheckMap, (MapIntDouble, bool));
+};
+```
+
+### 模拟私有或受保护的方法 {#mocking-private-or-protected-methods}
+
+您必须始终将模拟方法定义（`MOCK_METHOD`）放在`public：`中
+模拟类的部分，无论被模拟的方法是`public`，
+基类中的`protected`或`private`。这允许`ON_CALL`和
+`EXPECT_CALL` 从模拟类外部引用模拟函数。
+（是的，C++ 允许子类更改虚函数的访问级别
+基类。）示例：
+
+```cpp
+class Foo {
+ public:
+  ...
+  virtual bool Transform(Gadget* g) = 0;
+
+ protected:
+  virtual void Resume();
+
+ private:
+  virtual int GetTimeOut();
+};
+
+class MockFoo : public Foo {
+ public:
+  ...
+  MOCK_METHOD(bool, Transform, (Gadget* g), (override));
+
+  // The following must be in the public section, even though the
+  // methods are protected or private in the base class.
+  MOCK_METHOD(void, Resume, (), (override));
+  MOCK_METHOD(int, GetTimeOut, (), (override));
+};
+```
+
+### 模拟重载方法 {#mocking-overloaded-methods}
+
+您可以像往常一样模拟重载函数。不需要特别注意：
+
+```cpp
+class Foo {
+  ...
+
+  // Must be virtual as we'll inherit from Foo.
+  virtual ~Foo();
+
+  // Overloaded on the types and/or numbers of arguments.
+  virtual int Add(Element x);
+  virtual int Add(int times, Element x);
+
+  // Overloaded on the const-ness of this object.
+  virtual Bar& GetBar();
+  virtual const Bar& GetBar() const;
+};
+
+class MockFoo : public Foo {
+  ...
+  MOCK_METHOD(int, Add, (Element x), (override));
+  MOCK_METHOD(int, Add, (int times, Element x), (override));
+
+  MOCK_METHOD(Bar&, GetBar, (), (override));
+  MOCK_METHOD(const Bar&, GetBar, (), (const, override));
+};
+```
+
+:::info
+**注意：** 如果你不模拟重载方法的所有版本，编译器
+将会向您发出有关基类中某些方法被隐藏的警告。到
+解决这个问题，使用`using`将它们纳入范围：
+:::
+
+```cpp
+class MockFoo : public Foo {
+  ...
+  using Foo::Add;
+  MOCK_METHOD(int, Add, (Element x), (override));
+  // We don't want to mock int Add(int times, Element x);
+  ...
+};
+```
+
+### 模拟类模板 {#mocking-class-templates}
+
+您可以像任何类一样模拟类模板。
+
+```cpp
+template <typename Elem>
+class StackInterface {
+  ...
+  // Must be virtual as we'll inherit from StackInterface.
+  virtual ~StackInterface();
+
+  virtual int GetSize() const = 0;
+  virtual void Push(const Elem& x) = 0;
+};
+
+template <typename Elem>
+class MockStack : public StackInterface<Elem> {
+  ...
+  MOCK_METHOD(int, GetSize, (), (override));
+  MOCK_METHOD(void, Push, (const Elem& x), (override));
+};
+```
+
+### 模拟非虚拟方法 {#MockingNonVirtualMethods}
+
+kMock 可以模拟用于 Hi-perf 依赖注入的非虚拟函数。
+
+在这种情况下，您的不是与真实类共享公共基类，而是
+模拟类将与真实类**无关**，但包含带有
+相同的签名。模拟非虚拟方法的语法与以下*相同*
+模拟虚拟方法（只是不要添加`override`）：
+
+
+```cpp
+// A simple packet stream class.  None of its members is virtual.
+class ConcretePacketStream {
+ public:
+  void AppendPacket(Packet* new_packet);
+  const Packet* GetPacket(size_t packet_number) const;
+  size_t NumberOfPackets() const;
+  ...
+};
+
+// A mock packet stream class.  It inherits from no other, but defines
+// GetPacket() and NumberOfPackets().
+class MockPacketStream {
+ public:
+  MOCK_METHOD(const Packet*, GetPacket, (size_t packet_number), (const));
+  MOCK_METHOD(size_t, NumberOfPackets, (), (const));
+  ...
+};
+```
+
+请注意，与真实类不同，模拟类没有定义`AppendPacket()`。
+只要测试不需要调用它就可以。
+
+接下来，您需要一种方式来表明您想要在中使用 `ConcretePacketStream`
+生产代码，并在测试中使用`MockPacketStream`。由于函数是
+不是虚拟的，并且两个类不相关，您必须在以下位置指定您的选择
+*编译时*（相对于运行时）。
+
+一种方法是将需要使用数据包流的代码模板化。
+更具体地说，您将为代码提供该类型的模板类型参数
+数据包流的。在生产中，您将使用以下方式实例化您的模板
+`ConcretePacketStream` 作为类型参数。在测试中，您将实例化
+与`MockPacketStream`相同的模板。例如，你可以写：
+
+```cpp
+template <class PacketStream>
+void CreateConnection(PacketStream* stream) { ... }
+
+template <class PacketStream>
+class PacketReader {
+ public:
+  void ReadPackets(PacketStream* stream, size_t packet_num);
+};
+```
+
+然后你可以使用`CreateConnection<ConcretePacketStream>()`并且
+生产代码中的`PacketReader<ConcretePacketStream>`，并使用
+`CreateConnection<MockPacketStream>()` 和 `PacketReader<MockPacketStream>` 中
+测试。
+
+```cpp
+  MockPacketStream mock_stream;
+  EXPECT_CALL(mock_stream, ...)...;
+  .. set more expectations on mock_stream ...
+  PacketReader<MockPacketStream> reader(&mock_stream);
+  ... exercise reader ...
+```
+
+### 模拟函数 {#mocking-free-functions}
+
+不可能直接模拟自由函数（即 C 风格函数或
+静态方法）。如果需要，您可以重写代码以使用接口
+（抽象类）。
+
+不要直接调用自由函数（例如`OpenFile`），而是引入一个
+它的接口，并有一个调用 `free` 函数的具体子类：
+
+```cpp
+class FileInterface {
+ public:
+  ...
+  virtual bool Open(const char* path, const char* mode) = 0;
+};
+
+class File : public FileInterface {
+ public:
+  ...
+  bool Open(const char* path, const char* mode) override {
+     return OpenFile(path, mode);
+  }
+};
+```
+
+您的代码应该与`FileInterface`对话以打开文件。现在很容易嘲笑
+出函数。
+
+这看起来似乎很麻烦，但实际上你经常会遇到多个问题您可以将相关函数放入同一界面中，因此每个函数
+语法开销会低得多。
+
+如果您担心虚拟化带来的性能开销功能，并且分析证实了您的担忧，您可以将其与
+[模拟非虚拟方法](#MockingNonVirtualMethods) 的配方。
+
+### 善良、严格和无趣的调用 {#NiceStrictNaggy}
+
+如果模拟方法没有`EXPECT_CALL`规范但被调用，我们说它是一个
+“无趣的调用”，以及默认操作（可以使用指定
+将采用该方法的`ON_CALL()`)。目前，一个无趣的呼叫将
+默认情况下也会导致 kMock 打印警告。
+
+然而，有时您可能想忽略这些无趣的调用，并且
+有时您可能想将它们视为错误。 kMock 让您做出决定
+基于每个模拟对象。
+
+假设您的测试使用模拟类`MockFoo`：
+
+```cpp
+TEST(...) {
+  MockFoo mock_foo;
+  EXPECT_CALL(mock_foo, DoThis());
+  ... code that uses mock_foo ...
+}
+```
+
+如果调用 `DoThis()` 之外的 `mock_foo` 方法，您将得到一个
+警告。但是，如果您重写测试以使用 `NiceMock<MockFoo>` 代替，
+您可以抑制警告：
+
+```cpp
+using ::testing::NiceMock;
+
+TEST(...) {
+  NiceMock<MockFoo> mock_foo;
+  EXPECT_CALL(mock_foo, DoThis());
+  ... code that uses mock_foo ...
+}
+```
+
+`NiceMock<MockFoo>` 是 `MockFoo` 的子类，所以它可以在任何地方使用
+`MockFoo` 被接受。
+
+如果 `MockFoo` 的构造函数接受一些参数，它也可以工作，如
+`NiceMock<MockFoo>` “继承” `MockFoo` 的构造函数：
+
+```cpp
+using ::testing::NiceMock;
+
+TEST(...) {
+  NiceMock<MockFoo> mock_foo(5, "hi");  // Calls MockFoo(5, "hi").
+  EXPECT_CALL(mock_foo, DoThis());
+  ... code that uses mock_foo ...
+}
+```
+
+`StrictMock` 的用法类似，只不过它让一切变得无趣
+调用失败：
+
+```cpp
+using ::testing::StrictMock;
+
+TEST(...) {
+  StrictMock<MockFoo> mock_foo;
+  EXPECT_CALL(mock_foo, DoThis());
+  ... code that uses mock_foo ...
+
+  // The test will fail if a method of mock_foo other than DoThis()
+  // is called.
+}
+```
+
+:::info
+注意：`NiceMock`和`StrictMock`仅影响*无趣的*调用（
+*方法*没有任何期望）；它们不会影响*意外*调用（
+方法符合预期，但它们不匹配）。看
+[了解无趣与意外的呼叫](#uninteresting-vs-unexpected)。
+:::
+
+但有一些警告（遗憾的是它们是 C++ 的副作用）
+限制）：
+
+1. `NiceMock<MockFoo>` 和 `StrictMock<MockFoo>` 仅适用于模拟方法
+**直接**在`MockFoo`类中使用`MOCK_METHOD`宏定义。
+如果在 `MockFoo` 的 **基类** 中定义了模拟方法，则“nice”或
+“strict”修饰符可能不会影响它，具体取决于编译器。在
+特别是，嵌套“NiceMock”和“StrictMock”（例如
+**不**支持 `NiceMock<StrictMock<MockFoo> >`)。
+2. `NiceMock<MockFoo>` 和 `StrictMock<MockFoo>` 可能无法正常工作，如果
+`MockFoo` 的析构函数不是虚拟的。我们想解决这个问题，但是
+需要清理现有的测试。
+
+最后，您应该**非常谨慎**何时使用 naggy 或 strict
+模拟，因为它们往往会使测试变得更脆弱且更难以维护。当你
+重构您的代码而不改变其外部可见的行为，理想情况下您
+不需要更新任何测试。如果你的代码与烦人的模拟交互，
+但是，由于您的操作，您可能会开始收到警告垃圾邮件
+改变。更糟糕的是，如果您的代码与严格的模拟交互，您的测试可能会开始
+失败，你将被迫修复它们。我们的一般建议是使用
+漂亮的模拟（还不是默认的）大多数时候，使用 naggy 模拟（当前的
+默认）在开发或调试测试时，并且仅使用严格模拟作为
+最后的手段。
+
+
+### 简化界面而不破坏现有代码 {#SimplerInterfaces}
+
+Sometimes a method has a long list of arguments that is mostly uninteresting.
+For example:
+
+```cpp
+class LogSink {
+ public:
+  ...
+  virtual void send(LogSeverity severity, const char* full_filename,
+                    const char* base_filename, int line,
+                    const struct tm* tm_time,
+                    const char* message, size_t message_len) = 0;
+};
+```
+
+此方法的参数列表很长且难以使用（`message`
+参数甚至不是 0 终止的）。如果我们按原样模拟它，则使用模拟将是
+尴尬的。但是，如果我们尝试简化此界面，则需要修复所有问题
+客户依赖它，这通常是不可行的。
+
+诀窍是重新调度模拟类中的方法：
+
+```cpp
+class ScopedMockLog : public LogSink {
+ public:
+  ...
+  void send(LogSeverity severity, const char* full_filename,
+                    const char* base_filename, int line, const tm* tm_time,
+                    const char* message, size_t message_len) override {
+    // We are only interested in the log severity, full file name, and
+    // log message.
+    Log(severity, full_filename, std::string(message, message_len));
+  }
+
+  // Implements the mock method:
+  //
+  //   void Log(LogSeverity severity,
+  //            const string& file_path,
+  //            const string& message);
+  MOCK_METHOD(void, Log,
+              (LogSeverity severity, const string& file_path,
+               const string& message));
+};
+```
+
+通过使用修剪过的参数列表定义一个新的模拟方法，我们使模拟
+类更加人性化。
+
+该技术也可用于使重载方法更适合
+嘲笑。例如，当使用重载来实现默认值时
+论点：
+
+```cpp
+class MockTurtleFactory : public TurtleFactory {
+ public:
+  Turtle* MakeTurtle(int length, int weight) override { ... }
+  Turtle* MakeTurtle(int length, int weight, int speed) override { ... }
+
+  // the above methods delegate to this one:
+  MOCK_METHOD(Turtle*, DoMakeTurtle, ());
+};
+```
+
+这允许不关心调用哪个重载的测试来避免指定
+参数匹配器：
+
+```cpp
+ON_CALL(factory, DoMakeTurtle)
+    .WillByDefault(Return(MakeMockTurtle()));
+```
+
+### 模拟具体类的替代方案 {#alternative-to-mocking-concrete-classes}
+
+通常，您可能会发现自己使用不实现接口的类。在
+为了测试使用此类的代码（我们称之为`Concrete`），您
+可能会想将 `Concrete` 的方法虚拟化，然后模拟它。
+
+尽量不要这样做。
+
+将非虚拟函数设为虚拟是一个重大决定。它创建了一个扩展
+子类可以调整类的行为。这会削弱你的控制力
+在类上，因为现在维护类不变量变得更加困难。你
+仅当有正当理由需要子类时才应将函数设为虚拟
+覆盖它。
+
+直接模拟具体类是有问题的，因为它会产生紧密耦合
+在课堂和测试之间 - 课堂上的任何微小变化都可能无效
+您的测试并使测试维护变得痛苦。
+
+为了避免此类问题，许多程序员一直在练习`编码到
+接口("coding to interfaces")`：您的代码将定义而不是与`Concrete`类对话
+一个界面并与之交谈。然后你将该接口实现为适配器
+`Concrete`的顶部。在测试中，您可以轻松模拟该界面以观察如何
+你的代码正在做。
+
+
+这种技术会产生一些开销：
+
+* 您支付虚函数调用的成本（通常不是问题）。
+* 有更多的抽象可供程序员学习。
+
+然而，除了更好的效果之外，它还可以带来显着的好处。
+可测试性：
+
+* `Concrete` 的 API 可能不太适合您的问题领域，因为您可能不适合
+成为它试图服务的唯一客户。通过设计自己的界面，您
+有机会根据您的需要定制它 - 您可以添加更高级别的
+功能、重命名等，而不仅仅是修剪类。这
+允许您以更自然的方式编写代码（界面的用户），
+这意味着它将更具可读性，更易于维护，并且您会更容易
+富有成效。
+* 如果 `Concrete` 的实现需要改变，你不必重写
+它无处不在。相反，你可以吸收你的变化
+接口的实现，以及您的其他代码和测试将是
+免受这种变化的影响。
+
+有人担心，如果每个人都练习这种技术，他们就会结束
+写了很多冗余代码。这种担忧是完全可以理解的。
+然而，有两个原因可能导致情况并非如此：
+
+* 不同的项目可能需要以不同的方式使用`Concrete`，所以最好
+他们的界面会有所不同。因此，他们每个人都会有自己的
+在“Concrete”之上拥有自己的特定于领域的接口，并且它们不会是
+相同的代码。
+* 如果有足够多的项目想要使用相同的接口，他们总是可以共享它，
+就像他们一直在分享“混凝土”一样。您可以在界面中查看
+适配器位于 `Concrete` 附近（可能在 `contrib` 中）
+子目录）并让许多项目使用它。
+
+您需要针对您的特定问题仔细权衡利弊，但是
+我想向您保证，Java 社区已经实践这一点很久了
+经过很长时间的考验，这是一种行之有效的技术，适用于多种领域
+情况。 :-)
+
+### 将呼叫委托给fake {#DelegatingToFake}
+
+有时，您有一个不平凡的假接口实现。为了
+例子：
+
+```cpp
+class Foo {
+ public:
+  virtual ~Foo() {}
+  virtual char DoThis(int n) = 0;
+  virtual void DoThat(const char* s, int* p) = 0;
+};
+
+class FakeFoo : public Foo {
+ public:
+  char DoThis(int n) override {
+    return (n > 0) ? '+' :
+           (n < 0) ? '-' : '0';
+  }
+
+  void DoThat(const char* s, int* p) override {
+    *p = strlen(s);
+  }
+};
+```
+
+现在您想要模拟此接口，以便您可以对其设置期望。
+但是，您还想使用 `FakeFoo` 作为默认行为，因为复制
+它在模拟对象中是，嗯，很多工作。
+
+当您使用 kMock 定义模拟类时，您可以让它委托其默认值
+使用以下模式对您已经拥有的假类执行操作：
+
+```cpp
+class MockFoo : public Foo {
+ public:
+  // Normal mock method definitions using kMock.
+  MOCK_METHOD(char, DoThis, (int n), (override));
+  MOCK_METHOD(void, DoThat, (const char* s, int* p), (override));
+
+  // Delegates the default actions of the methods to a FakeFoo object.
+  // This must be called *before* the custom ON_CALL() statements.
+  void DelegateToFake() {
+    ON_CALL(*this, DoThis).WillByDefault([this](int n) {
+      return fake_.DoThis(n);
+    });
+    ON_CALL(*this, DoThat).WillByDefault([this](const char* s, int* p) {
+      fake_.DoThat(s, p);
+    });
+  }
+
+ private:
+  FakeFoo fake_;  // Keeps an instance of the fake in the mock.
+};
+```
+
+这样，您就可以像往常一样在测试中使用`MockFoo`了。只要记住，如果
+您没有在`ON_CALL()`或`EXPECT_CALL()`中显式设置操作，
+假货将被要求这样做：
+
+```cpp
+using ::testing::_;
+
+TEST(AbcTest, Xyz) {
+  MockFoo foo;
+
+  foo.DelegateToFake();  // Enables the fake for delegation.
+
+  // Put your ON_CALL(foo, ...)s here, if any.
+
+  // No action specified, meaning to use the default action.
+  EXPECT_CALL(foo, DoThis(5));
+  EXPECT_CALL(foo, DoThat(_, _));
+
+  int n = 0;
+  EXPECT_EQ('+', foo.DoThis(5));  // FakeFoo::DoThis() is invoked.
+  foo.DoThat("Hi", &n);  // FakeFoo::DoThat() is invoked.
+  EXPECT_EQ(2, n);
+}
+```
+
+**一些提示：**
+
+* 如果需要，您仍然可以通过提供自己的操作来覆盖默认操作
+`ON_CALL()` 或在 `EXPECT_CALL()` 中使用 `.WillOnce()` / `.WillRepeatedly()`。
+* 在`DelegateToFake()`中，只需要委托那些fake的方法
+您打算使用的实现。
+
+* 这里讨论的一般技术适用于重载方法，但是
+您需要告诉编译器您指的是哪个版本。为了消除歧义
+模拟函数（您在`ON_CALL()`括号内指定的函数），
+使用[此技术](#SelectOverload)；消除伪函数的歧义（
+放置在 `Invoke()` 中的一个），使用 `static_cast` 来指定
+函数的类型。例如，如果类 `Foo` 有方法 `char DoThis(int
+n)` 和 `bool DoThis(double x) const`，并且您想调用后者，
+你需要写`Invoke(&fake_, static_cast<bool (FakeFoo::*)(double)
+const>(&FakeFoo::DoThis))` 而不是 `Invoke(&fake_, &FakeFoo::DoThis)`
+（`static_cast` 尖括号内看起来奇怪的东西是
+指向第二个 `DoThis()` 方法的函数指针的类型。）。
+
+* 必须混合模拟和假通常是出现问题的迹象。
+也许您还没有习惯基于交互的测试方式。或者
+也许你的界面承担了太多的角色，应该分开。
+因此，**不要滥用这个**。我们只建议将其作为
+重构代码时的中间步骤。
+
+关于混合模拟和假的技巧，这里有一个例子说明为什么它可能
+这是一个坏兆头：假设你有一个用于低级系统的类`System`
+运营。特别是，它执行文件和 I/O 操作。假设你想要
+测试你的代码如何使用`System`进行 I/O，而你只需要该文件
+操作才能正常进行。如果你模拟整个`System`类，你会
+必须为文件操作部分提供一个假的实现，
+表明“System”扮演了太多角色。
+
+相反，您可以定义一个`FileOps`接口和一个`IOOps`接口，并将`System`的功能拆分为两个接口。然后你可以模拟`IOOps`而不模拟`FileOps`。
+
+### 将调用委托给真实对象
+
+当使用测试替身（mocks、fakes、stubs 等）时，有时他们的
+行为将与真实对象的行为有所不同。这个差异可能是
+要么是故意的（例如模拟错误，以便您可以测试错误
+处理代码）或无意的。如果你的模拟有不同的行为
+如果错误地使用真实的对象，您最终可能会得到通过测试的代码，但是
+生产失败。
+
+您可以使用 *delegating-to-real* 技术来确保您的模拟具有
+与真实对象具有相同的行为，同时保留验证调用的能力。
+这种技术与 [delegating-to-fake](#DelegatingToFake) 非常相似
+技术，不同之处在于我们使用真实的物体而不是假的。
+这是一个例子：
+
+```cpp
+using ::testing::AtLeast;
+
+class MockFoo : public Foo {
+ public:
+  MockFoo() {
+    // By default, all calls are delegated to the real object.
+    ON_CALL(*this, DoThis).WillByDefault([this](int n) {
+      return real_.DoThis(n);
+    });
+    ON_CALL(*this, DoThat).WillByDefault([this](const char* s, int* p) {
+      real_.DoThat(s, p);
+    });
+    ...
+  }
+  MOCK_METHOD(char, DoThis, ...);
+  MOCK_METHOD(void, DoThat, ...);
+  ...
+ private:
+  Foo real_;
+};
+
+...
+  MockFoo mock;
+  EXPECT_CALL(mock, DoThis())
+      .Times(3);
+  EXPECT_CALL(mock, DoThat("Hi"))
+      .Times(AtLeast(1));
+  ... use mock in test ...
+```
+
+这样，kMock 将验证您的代码是否进行了正确的调用（使用正确的
+参数，以正确的顺序，调用正确的次数等），以及
+真实对象将应答调用（因此行为将与
+生产）。这让您两全其美。
+
+### 将调用委托给父类 {#delegating-calls-to-a-parent-class}
+
+理想情况下，您应该对接口进行编码，其方法都是纯虚拟的。在
+现实中，有时你确实需要模拟一个不纯的虚拟方法（即，
+它已经有一个实现）。例如：
+
+```cpp
+class Foo {
+ public:
+  virtual ~Foo();
+
+  virtual void Pure(int n) = 0;
+  virtual int Concrete(const char* str) { ... }
+};
+
+class MockFoo : public Foo {
+ public:
+  // Mocking a pure method.
+  MOCK_METHOD(void, Pure, (int n), (override));
+  // Mocking a concrete method.  Foo::Concrete() is shadowed.
+  MOCK_METHOD(int, Concrete, (const char* str), (override));
+};
+```
+
+有时你可能想调用 `Foo::Concrete()` 而不是
+`MockFoo::Concrete()`。也许您想将其作为存根操作的一部分来执行，或者
+也许你的测试根本不需要模拟 `Concrete()` （但它会是
+哦，当你不需要模拟时，必须定义一个新的模拟类，真是太痛苦了
+其方法之一）。
+
+您可以通过以下方式在操作内调用 `Foo::Concrete()`：
+
+```cpp
+...
+  EXPECT_CALL(foo, Concrete).WillOnce([&foo](const char* str) {
+    return foo.Foo::Concrete(str);
+  });
+```
+
+或者告诉模拟对象您不想模拟 `Concrete()`：
+
+```cpp
+...
+  ON_CALL(foo, Concrete).WillByDefault([&foo](const char* str) {
+    return foo.Foo::Concrete(str);
+  });
+```
+
+（为什么我们不直接写 `{ return foo.Concrete(str); }`？如果你这样做，
+`MockFoo::Concrete()` 将被调用（并导致无限递归），因为
+`Foo::Concrete()` 是虚拟的。这就是 C++ 的工作原理。）
+
+## 使用匹配器 {#using-matchers}
+
+### 精确匹配参数值 {#matching-argument-values-exactly}
+
+您可以准确指定模拟方法需要哪些参数：
+
+```cpp
+using ::testing::Return;
+...
+  EXPECT_CALL(foo, DoThis(5))
+      .WillOnce(Return('a'));
+  EXPECT_CALL(foo, DoThat("Hello", bar));
+```
+
+### 使用简单匹配器 {#using-simple-matchers}
+
+您可以使用匹配器来匹配具有特定属性的参数：
+
+```cpp
+using ::testing::NotNull;
+using ::testing::Return;
+...
+  EXPECT_CALL(foo, DoThis(Ge(5)))  // The argument must be >= 5.
+      .WillOnce(Return('a'));
+  EXPECT_CALL(foo, DoThat("Hello", NotNull()));
+      // The second argument must not be NULL.
+```
+
+常用的匹配器是`_`，它可以匹配任何内容：
+
+```cpp
+  EXPECT_CALL(foo, DoThat(_, NotNull()));
+```
+
+### 组合匹配器 {#CombiningMatchers}
+
+您可以使用`AllOf()`从现有匹配器构建复杂的匹配器，
+`AllOfArray()`、`AnyOf()`、`AnyOfArray()` 和 `Not()`：
+
+```cpp
+using ::testing::AllOf;
+using ::testing::Gt;
+using ::testing::HasSubstr;
+using ::testing::Ne;
+using ::testing::Not;
+...
+  // The argument must be > 5 and != 10.
+  EXPECT_CALL(foo, DoThis(AllOf(Gt(5),
+                                Ne(10))));
+
+  // The first argument must not contain sub-string "blah".
+  EXPECT_CALL(foo, DoThat(Not(HasSubstr("blah")),
+                          NULL));
+```
+
+匹配器是函数对象，参数化匹配器可以直接组成
+就像任何其他功能一样。然而，因为它们的类型可能很长并且很少
+提供有意义的信息，用C++14可以更容易地表达它们
+泛型 lambda 以避免指定类型。例如，
+
+```cpp
+using ::testing::Contains;
+using ::testing::Property;
+
+inline constexpr auto HasFoo = [](const auto& f) {
+  return Property(&MyClass::foo, Contains(f));
+};
+...
+  EXPECT_THAT(x, HasFoo("blah"));
+```
+
+### 选角匹配器 {#SafeMatcherCast}
+
+kMock 匹配器是静态类型的，这意味着编译器可以捕获您的
+如果您使用错误类型的匹配器，则会出错（例如，如果您使用`Eq(5)`
+匹配`string`参数）。对你有好处！
+
+然而，有时，您知道自己在做什么，并希望编译器为您提供
+有些懈怠。一个例子是你有一个“long”匹配器和参数
+你想要匹配的是`int`。虽然这两种类型并不完全相同，但
+使用 `Matcher<long>` 来匹配 `int` 并没有什么问题 - 之后
+所有，我们可以先将`int`参数无损地转换为`long`
+将其交给匹配器。
+
+为了支持这种需求，kMock 为您提供了`SafeMatcherCast<T>(m)`函数。它
+将匹配器 `m` 转换为类型 `Matcher<T>`。为了确保安全，kMock 会检查
+（令“U”为“m”接受的类型：
+
+1. 类型 `T` 可以*隐式*转换为类型 `U`；
+2. 当 `T` 和 `U` 都是内置算术类型（`bool`、整数和
+浮点数），从`T`到`U`的转换是没有损耗的（在
+换句话说，任何可以用`T`表示的值也可以用`U`表示）；
+和
+3. 当`U`是引用时，`T`也必须是引用（作为底层
+匹配器可能对“U”值的地址感兴趣）。
+
+如果不满足其中任何条件，则代码将无法编译。
+
+这是一个例子：
+
+```cpp
+using ::testing::SafeMatcherCast;
+
+// A base class and a child class.
+class Base { ... };
+class Derived : public Base { ... };
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(void, DoThis, (Derived* derived), (override));
+};
+
+...
+  MockFoo foo;
+  // m is a Matcher<Base*> we got from somewhere.
+  EXPECT_CALL(foo, DoThis(SafeMatcherCast<Derived*>(m)));
+```
+
+如果您发现 `SafeMatcherCast<T>(m)` 太有限，您可以使用类似的函数
+`MatcherCast<T>(m)`。不同之处在于，只要您有时间，`MatcherCast`就可以工作
+可以通过“static_cast”将“T”类型转换为`U`类型。
+
+`MatcherCast` 本质上可以让你绕过 C++ 的类型系统（`static_cast` 不是
+总是安全的，因为它可能会丢弃信息，例如），所以要小心不要
+误用/滥用它。
+
+### 在重载函数之间进行选择 {#SelectOverload}
+
+如果您期望调用重载函数，编译器可能需要一些
+帮助了解它是哪个重载版本。
+
+要消除在此对象的常量上重载的函数的歧义，请使用
+`Const()` 参数包装器。
+
+```cpp
+using ::testing::ReturnRef;
+
+class MockFoo : public Foo {
+  ...
+  MOCK_METHOD(Bar&, GetBar, (), (override));
+  MOCK_METHOD(const Bar&, GetBar, (), (const, override));
+};
+
+...
+  MockFoo foo;
+  Bar bar1, bar2;
+  EXPECT_CALL(foo, GetBar())         // The non-const GetBar().
+      .WillOnce(ReturnRef(bar1));
+  EXPECT_CALL(Const(foo), GetBar())  // The const GetBar().
+      .WillOnce(ReturnRef(bar2));
+```
+
+（`Const()` 由 kMock 定义，并返回对其参数的 `const` 引用。）
+
+消除参数数量相同但重载函数的歧义不同的参数类型，您可能需要指定匹配器的确切类型，
+通过将匹配器包装在 `Matcher<type>()` 中，或者使用其匹配器类型是固定的（`TypedEq<type>`、`An<type>()`等）：
+
+```cpp
+using ::testing::An;
+using ::testing::Matcher;
+using ::testing::TypedEq;
+
+class MockPrinter : public Printer {
+ public:
+  MOCK_METHOD(void, Print, (int n), (override));
+  MOCK_METHOD(void, Print, (char c), (override));
+};
+
+TEST(PrinterTest, Print) {
+  MockPrinter printer;
+
+  EXPECT_CALL(printer, Print(An<int>()));            // void Print(int);
+  EXPECT_CALL(printer, Print(Matcher<int>(Lt(5))));  // void Print(int);
+  EXPECT_CALL(printer, Print(TypedEq<char>('a')));   // void Print(char);
+
+  printer.Print(3);
+  printer.Print(6);
+  printer.Print('a');
+}
+```
+
+### 根据参数执行不同的操作
+
+当调用模拟方法时，*最后*匹配的期望仍然是
+将选择活动（认为“较新的覆盖较旧的”）。所以，你可以做一个
+方法根据其参数值执行不同的操作，如下所示：
+
+```cpp
+using ::testing::_;
+using ::testing::Lt;
+using ::testing::Return;
+...
+  // The default case.
+  EXPECT_CALL(foo, DoThis(_))
+      .WillRepeatedly(Return('b'));
+  // The more specific case.
+  EXPECT_CALL(foo, DoThis(Lt(5)))
+      .WillRepeatedly(Return('a'));
+```
+
+现在，如果调用 `foo.DoThis()` 的值小于 5，则 `'a'` 将是
+返回；否则将返回`b`。
+
+### 将多个参数作为一个整体进行匹配
+
+有时单独匹配参数是不够的。例如，我们
+可能想说第一个参数必须小于第二个参数。
+`With()` 子句允许我们将模拟函数的所有参数匹配为
+所有的。例如，
+
+```cpp
+using ::testing::_;
+using ::testing::Ne;
+using ::testing::Lt;
+...
+  EXPECT_CALL(foo, InRange(Ne(0), _))
+      .With(Lt());
+```
+
+表示 `InRange()` 的第一个参数不能为 0，并且必须小于
+第二个参数。
+
+`With()` 中的表达式必须是 `Matcher<std::tuple<A1,
+..., An>>`，其中 `A1`、...、`An` 是函数参数的类型。
+
+您还可以在 `.With()` 中编写 `AllArgs(m)` 而不是 `m`。两种形式
+是等价的，但是 `.With(AllArgs(Lt()))` 比 `.With(Lt())` 更具可读性。
+
+您可以使用 `Args<k1, ..., kn>(m)` 来匹配 `n` 选定的参数（作为
+元组）针对`m`。例如，
+
+```cpp
+using ::testing::_;
+using ::testing::AllOf;
+using ::testing::Args;
+using ::testing::Lt;
+...
+  EXPECT_CALL(foo, Blah)
+      .With(AllOf(Args<0, 1>(Lt()), Args<1, 2>(Lt())));
+```
+
+表示将使用参数`x`、`y`和`z`调用`Blah`，其中`x < y < z`。请注意，在此示例中，无需指定位置匹配器。
+
+作为方便和示例，kMock 提供了一些 2 元组的匹配器，包括上面的“Lt()”匹配器。有关完整列表，请参阅[多参数匹配器](reference/matchers.mdx#MultiArgMatchers)。
+
+请注意，如果您想将参数传递给您自己的谓词（例如 `.With(Args<0, 1>(Truly(&MyPredicate)))`），则该谓词必须编写为采用 `std::tuple ` 作为其参数； kMock 会将“n”个选定参数作为*一个*单个元组传递给谓词。
+
+### 使用匹配器作为谓词
+
+您是否注意到匹配器只是一个奇特的谓词，它也知道如何
+描述自己？许多现有算法将谓词作为参数（例如
+那些在 STL 的 `<algorithm>` 头中定义的），如果 kMock
+不允许匹配者参与。
+
+幸运的是，您可以使用一个匹配器，其中需要一元谓词函子
+将其包装在 `Matches()` 函数中。例如，
+
+```cpp
+#include <algorithm>
+#include <vector>
+
+using ::testing::Matches;
+using ::testing::Ge;
+
+vector<int> v;
+...
+// How many elements in v are >= 10?
+const int count = count_if(v.begin(), v.end(), Matches(Ge(10)));
+```
+
+由于您可以使用 kMock 轻松地从简单的匹配器构建复杂的匹配器，因此为您提供了一种方便地构造复合谓词的方法（执行相同的操作
+使用 STL 的 `<function>` 标头非常痛苦）。例如，这是一个任何满足 `>=` 0、`<=` 100 和 `!=` 50 的谓词：
+
+```cpp
+using testing::AllOf;
+using testing::Ge;
+using testing::Le;
+using testing::Matches;
+using testing::Ne;
+...
+Matches(AllOf(Ge(0), Le(100), Ne(50)))
+```
+
+### 在 ktest 断言中使用匹配器
+
+请参阅断言中的 [`EXPECT_THAT`](reference/assertions.mdx#EXPECT_THAT)
+参考。
+
+### 使用谓词作为匹配器
+
+kMock 提供了一组内置匹配器，用于将参数与预期匹配
+值 - 有关更多信息，请参阅[匹配器参考](reference/matchers.mdx)。
+如果您发现缺少内置集合，您可以使用任意一元
+谓词函数或函子作为匹配器 - 只要谓词接受
+您想要的类型的值。您可以通过将谓词包装在
+`Truly()` 函数，例如：
+
+```cpp
+using ::testing::Truly;
+
+int IsEven(int n) { return (n % 2) == 0 ? 1 : 0; }
+...
+  // Bar() must be called with an even number.
+  EXPECT_CALL(foo, Bar(Truly(IsEven)));
+```
+
+请注意，谓词函数/仿函数不必返回`bool`。它
+只要返回值可以用作 in 语句中的条件即可
+`如果（条件）...`。
+
+### 匹配不可复制的参数
+
+当你执行“EXPECT_CALL(mock_obj, Foo(bar))”时，kMock 会保存一份副本
+`酒吧`。当稍后调用 `Foo()` 时，kMock 将参数与 `Foo()` 进行比较
+`bar` 的保存副本。这样，您就不必担心`bar`被
+执行`EXPECT_CALL()`后修改或销毁。同样的道理
+当您使用`Eq(bar)`、`Le(bar)`等匹配器时。
+
+但是如果“bar”无法复制（即没有复制构造函数）怎么办？你可以
+定义您自己的匹配器函数或回调并将其与`Truly()`一起使用，作为
+前面的几个食谱已经显示。或者，你也许能够摆脱它
+如果你能保证在`EXPECT_CALL()`之后`bar`不会改变
+被执行。只需告诉 kMock 它应该保存对`bar`的引用，而不是
+它的副本。方法如下：
+
+```cpp
+using ::testing::Eq;
+using ::testing::Lt;
+...
+  // Expects that Foo()'s argument == bar.
+  EXPECT_CALL(mock_obj, Foo(Eq(std::ref(bar))));
+
+  // Expects that Foo()'s argument < bar.
+  EXPECT_CALL(mock_obj, Foo(Lt(std::ref(bar))));
+```
+
+请记住：如果您这样做，请不要在`EXPECT_CALL()`之后更改`bar`，或者
+结果未定义。
+
+### 验证对象的成员
+
+模拟函数通常会将对象的引用作为参数。匹配时
+参数，您可能不想将整个对象与固定的进行比较
+对象，因为这可能是过度规范的。相反，您可能需要验证
+某个成员变量或对象的某个 getter 方法的结果。
+您可以使用`Field()`和`Property()`来完成此操作。更具体地说，
+
+```cpp
+Field(&Foo::bar, m)
+```
+
+是匹配一个`Foo`对象的匹配器，该对象的`bar`成员变量满足匹配器`m`。
+
+```cpp
+Property(&Foo::baz, m)
+```
+
+是匹配`Foo`对象的匹配器，该对象的`baz()`方法返回一个值
+满足匹配器`m`。
+
+For example:
+
+| 表达式                   | 描述                              |
+| :--------------------------- | :--------------------------------------- |
+| `Field(&Foo::number, Ge(3))` | 当 `x.number >= 3`匹配 `x`       |
+| `Property(&Foo::name,  StartsWith("John "))` | 匹配 `x`，其中 `x.name()` 以 `"John "` 开头。 |
+
+请注意，在`Property(&Foo::baz, ...)`中，方法`baz()`不能带任何参数
+并声明为`const`。不要对以下成员函数使用`Property()`
+你不拥有，因为获取函数的地址是脆弱的并且通常
+不是函数合同的一部分。
+
+`Field()` 和 `Property()` 也可以匹配指向对象的普通指针。为了
+实例，
+
+```cpp
+using ::testing::Field;
+using ::testing::Ge;
+...
+Field(&Foo::number, Ge(3))
+```
+
+匹配普通指针`p`，其中`p->number >= 3`。如果`p`为`NULL`，则匹配
+无论内部匹配器如何，总会失败。
+
+如果您想同时验证多个成员怎么办？记住
+有 [`AllOf()` 和 `AllOfArray()`](#CombiningMatchers)。
+
+最后 `Field()` 和 `Property()` 提供了采用字段或
+属性名称作为第一个参数将其包含在错误消息中。这
+创建组合匹配器时非常有用。
+
+```cpp
+using ::testing::AllOf;
+using ::testing::Field;
+using ::testing::Matcher;
+using ::testing::SafeMatcherCast;
+
+Matcher<Foo> IsFoo(const Foo& foo) {
+  return AllOf(Field("some_field", &Foo::some_field, foo.some_field),
+               Field("other_field", &Foo::other_field, foo.other_field),
+               Field("last_field", &Foo::last_field, foo.last_field));
+}
+```
+
+### 验证指针参数指向的值
+
+C++ 函数通常采用指针作为参数。您可以使用像这样的匹配器
+`IsNull()`、`NotNull()` 和其他比较匹配器来匹配指针，但是
+如果你想确保指针*指向*的值，而不是
+指针本身，具有一定的属性吗？好吧，你可以使用`Pointee(m)`
+匹配器。
+
+当且仅当`m`与指针的值匹配时，`Pointee(m)`才匹配指针
+指向.例如：
+
+```cpp
+using ::testing::Ge;
+using ::testing::Pointee;
+...
+  EXPECT_CALL(foo, Bar(Pointee(Ge(3))));
+```
+
+期望使用指向更大值的指针来调用`foo.Bar()`
+大于或等于3。
+
+`Pointee()`的一个好处是它将`NULL`指针视为匹配项
+失败，所以你可以写 `Pointee(m)` 而不是
+
+```cpp
+using ::testing::AllOf;
+using ::testing::NotNull;
+using ::testing::Pointee;
+...
+  AllOf(NotNull(), Pointee(m))
+```
+
+不用担心`NULL`指针会使您的测试崩溃。
+
+另外，我们是否告诉过您`Pointee()`适用于原始指针 ** 和 **
+智能指针（`std::unique_ptr`、`std::shared_ptr`等）？
+
+如果你有一个指向指针的指针怎么办？你猜对了 - 你可以使用嵌套
+`Pointee()` 可以更深入地探究值的内部。例如，
+`Pointee(Pointee(Lt(3)))` 匹配一个指向另一个指针的指针
+小于 3 的数字（真是拗口……）。
+
+### 定义自定义匹配器类 {#CustomMatcherClass}
+
+大多数匹配器可以使用 [MATCHER* 宏](#NewMatchers) 简单地定义，
+它们简洁灵活，并能产生良好的错误消息。然而，这些
+宏对于它们创建的接口不是很明确，而且并不总是
+适合，特别是对于将被广泛重用的匹配器。
+
+对于更高级的情况，您可能需要定义自己的匹配器类。定制
+匹配器允许您测试该对象的特定不变属性。让我们
+看看如何做到这一点。
+
+想象一下，你有一个模拟函数，它接受一个`Foo`类型的对象，其中有
+一个`int bar()`方法和一个`int baz()`方法。你想要限制
+参数的“bar()”值加上其“baz()”值是给定的数字。 （这是一个
+不变。）以下是我们如何编写和使用匹配器类来执行此操作：
+
+```cpp
+class BarPlusBazEqMatcher {
+ public:
+  using is_ktest_matcher = void;
+
+  explicit BarPlusBazEqMatcher(int expected_sum)
+      : expected_sum_(expected_sum) {}
+
+  bool MatchAndExplain(const Foo& foo,
+                       std::ostream* /* listener */) const {
+    return (foo.bar() + foo.baz()) == expected_sum_;
+  }
+
+  void DescribeTo(std::ostream* os) const {
+    *os << "bar() + baz() equals " << expected_sum_;
+  }
+
+  void DescribeNegationTo(std::ostream* os) const {
+    *os << "bar() + baz() does not equal " << expected_sum_;
+  }
+ private:
+  const int expected_sum_;
+};
+
+::testing::Matcher<const Foo&> BarPlusBazEq(int expected_sum) {
+  return BarPlusBazEqMatcher(expected_sum);
+}
+
+...
+  Foo foo;
+  EXPECT_CALL(foo, BarPlusBazEq(5))...;
+```
+
+### 配套容器
+
+有时，STL 容器（例如列表、向量、地图...）会传递给模拟
+函数，您可能想验证它。由于大多数 STL 容器都支持
+`==` 运算符，你可以写 `Eq(expected_container)` 或简单地写
+`expected_container` 与容器完全匹配。
+
+但有时，您可能希望更加灵活（例如，第一个
+元素必须完全匹配，但第二个元素可以是任意正数
+号等）。此外，测试中使用的容器通常具有少量
+元素，并且必须定义预期的容器，这有点麻烦
+麻烦。
+
+您可以在此类中使用 `ElementsAre()` 或 `UnorderedElementsAre()` 匹配器
+案例：
+
+```cpp
+using ::testing::_;
+using ::testing::ElementsAre;
+using ::testing::Gt;
+...
+  MOCK_METHOD(void, Foo, (const vector<int>& numbers), (override));
+...
+  EXPECT_CALL(mock, Foo(ElementsAre(1, Gt(0), _, 5)));
+```
+上面的匹配器说容器必须有4个元素，其中必须是1，分别大于 0、任意值和 5。
+
+如果你改为写：
+
+```cpp
+using ::testing::_;
+using ::testing::Gt;
+using ::testing::UnorderedElementsAre;
+...
+  MOCK_METHOD(void, Foo, (const vector<int>& numbers), (override));
+...
+  EXPECT_CALL(mock, Foo(UnorderedElementsAre(1, Gt(0), _, 5)));
+```
+
+这意味着容器必须有 4 个元素，其中（在某些排列下）必须分别为 1、大于 0、任意值和 5。
+
+作为替代方案，您可以将参数放入 C 样式数组中并使用
+改为 `ElementsAreArray()` 或 `UnorderedElementsAreArray()`：
+
+```cpp
+using ::testing::ElementsAreArray;
+...
+  // ElementsAreArray accepts an array of element values.
+  const int expected_vector1[] = {1, 5, 2, 4, ...};
+  EXPECT_CALL(mock, Foo(ElementsAreArray(expected_vector1)));
+
+  // Or, an array of element matchers.
+  Matcher<int> expected_vector2[] = {1, Gt(2), _, 3, ...};
+  EXPECT_CALL(mock, Foo(ElementsAreArray(expected_vector2)));
+```
+
+如果需要动态创建数组（因此数组大小编译器无法推断），你可以给 `ElementsAreArray()` 一个
+用于指定数组大小的附加参数：
+
+```cpp
+using ::testing::ElementsAreArray;
+...
+  int* const expected_vector3 = new int[count];
+  ... fill expected_vector3 with values ...
+  EXPECT_CALL(mock, Foo(ElementsAreArray(expected_vector3, count)));
+```
+
+比较地图或其他关联容器时使用“Pair”。
+
+```cpp
+using testing::ElementsAre;
+using testing::Pair;
+...
+  std::map<string, int> m = {{"a", 1}, {"b", 2}, {"c", 3}};
+  EXPECT_THAT(m, ElementsAre(Pair("a", 1), Pair("b", 2), Pair("c", 3)));
+```
+
+
+**建议:**
+
+* `ElementsAre*()` 可用于匹配 *任何* 实现 STL 迭代器模式的容器（即它具有 `const_iterator` 类型并支持 `begin()/end()`），而不仅仅是 中定义的容器STL。它甚至可以与尚未编写的容器类型一起使用 - 只要它们遵循上述模式。
+* 您可以使用嵌套的 `ElementsAre*()` 来匹配嵌套（多维）容器。
+* 如果容器是通过指针而不是引用传递的，只需编写`Pointee(ElementsAre*(...))`。
+* 对于 `ElementsAre*()` 来说，元素的顺序*重要*。如果您将其与元素顺序未定义的容器（例如`hash_map`）一起使用，则应该在`ElementsAre`周围使用`WhenSorted`。
+
+### 共享匹配器
+
+在底层，kMock 匹配器对象由一个指向引用计数的指针组成
+实施对象。复制匹配器是允许的并且非常有效，因为只有
+指针被复制。当引用实现的最后一个匹配器
+对象死亡时，实现对象将被删除。
+
+因此，如果您想再次使用一些复杂的匹配器并且
+再次强调，不需要每次都构建它。只需将其分配给匹配器即可
+变量并重复使用该变量！例如，
+
+```cpp
+using ::testing::AllOf;
+using ::testing::Gt;
+using ::testing::Le;
+using ::testing::Matcher;
+...
+  Matcher<int> in_range = AllOf(Gt(5), Le(10));
+  ... use in_range as a matcher in multiple EXPECT_CALLs ...
+```
+
+### 匹配器必须没有副作用 {#PureMatchers}
+
+:::warning 警告
+kMock 不保证匹配器何时或多少次
+调用。因此，所有匹配器都必须是“纯功能性的”：它们不能具有
+任何副作用，并且比赛结果不能依赖于除
+匹配器的参数和被匹配的值。
+:::
+
+无论匹配器如何定义（例如，如果它是标准匹配器之一，或自定义匹配器）。特别是，一个
+matcher 永远不能调用模拟函数，因为这会影响模拟对象和 kMock。
+
+## 设定期望 {#setting-expectations}
+
+### 知道什么时候可以期待 {#UseOnCall}
+
+**`ON_CALL`** 可能是 kMock 中*未被充分利用的构造*。
+
+定义模拟对象的行为基本上有两种构造：
+
+`ON_CALL`和`EXPECT_CALL`。区别？ `ON_CALL`定义了调用模拟方法时会发生什么，
+但并不意味着对被调用的方法有任何期望。 `EXPECT_CALL`不仅定义了行为，还设置了一个期望，
+即<em>将使用给定的参数调用该方法给定的次数</em>（并且*按给定的顺序*当您指定也订购）。
+
+既然`EXPECT_CALL`做了更多的事情，那么它不是比`ON_CALL`更好吗？事实并不是这样。每个`EXPECT_CALL`都会对被测代码的行为添加约束。拥有过多的约束是*baaad* - 甚至比没有足够的约束更糟糕。
+
+这可能是违反直觉的。验证更多的测试怎么可能比验证较少的测试？验证不是测试的全部目的吗？
+
+
+答案在于测试应该验证“什么”。 **良好的测试验证了
+代码的契约。**如果测试过度指定，则不会留下足够的内容
+实施的自由度。因此，无需改变实现
+违反契约（例如重构和优化），这应该是
+做得很好，可以打破这样的测试。然后你就得花时间去修复
+他们，只会在下次实施更改时看到它们再次损坏。
+
+请记住，无需在一项测试中验证多个属性。
+事实上，**在一次测试中仅验证一件事是一种很好的风格。**如果您这样做
+也就是说，一个错误可能只会破坏一两个测试，而不是几十个（其中
+您愿意调试的情况吗？）。如果您也有进行测试的习惯
+描述性名称告诉他们验证的内容，您通常可以轻松猜出是什么
+仅从测试日志本身来看就是错误的。
+
+因此，默认情况下使用`ON_CALL`，并且仅在您真正想要时才使用`EXPECT_CALL`
+以验证是否已进行呼叫。例如，您可能有一堆`ON_CALL`
+在您的测试装置中设置所有测试共享的通用模拟行为
+同一组，并在不同的`TEST_F`中写入（几乎）不同的`EXPECT_CALL`
+验证代码行为的不同方面。与风格相比
+其中每个`TEST`都有许多`EXPECT_CALL`，这会导致测试更多
+能够适应实施变化（因此不太可能需要
+维护）并使测试的意图更加明显（因此它们更容易
+当您确实需要维护它们时进行维护）。
+
+如果您对打印的“无趣的模拟函数调用”消息感到困扰
+当调用没有 EXPECT_CALL 的模拟方法时，您可以使用 NiceMock
+相反，要抑制模拟对象的所有此类消息，或者抑制
+通过添加`EXPECT_CALL(...).Times(AnyNumber())`来显示特定方法的消息。做
+不要通过盲目添加`EXPECT_CALL(...)`来抑制它，否则您将进行测试
+维护起来很痛苦。
+
+### 忽略无趣的调用
+
+如果您对模拟方法的调用方式不感兴趣，请不要说
+关于它的任何事情。在这种情况下，如果该方法被调用，kMock 将
+执行其默认操作以允许测试程序继续。如果你不是
+对 kMock 采取的默认操作感到满意，您可以使用以下命令覆盖它
+`DefaultValue<T>::Set()`（[此处](#DefaultValue) 描述）或 `ON_CALL()`。
+
+请注意，一旦您表达了对特定模拟方法的兴趣（通过
+`EXPECT_CALL()`)，对其的所有调用都必须符合某些期望。如果这个
+函数被调用但参数与任何“EXPECT_CALL()”语句不匹配，
+这将是一个错误。
+
+### 禁止意外`call`
+
+如果根本不应该调用模拟方法，请明确说明：
+
+```cpp
+using ::testing::_;
+...
+  EXPECT_CALL(foo, Bar(_))
+      .Times(0);
+```
+
+如果允许对该方法的某些调用，但其余的则不允许，则只需列出所有
+预期来电：
+
+```cpp
+using ::testing::AnyNumber;
+using ::testing::Gt;
+...
+  EXPECT_CALL(foo, Bar(5));
+  EXPECT_CALL(foo, Bar(Gt(10)))
+      .Times(AnyNumber());
+```
+
+对`foo.Bar()`的调用与任何`EXPECT_CALL()`语句都不匹配
+将会出现错误。
+
+### 了解无趣与意外的`call` {#uninteresting-vs-unexpected}
+
+*无趣*调用和*意外*调用在 kMock 中是不同的概念。
+*非常*不同。
+
+如果*甚至没有一个*，那么调用 `x.Y(...)` 就是**无趣**
+`EXPECT_CALL(x, Y(...))` 设置。换句话说，测试不感兴趣
+根本没有 `x.Y()` 方法，很明显测试并不在乎说什么
+关于它。
+
+如果有 *一些* `EXPECT_CALL(x,
+Y(...)) 已设置，但没有一个与调用匹配。换句话说，测试是
+对 `x.Y()` 方法感兴趣（因此它明确设置了一些
+`EXPECT_CALL` 来验证它是如何调用的）；但是，验证失败，因为
+test 预计不会发生此特定调用。
+
+**意外的调用始终是一个错误，**因为被测试的代码没有行为
+测试期望它的行为方式。
+
+**默认情况下，无趣的调用不是错误，**因为它违反了
+测试指定的约束。 （kMock 的理念是，什么都不说
+意味着没有限制。）但是，它会导致警告，因为它*可能*
+指出一个问题（例如，测试作者可能忘记指定一个
+约束）。
+
+在 kMock 中，`NiceMock` 和 `StrictMock` 可用于使模拟类“nice”或
+“严格的”。这对无趣的呼叫和意外的呼叫有何影响？
+
+**nice的模拟**抑制无趣的调用*警告*。它比不那么健谈
+默认模拟，但其他方面是相同的。如果测试因默认而失败
+模拟，使用漂亮的模拟代替也会失败。反之亦然。别指望
+进行模拟可以很好地改变测试结果。
+
+**严格的模拟**会将无趣的调用警告变成错误。所以制作一个
+模拟严格可能会改变测试的结果。
+
+让我们看一个例子：
+
+```cpp
+TEST(...) {
+  NiceMock<MockDomainRegistry> mock_registry;
+  EXPECT_CALL(mock_registry, GetDomainOwner("google.com"))
+          .WillRepeatedly(Return("Larry Page"));
+
+  // Use mock_registry in code under test.
+  ... &mock_registry ...
+}
+```
+
+这里唯一的“EXPECT_CALL”表示对“GetDomainOwner()”的所有调用都必须具有
+“google.com”作为参数。如果调用`GetDomainOwner("yahoo.com")`，它
+将是一个意外的调用，因此会出现错误。 *有一个很好的模拟并不
+更改意外呼叫的严重程度。*
+
+那么我们如何告诉 kMock 可以通过其他方式调用 `GetDomainOwner()`
+论点也是如此？标准技术是添加“catch all”“EXPECT_CALL”：
+
+```cpp
+  EXPECT_CALL(mock_registry, GetDomainOwner(_))
+        .Times(AnyNumber());  // catches all other calls to this method.
+  EXPECT_CALL(mock_registry, GetDomainOwner("google.com"))
+        .WillRepeatedly(Return("Larry Page"));
+```
+
+请记住，“_”是匹配任何内容的通配符匹配器。有了这个，如果
+调用 `GetDomainOwner("google.com")` ，它将执行第二个操作
+`EXPECT_CALL` 说；如果用不同的参数调用它，它会做什么
+第一个“EXPECT_CALL”说。
+
+请注意，两个“EXPECT_CALL”的顺序很重要，因为作为较新的
+`EXPECT_CALL` 优先于旧的。
+
+有关无趣的调用、漂亮的模拟和严格的模拟的更多信息，请阅读
+[“友善、严格和唠叨”](#NiceStrictNaggy)。
+
+### 忽略无趣的参数 {#ParameterlessExpectations}
+
+如果你的测试不关心参数（它只关心数字
+或调用顺序），您通常可以简单地省略参数列表：
+
+```cpp
+  // Expect foo.Bar( ... ) twice with any arguments.
+  EXPECT_CALL(foo, Bar).Times(2);
+
+  // Delegate to the given method whenever the factory is invoked.
+  ON_CALL(foo_factory, MakeFoo)
+      .WillByDefault(&BuildFooForTest);
+```
+
+此功能仅在方法未重载时可用；防止
+意外行为尝试设置期望是一个编译错误
+特定重载不明确的方法。您可以通过以下方式解决此问题
+提供比模拟类更简单的模拟接口（#SimplerInterfaces）
+提供。
+
+当参数很有趣但匹配逻辑时，此模式也很有用
+相当复杂。您可以不指定参数列表并使用
+SaveArg 操作[保存值以供以后验证](#SaveArgVerify)。如果
+你这样做，你可以很容易地区分调用该方法的错误数量
+使用错误的参数调用它的次数。
+
+### 期待有序调用 {#OrderedCalls}
+
+尽管 kMock 时稍后定义的`EXPECT_CALL()`语句优先
+尝试将函数调用与期望相匹配，默认情况下调用没有
+按照编写`EXPECT_CALL()`语句的顺序发生。例如，如果
+参数与第二个`EXPECT_CALL()`中的匹配器匹配，但与
+第一个和第三个，然后将使用第二个期望。
+
+如果您希望所有调用都按照期望的顺序发生，请输入
+定义类型变量的块中的“EXPECT_CALL()”语句
+`按顺序`：
+
+```cpp
+using ::testing::_;
+using ::testing::InSequence;
+
+  {
+    InSequence s;
+
+    EXPECT_CALL(foo, DoThis(5));
+    EXPECT_CALL(bar, DoThat(_))
+        .Times(2);
+    EXPECT_CALL(foo, DoThis(6));
+  }
+```
+
+在此示例中，我们期望调用`foo.DoThis(5)`，然后调用两次
+`bar.DoThat()` 参数可以是任何东西，后面依次是
+对 `foo.DoThis(6)` 的调用。如果发生无序调用，kMock 将报告
+错误。
+
+### 期待部分有序的调用 {#PartialOrder}
+
+有时要求一切按预定顺序发生可能会导致
+脆性测试。例如，我们可能关心`A`出现在`B`和`B`之前
+`C`，但对`B`和`C`的相对顺序不感兴趣。在这种情况下，
+测试应该反映我们的真实意图，而不是过度限制。
+
+kMock 允许您在模型上施加任意 DAG（有向无环图）
+来电。表达 DAG 的一种方法是使用
+`EXPECT_CALL` 的 [`After` 子句](reference/mocking.mdx#EXPECT_CALL.After)。
+
+另一种方法是通过“InSequence()”子句（与“InSequence”不同）
+class)，我们从 jMock 2 借来的。它不如 `After()` 灵活，但是
+当您有很长的连续调用链时会更方便，因为它没有
+要求你为链中的期望想出不同的名称。
+它的工作原理如下：
+
+如果我们将“EXPECT_CALL()”语句视为图中的节点，并从
+节点A到节点B，只要A必须出现在B之前，我们就可以得到一个DAG。我们使用
+术语“序列”表示该 DAG 中的有向路径。现在，如果我们分解
+DAG 转化为序列，我们只需要知道每个“EXPECT_CALL()”是哪些序列
+属于为了能够重建原始的DAG。
+
+因此，要指定期望的偏序，我们需要做两件事：
+首先定义一些“Sequence”对象，然后为每个“EXPECT_CALL()”说
+它属于哪个“Sequence”对象。
+
+相同顺序的期望必须按照它们的书写顺序出现。为了
+例子，
+
+```cpp
+using ::testing::Sequence;
+...
+  Sequence s1, s2;
+
+  EXPECT_CALL(foo, A())
+      .InSequence(s1, s2);
+  EXPECT_CALL(bar, B())
+      .InSequence(s1);
+  EXPECT_CALL(bar, C())
+      .InSequence(s2);
+  EXPECT_CALL(foo, D())
+      .InSequence(s2);
+```
+
+指定以下 DAG（其中“s1”是“A -> B”，“s2”是“A -> C -> D”）：
+
+```text
+       +---> B
+       |
+  A ---|
+       |
+       +---> C ---> D
+```
+
+这意味着 A 必须出现在 B 和 C 之前，并且 C 必须出现在 D 之前。
+除此之外，没有其他顺序限制。
+
+### 控制期望何时消失
+
+当调用模拟方法时，kMock 只考虑仍然存在的期望
+积极的。期望在创建时处于活动状态，然后变为非活动状态（又名
+*退休*）当发生稍后必须发生的呼叫时。例如，在
+
+```cpp
+using ::testing::_;
+using ::testing::Sequence;
+...
+  Sequence s1, s2;
+
+  EXPECT_CALL(log, Log(WARNING, _, "File too large."))      // #1
+      .Times(AnyNumber())
+      .InSequence(s1, s2);
+  EXPECT_CALL(log, Log(WARNING, _, "Data set is empty."))   // #2
+      .InSequence(s1);
+  EXPECT_CALL(log, Log(WARNING, _, "User not found."))      // #3
+      .InSequence(s2);
+```
+
+一旦 #2 或 #3 匹配，#1 将退出。如果在此之后记录警告`"File too large."`，则这将是一个错误。
+
+请注意，期望在饱和时不会自动消失。为了
+例子，
+
+```cpp
+using ::testing::_;
+...
+  EXPECT_CALL(log, Log(WARNING, _, _));                     // #1
+  EXPECT_CALL(log, Log(WARNING, _, "File too large."));     // #2
+```
+
+表示将会出现一个警告，其中包含消息““File too”
+large."`。如果第二个警告也包含此消息，#2 将再次匹配
+并导致违反上限的错误。
+
+如果这不是你想要的，你可以要求期望尽快退休
+变得饱和：
+
+```cpp
+using ::testing::_;
+...
+  EXPECT_CALL(log, Log(WARNING, _, _));                     // #1
+  EXPECT_CALL(log, Log(WARNING, _, "File too large."))      // #2
+      .RetiresOnSaturation();
+```
+
+这里 #2 只能使用一次，所以如果您有两个警告消息`"File too large."`，第一个将匹配 #2，第二个将匹配 #1 -
+不会有错误。
+
+## 使用 Actions {#using-actions}
+
+### 从模拟方法返回引用
+
+如果模拟函数的返回类型是引用，则需要使用“ReturnRef()”
+而不是 `Return()` 返回结果：
+
+```cpp
+using ::testing::ReturnRef;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(Bar&, GetBar, (), (override));
+};
+...
+  MockFoo foo;
+  Bar bar;
+  EXPECT_CALL(foo, GetBar())
+      .WillOnce(ReturnRef(bar));
+...
+```
+
+### 从模拟方法返回实时值
+
+`Return(x)`操作在创建操作时保存`x`的副本，并且
+每当执行时总是返回相同的值。有时您可能想要
+相反，返回 `x` 的 *live* 值（即，当
+操作已*执行*。）。为此使用 `ReturnRef()` 或 `ReturnPointee()`
+目的。
+
+如果模拟函数的返回类型是引用，您可以使用
+`ReturnRef(x)`，如前面的菜谱所示（“从模拟返回引用
+方法”）。但是，kMock 不允许您在模拟函数中使用 `ReturnRef()`
+其返回类型不是引用，因为这样做通常表明用户
+错误。那么，你该怎么办？
+
+尽管您可能会受到诱惑，但请勿使用“std::ref()”：
+
+```cpp
+using testing::Return;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(int, GetValue, (), (override));
+};
+...
+  int x = 0;
+  MockFoo foo;
+  EXPECT_CALL(foo, GetValue())
+      .WillRepeatedly(Return(std::ref(x)));  // Wrong!
+  x = 42;
+  EXPECT_EQ(42, foo.GetValue());
+```
+
+不幸的是，它在这里不起作用。上面的代码将失败并出现错误：
+
+```text
+Value of: foo.GetValue()
+  Actual: 0
+Expected: 42
+```
+
+原因是 `Return(*value*)` 将 `value` 转换为实际的返回类型
+当动作被*创建*时，而不是当它被创建时，模拟函数的
+*已执行*。 （选择此行为是为了在“value”为
+引用一些临时对象的代理对象。）因此，
+当以下情况时，`std::ref(x)` 会转换为 `int` 值（而不是 `const int&`）
+期望已设定，“Return(std::ref(x))”将始终返回 0。
+
+`ReturnPointee(pointer)`就是专门为了解决这个问题而提供的。它
+返回操作执行时“pointer”指向的值：
+
+```cpp
+using testing::ReturnPointee;
+...
+  int x = 0;
+  MockFoo foo;
+  EXPECT_CALL(foo, GetValue())
+      .WillRepeatedly(ReturnPointee(&x));  // Note the & here.
+  x = 42;
+  EXPECT_EQ(42, foo.GetValue());  // This will succeed now.
+```
+
+### 组合actions
+
+想要在调用函数时做不止一件事吗？没关系。 `DoAll()`
+允许您每次执行一系列操作。仅返回值
+将使用序列中的最后一个操作。
+
+```cpp
+using ::testing::_;
+using ::testing::DoAll;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(bool, Bar, (int n), (override));
+};
+...
+  EXPECT_CALL(foo, Bar(_))
+      .WillOnce(DoAll(action_1,
+                      action_2,
+                      ...
+                      action_n));
+```
+
+### 验证复杂的参数 {#SaveArgVerify}
+
+如果您想验证是否使用特定参数调用了方法，但
+匹配标准很复杂，很难区分
+基数失败（调用方法的次数错误）和参数
+匹配失败。同样，如果您匹配多个参数，则可能不会
+很容易区分哪个参数未能匹配。例如：
+
+```cpp
+  // Not ideal: this could fail because of a problem with arg1 or arg2, or maybe
+  // just the method wasn't called.
+  EXPECT_CALL(foo, SendValues(_, ElementsAre(1, 4, 4, 7), EqualsProto( ... )));
+```
+
+您可以保存参数并单独测试它们：
+
+```cpp
+  EXPECT_CALL(foo, SendValues)
+      .WillOnce(DoAll(SaveArg<1>(&actual_array), SaveArg<2>(&actual_proto)));
+  ... run the test
+  EXPECT_THAT(actual_array, ElementsAre(1, 4, 4, 7));
+  EXPECT_THAT(actual_proto, EqualsProto( ... ));
+```
+
+### 模拟副作用 {#mocking-side-effects}
+
+有时，方法不是通过返回值而是通过侧面来展示其效果
+影响。例如，它可能会更改某些全局状态或修改输出
+争论。要模拟副作用，通常您可以通过以下方式定义自己的操作
+实现 `::testing::ActionInterface`。
+
+如果您需要做的只是更改输出参数，则内置
+`SetArgPointee()` 操作很方便：
+
+```cpp
+using ::testing::_;
+using ::testing::SetArgPointee;
+
+class MockMutator : public Mutator {
+ public:
+  MOCK_METHOD(void, Mutate, (bool mutate, int* value), (override));
+  ...
+}
+...
+  MockMutator mutator;
+  EXPECT_CALL(mutator, Mutate(true, _))
+      .WillOnce(SetArgPointee<1>(5));
+```
+
+在此示例中，当调用 `mutator.Mutate()` 时，我们会将 5 分配给
+`int` 变量由参数 #1 指向（从 0 开始）。
+
+`SetArgPointee()` 方便地创建您传递给的值的内部副本
+它，消除了保持价值在范围内并保持活力的需要。其含义
+然而，该值必须具有复制构造函数和赋值运算符。
+
+如果模拟方法也需要返回一个值，您可以链接
+`SetArgPointee()` 和 `Return()` 使用 `DoAll()`，记得把
+最后 `Return()` 语句：
+
+```cpp
+using ::testing::_;
+using ::testing::DoAll;
+using ::testing::Return;
+using ::testing::SetArgPointee;
+
+class MockMutator : public Mutator {
+ public:
+  ...
+  MOCK_METHOD(bool, MutateInt, (int* value), (override));
+}
+...
+  MockMutator mutator;
+  EXPECT_CALL(mutator, MutateInt(_))
+      .WillOnce(DoAll(SetArgPointee<0>(5),
+                      Return(true)));
+```
+
+但请注意，如果您使用`ReturnOKWith()`方法，它将覆盖
+函数的响应参数中由 `SetArgPointee()` 提供的值
+称呼。
+
+如果输出参数是数组，请使用`SetArrayArgument<N>(first, last)`
+行动代替。它将源范围`[first,last)`中的元素复制到
+第 N 个（从 0 开始）参数指向的数组：
+
+```cpp
+using ::testing::NotNull;
+using ::testing::SetArrayArgument;
+
+class MockArrayMutator : public ArrayMutator {
+ public:
+  MOCK_METHOD(void, Mutate, (int* values, int num_values), (override));
+  ...
+}
+...
+  MockArrayMutator mutator;
+  int values[5] = {1, 2, 3, 4, 5};
+  EXPECT_CALL(mutator, Mutate(NotNull(), 5))
+      .WillOnce(SetArrayArgument<0>(values, values + 5));
+```
+
+当参数是输出迭代器时，这也适用：
+
+```cpp
+using ::testing::_;
+using ::testing::SetArrayArgument;
+
+class MockRolodex : public Rolodex {
+ public:
+  MOCK_METHOD(void, GetNames, (std::back_insert_iterator<vector<string>>),
+              (override));
+  ...
+}
+...
+  MockRolodex rolodex;
+  vector<string> names = {"George", "John", "Thomas"};
+  EXPECT_CALL(rolodex, GetNames(_))
+      .WillOnce(SetArrayArgument<0>(names.begin(), names.end()));
+```
+
+### 根据状态更改模拟对象的行为
+
+如果您希望调用改变模拟对象的行为，您可以使用
+`::testing::InSequence` 指定之前和之后的不同行为
+称呼：
+
+```cpp
+using ::testing::InSequence;
+using ::testing::Return;
+
+...
+  {
+     InSequence seq;
+     EXPECT_CALL(my_mock, IsDirty())
+         .WillRepeatedly(Return(true));
+     EXPECT_CALL(my_mock, Flush());
+     EXPECT_CALL(my_mock, IsDirty())
+         .WillRepeatedly(Return(false));
+  }
+  my_mock.FlushIfDirty();
+```
+
+这使得`my_mock.IsDirty()`在调用`my_mock.Flush()`之前返回`true`
+然后返回`false`。
+
+如果行为变化更复杂，您可以将效果存储在变量中
+并使模拟方法从该变量获取其返回值：
+
+```cpp
+using ::testing::_;
+using ::testing::SaveArg;
+using ::testing::Return;
+
+ACTION_P(ReturnPointee, p) { return *p; }
+...
+  int previous_value = 0;
+  EXPECT_CALL(my_mock, GetPrevValue)
+      .WillRepeatedly(ReturnPointee(&previous_value));
+  EXPECT_CALL(my_mock, UpdateValue)
+      .WillRepeatedly(SaveArg<0>(&previous_value));
+  my_mock.DoSomethingToUpdateValue();
+```
+
+这里 `my_mock.GetPrevValue()` 将始终返回最后一个的参数
+`UpdateValue()` 调用。
+
+### 设置返回类型的默认值 {#DefaultValue}
+
+如果模拟方法的返回类型是内置的 C++ 类型或指针，则默认情况下它
+调用时将返回 0。另外，在 C++ 11 及更高版本中，模拟方法的
+返回类型具有默认构造函数将返回默认构造的值
+默认。如果此默认值不起作用，您只需指定一个操作
+为你。
+
+有时，您可能想要更改此默认值，或者您可能想要指定
+kMock 不知道的类型的默认值。您可以使用
+`::testing::DefaultValue` 类模板：
+
+```cpp
+using ::testing::DefaultValue;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(Bar, CalculateBar, (), (override));
+};
+
+
+...
+  Bar default_bar;
+  // Sets the default return value for type Bar.
+  DefaultValue<Bar>::Set(default_bar);
+
+  MockFoo foo;
+
+  // We don't need to specify an action here, as the default
+  // return value works for us.
+  EXPECT_CALL(foo, CalculateBar());
+
+  foo.CalculateBar();  // This should return default_bar.
+
+  // Unsets the default return value.
+  DefaultValue<Bar>::Clear();
+```
+
+请注意，更改类型的默认值可能会使您的测试变得困难
+去理解。我们建议您谨慎使用此功能。例如，
+您可能需要确保“Set()”和“Clear()”调用就在
+使用您的模拟的代码。
+
+### 设置模拟方法的默认操作
+
+您已经了解了如何更改给定类型的默认值。然而，这
+对于您的目的来说可能太粗糙：也许您有两个模拟方法
+相同的返回类型，并且您希望它们具有不同的行为。 `ON_CALL()`
+宏允许您在方法级别自定义模拟的行为：
+
+```cpp
+using ::testing::_;
+using ::testing::AnyNumber;
+using ::testing::Gt;
+using ::testing::Return;
+...
+  ON_CALL(foo, Sign(_))
+      .WillByDefault(Return(-1));
+  ON_CALL(foo, Sign(0))
+      .WillByDefault(Return(0));
+  ON_CALL(foo, Sign(Gt(0)))
+      .WillByDefault(Return(1));
+
+  EXPECT_CALL(foo, Sign(_))
+      .Times(AnyNumber());
+
+  foo.Sign(5);   // This should return 1.
+  foo.Sign(-9);  // This should return -1.
+  foo.Sign(0);   // This should return 0.
+```
+
+正如您可能已经猜到的，当有多个“ON_CALL()”语句时，
+顺序中较新的优先于较旧的。换句话说，
+将使用与函数参数匹配的**最后一个**。这个搭配
+order 允许您在模拟对象的构造函数中设置常见行为或
+测试装置的设置阶段，并在稍后专门化模拟的行为。
+
+请注意，`ON_CALL` 和 `EXPECT_CALL` 都有相同的“后面的语句
+优先”规则，但它们不交互。也就是说，`EXPECT_CALL` 有它们的
+自己的优先顺序与“ON_CALL”优先顺序不同。
+
+### 使用函数/方法/函子/Lambda 作为actions {#FunctionsAsActions}
+
+如果内置操作不适合您，您可以使用现有的可调用操作
+(function, `std::function`, method, functor, lambda) 作为一个动作。
+
+```cpp
+using ::testing::_; using ::testing::Invoke;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(int, Sum, (int x, int y), (override));
+  MOCK_METHOD(bool, ComplexJob, (int x), (override));
+};
+
+int CalculateSum(int x, int y) { return x + y; }
+int Sum3(int x, int y, int z) { return x + y + z; }
+
+class Helper {
+ public:
+  bool ComplexJob(int x);
+};
+
+...
+  MockFoo foo;
+  Helper helper;
+  EXPECT_CALL(foo, Sum(_, _))
+      .WillOnce(&CalculateSum)
+      .WillRepeatedly(Invoke(NewPermanentCallback(Sum3, 1)));
+  EXPECT_CALL(foo, ComplexJob(_))
+      .WillOnce(Invoke(&helper, &Helper::ComplexJob))
+      .WillOnce([] { return true; })
+      .WillRepeatedly([](int x) { return x > 0; });
+
+  foo.Sum(5, 6);         // Invokes CalculateSum(5, 6).
+  foo.Sum(2, 3);         // Invokes Sum3(1, 2, 3).
+  foo.ComplexJob(10);    // Invokes helper.ComplexJob(10).
+  foo.ComplexJob(-1);    // Invokes the inline lambda.
+```
+
+唯一的要求是函数的类型等必须*兼容*
+带有模拟函数的签名，意味着后者的参数（如果
+它需要任何）可以隐式转换为相应的参数
+前者的返回类型可以隐式转换为
+后者。因此，您可以调用与类型*不*完全相同的东西
+模拟函数，只要这样做是安全的 - 很好，对吧？
+
+注意：
+
+* 该操作拥有回调的所有权，并且当
+行动本身就被破坏了。
+* 如果回调的类型派生自基本回调类型“C”，则需要
+将其隐式转换为“C”以解决重载问题，例如
+    ```cpp
+    using ::testing::Invoke;
+    ...
+      ResultCallback<bool>* is_ok = ...;
+      ... Invoke(is_ok) ...;  // This works.
+
+      BlockingClosure* done = new BlockingClosure;
+      ... Invoke(implicit_cast<Closure*>(done)) ...;  // The cast is necessary.
+    ```
+
+###使用带有额外信息的函数作为actions
+
+使用 Invoke() 调用的函数或函子必须具有相同数量的
+参数作为您使用它的模拟函数。有时你可能有一个功能
+这需要更多参数，并且您愿意传递额外的参数
+自己来填补这个空白。您可以在 kMock 中使用回调来执行此操作
+预先绑定的参数。这是一个例子：
+
+```cpp
+using ::testing::Invoke;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(char, DoThis, (int n), (override));
+};
+
+char SignOfSum(int x, int y) {
+  const int sum = x + y;
+  return (sum > 0) ? '+' : (sum < 0) ? '-' : '0';
+}
+
+TEST_F(FooTest, Test) {
+  MockFoo foo;
+
+  EXPECT_CALL(foo, DoThis(2))
+      .WillOnce(Invoke(NewPermanentCallback(SignOfSum, 5)));
+  EXPECT_EQ('+', foo.DoThis(2));  // Invokes SignOfSum(5, 2).
+}
+```
+
+### Invoking a Function/Method/Functor/Lambda/Callback Without Arguments
+
+`Invoke()` 将模拟函数的参数传递给函数，等等
+调用，以便被调用者具有要使用的调用的完整上下文。如果
+被调用的函数对部分或全部参数不感兴趣，它可以
+简单地忽略它们。
+
+然而，一个常见的模式是测试作者想要调用一个函数而不需要
+模拟函数的参数。她可以使用包装函数来做到这一点
+在调用下划线空函数之前丢弃参数。
+不用说，这可能很乏味并且模糊了测试的意图。
+
+这个问题有两种解决方案。首先，您可以传递任何可调用的
+零参数作为动作。或者，使用“InvokeWithoutArgs()”，就像
+`Invoke()` 不同之处在于它不会将模拟函数的参数传递给
+被调用者。下面是每个的示例：
+
+```cpp
+using ::testing::_;
+using ::testing::InvokeWithoutArgs;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(bool, ComplexJob, (int n), (override));
+};
+
+bool Job1() { ... }
+bool Job2(int n, char c) { ... }
+
+...
+  MockFoo foo;
+  EXPECT_CALL(foo, ComplexJob(_))
+      .WillOnce([] { Job1(); });
+      .WillOnce(InvokeWithoutArgs(NewPermanentCallback(Job2, 5, 'a')));
+
+  foo.ComplexJob(10);  // Invokes Job1().
+  foo.ComplexJob(20);  // Invokes Job2(5, 'a').
+```
+
+注意：
+
+* 该操作拥有回调的所有权，并且当
+行动本身就被破坏了。
+* 如果回调的类型派生自基本回调类型“C”，则需要
+将其隐式转换为“C”以解决重载问题，例如
+
+    ```cpp
+    using ::testing::InvokeWithoutArgs;
+    ...
+      ResultCallback<bool>* is_ok = ...;
+      ... InvokeWithoutArgs(is_ok) ...;  // This works.
+
+      BlockingClosure* done = ...;
+      ... InvokeWithoutArgs(implicit_cast<Closure*>(done)) ...;
+      // The cast is necessary.
+    ```
+
+### 调用 Mock 函数的参数
+
+有时，模拟函数会接收一个函数指针、一个函子（在其他情况下）
+词，“可调用”）作为参数，例如
+
+```cpp
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(bool, DoThis, (int n, (ResultCallback1<bool, int>* callback)),
+              (override));
+};
+```
+
+你可能想调用这个可调用参数：
+
+```cpp
+using ::testing::_;
+...
+  MockFoo foo;
+  EXPECT_CALL(foo, DoThis(_, _))
+      .WillOnce(...);
+      // Will execute callback->Run(5), where callback is the
+      // second argument DoThis() receives.
+```
+### 忽略操作的结果
+
+有时你有一个返回*某些东西*的操作，但你需要一个操作
+返回`void`（也许您想在返回的模拟函数中使用它
+`void`，或者可能需要在 `DoAll()` 中使用它，并且它不是最后一个
+列表）。 `IgnoreResult()` 可以让你做到这一点。例如：
+
+```cpp
+using ::testing::_;
+using ::testing::DoAll;
+using ::testing::IgnoreResult;
+using ::testing::Return;
+
+int Process(const MyData& data);
+string DoSomething();
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(void, Abc, (const MyData& data), (override));
+  MOCK_METHOD(bool, Xyz, (), (override));
+};
+
+  ...
+  MockFoo foo;
+  EXPECT_CALL(foo, Abc(_))
+      // .WillOnce(Invoke(Process));
+      // The above line won't compile as Process() returns int but Abc() needs
+      // to return void.
+      .WillOnce(IgnoreResult(Process));
+  EXPECT_CALL(foo, Xyz())
+      .WillOnce(DoAll(IgnoreResult(DoSomething),
+                      // Ignores the string DoSomething() returns.
+                      Return(true)));
+```
+
+请注意，您**不能**对已返回的操作使用“IgnoreResult()”
+‘无效’。这样做会导致难看的编译器错误。
+
+### 选择操作的参数 {#SelectingArgs}
+
+假设您有一个带有七个参数的模拟函数“Foo()”，并且您有一个
+调用“Foo()”时要调用的自定义操作。问题是，
+自定义操作只需要三个参数：
+
+```cpp
+using ::testing::_;
+using ::testing::Invoke;
+...
+  MOCK_METHOD(bool, Foo,
+              (bool visible, const string& name, int x, int y,
+               (const map<pair<int, int>>), double& weight, double min_weight,
+               double max_wight));
+...
+bool IsVisibleInQuadrant1(bool visible, int x, int y) {
+  return visible && x >= 0 && y >= 0;
+}
+...
+  EXPECT_CALL(mock, Foo)
+      .WillOnce(Invoke(IsVisibleInQuadrant1));  // Uh, won't compile. :-(
+```
+
+为了取悦编译器上帝，你需要定义一个具有相同功能的“适配器”
+签名为 `Foo()` 并使用正确的参数调用自定义操作：
+
+```cpp
+using ::testing::_;
+using ::testing::Invoke;
+...
+bool MyIsVisibleInQuadrant1(bool visible, const string& name, int x, int y,
+                            const map<pair<int, int>, double>& weight,
+                            double min_weight, double max_wight) {
+  return IsVisibleInQuadrant1(visible, x, y);
+}
+...
+  EXPECT_CALL(mock, Foo)
+      .WillOnce(Invoke(MyIsVisibleInQuadrant1));  // Now it works.
+```
+
+但这不是很尴尬吗？
+
+kMock 提供了一个通用的“动作适配器”，因此您可以花时间关注
+比编写自己的适配器更重要的事情。语法如下：
+
+```cpp
+WithArgs<N1, N2, ..., Nk>(action)
+```
+
+创建一个动作，在给定的位置传递模拟函数的参数
+对内部“action”进行索引（从 0 开始）并执行它。使用“WithArgs”，我们的
+原来的例子可以写成：
+
+```cpp
+using ::testing::_;
+using ::testing::Invoke;
+using ::testing::WithArgs;
+...
+  EXPECT_CALL(mock, Foo)
+      .WillOnce(WithArgs<0, 2, 3>(Invoke(IsVisibleInQuadrant1)));  // No need to define your own adaptor.
+```
+
+为了更好的可读性，kMock 还为您提供：
+
+* `WithoutArgs(action)` 当内部 `action` 没有*参数时，并且
+* 当内部“action”执行时，`WithArg<N>(action)`（`Arg`之后没有`s`）
+*一个*参数。
+
+您可能已经意识到，“InvokeWithoutArgs(...)”只是语法糖
+`WithoutArgs(Invoke(...))`。
+
+以下是更多提示：
+
+* `WithArgs` 和朋友中使用的内部动作不必是
+`Invoke()`——它可以是任何东西。
+* 如果需要，您可以在参数列表中重复一个参数，例如
+`WithArgs<2, 3, 3, 5>(...)`。
+* 您可以更改参数的顺序，例如`WithArgs<3, 2, 1>(...)`。
+* 所选参数的类型*不必*必须与
+内在的动作完全一样。只要它们可以隐式地存在，它就有效
+转换为内部操作的相应参数。例如，
+如果模拟函数的第四个参数是“int”并且“my_action”采用
+`double`、`WithArg<4>(my_action)` 都可以。
+
+### 忽略操作函数中的参数
+
+[选择操作的参数](#SelectingArgs) 配方向我们展示了一种方法
+使模拟函数和具有不兼容参数列表的操作适合
+一起。缺点是，将操作包装在 `WithArgs<...>()` 中会得到
+对于编写测试的人来说很乏味。
+
+如果您正在定义要使用的函数（或方法、函子、lambda、回调）
+使用 `Invoke*()`，并且您对其某些参数不感兴趣，
+`WithArgs` 的替代方法是将无用的参数声明为 `Unused`。
+这使得定义在以下类型的情况下不那么混乱和不那么脆弱：
+无趣的争论发生了变化。它还可以增加行动的机会
+功能可以重复使用。例如，给定
+
+```cpp
+ public:
+  MOCK_METHOD(double, Foo, double(const string& label, double x, double y),
+              (override));
+  MOCK_METHOD(double, Bar, (int index, double x, double y), (override));
+```
+
+instead of
+
+```cpp
+using ::testing::_;
+using ::testing::Invoke;
+
+double DistanceToOriginWithLabel(const string& label, double x, double y) {
+  return sqrt(x*x + y*y);
+}
+double DistanceToOriginWithIndex(int index, double x, double y) {
+  return sqrt(x*x + y*y);
+}
+...
+  EXPECT_CALL(mock, Foo("abc", _, _))
+      .WillOnce(Invoke(DistanceToOriginWithLabel));
+  EXPECT_CALL(mock, Bar(5, _, _))
+      .WillOnce(Invoke(DistanceToOriginWithIndex));
+```
+
+你可以写
+
+```cpp
+using ::testing::_;
+using ::testing::Invoke;
+using ::testing::Unused;
+
+double DistanceToOrigin(Unused, double x, double y) {
+  return sqrt(x*x + y*y);
+}
+...
+  EXPECT_CALL(mock, Foo("abc", _, _))
+      .WillOnce(Invoke(DistanceToOrigin));
+  EXPECT_CALL(mock, Bar(5, _, _))
+      .WillOnce(Invoke(DistanceToOrigin));
+```
+
+### Sharing Actions
+
+就像匹配器一样，kMock 动作对象由一个指向引用计数的指针组成
+实施对象。因此复制操作也是允许的并且非常
+高效的。当引用实现对象的最后一个操作终止时，
+实现对象将被删除。
+
+如果您有一些复杂的操作想要反复使用，您可以
+不必每次都从头开始构建。如果该操作没有
+内部状态（即，无论多少次它总是做同样的事情
+它已被调用），您可以将其分配给操作变量并使用它
+反复变化。例如：
+
+```cpp
+using ::testing::Action;
+using ::testing::DoAll;
+using ::testing::Return;
+using ::testing::SetArgPointee;
+...
+  Action<bool(int*)> set_flag = DoAll(SetArgPointee<0>(5),
+                                      Return(true));
+  ... use set_flag in .WillOnce() and .WillRepeatedly() ...
+```
+
+但是，如果该操作有自己的状态，那么如果您共享该操作，您可能会感到惊讶
+动作对象。假设您有一个操作工厂“IncrementCounter(init)”，其中
+创建一个递增并返回一个计数器的操作，其初始值为
+`init`，使用从同一表达式创建的两个操作并使用共享
+动作会表现出不同的行为。例子：
+
+```cpp
+  EXPECT_CALL(foo, DoThis())
+      .WillRepeatedly(IncrementCounter(0));
+  EXPECT_CALL(foo, DoThat())
+      .WillRepeatedly(IncrementCounter(0));
+  foo.DoThis();  // Returns 1.
+  foo.DoThis();  // Returns 2.
+  foo.DoThat();  // Returns 1 - Blah() uses a different
+                 // counter than Bar()'s.
+```
+
+相对
+
+```cpp
+using ::testing::Action;
+...
+  Action<int()> increment = IncrementCounter(0);
+  EXPECT_CALL(foo, DoThis())
+      .WillRepeatedly(increment);
+  EXPECT_CALL(foo, DoThat())
+      .WillRepeatedly(increment);
+  foo.DoThis();  // Returns 1.
+  foo.DoThis();  // Returns 2.
+  foo.DoThat();  // Returns 3 - the counter is shared.
+```
+
+### 测试异步行为
+
+kMock 经常遇到的问题之一是它很难测试
+异步行为。假设你有一个你想要的`EventQueue`类
+测试，并且您创建了一个单独的“EventDispatcher”接口，以便您可以
+轻松模拟它。然而，该类的实现激发了所有
+后台线程上的事件，这使得测试计时变得困难。你可以只是
+插入 `sleep()` 语句并希望得到最好的结果，但这会让你的测试
+行为不确定。更好的方法是使用 kMock 操作和
+`Notification` 对象强制异步测试同步运行。
+
+```cpp
+class MockEventDispatcher : public EventDispatcher {
+  MOCK_METHOD(bool, DispatchEvent, (int32), (override));
+};
+
+TEST(EventQueueTest, EnqueueEventTest) {
+  MockEventDispatcher mock_event_dispatcher;
+  EventQueue event_queue(&mock_event_dispatcher);
+
+  const int32 kEventId = 321;
+  absl::Notification done;
+  EXPECT_CALL(mock_event_dispatcher, DispatchEvent(kEventId))
+      .WillOnce([&done] { done.Notify(); });
+
+  event_queue.EnqueueEvent(kEventId);
+  done.WaitForNotification();
+}
+```
+
+在上面的示例中，我们设置了正常的 kMock 期望，但随后添加了一个
+通知“Notification”对象的附加操作。现在我们可以调用
+`Notification::WaitForNotification()` 在主线程中等待
+异步调用完成。之后，我们的测试套件就完成了，我们可以
+安全退出。
+
+`{: .callout .note}`
+注意：这个例子有一个缺点：即，如果期望没有得到满足，
+我们的测试将永远运行。它最终会超时并失败，但它会
+需要更长的时间并且调试起来稍微困难一些。为了缓解这个问题，你可以
+使用“WaitForNotificationWithTimeout(ms)”而不是“WaitForNotification()”。
+
+## 有关使用 kMock 的杂项 {#misc-recipes-on-using-kmock}
+
+### 使用仅移动类型的模拟方法
+
+C++11 引入了*仅移动类型*。仅移动类型的值可以从
+一个对象可以复制到另一个对象，但无法复制。 `std::unique_ptr<T>` 可能是
+最常用的仅移动类型。
+
+模拟采用和/或返回仅移动类型的方法会带来一些影响
+挑战，但没有什么是不可克服的。这个食谱向您展示了如何做到这一点。
+请注意，仅引入对仅移动方法参数的支持
+2017 年 4 月 kMock；在较旧的代码中，您可能会发现更复杂
+[解决方法](#LegacyMoveOnly) 缺乏此功能。
+
+假设我们正在开发一个虚构的项目，允许一个人发帖和分享
+称为“嗡嗡声”的片段。您的代码使用这些类型：
+
+```cpp
+enum class AccessLevel { kInternal, kPublic };
+
+class Buzz {
+ public:
+  explicit Buzz(AccessLevel access) { ... }
+  ...
+};
+
+class Buzzer {
+ public:
+  virtual ~Buzzer() {}
+  virtual std::unique_ptr<Buzz> MakeBuzz(StringPiece text) = 0;
+  virtual bool ShareBuzz(std::unique_ptr<Buzz> buzz, int64_t timestamp) = 0;
+  ...
+};
+```
+
+“Buzz”对象表示正在发布的片段。一个类实现了
+“Buzzer”界面能够创建和共享“Buzz”。中的方法
+`Buzzer` 可能会返回一个 `unique_ptr<Buzz>` 或接受一个 `unique_ptr<Buzz>`。现在我们
+需要在我们的测试中模拟“Buzzer”。
+
+要模拟接受或返回仅移动类型的方法，您只需使用
+像往常一样熟悉的“MOCK_METHOD”语法：
+
+```cpp
+class MockBuzzer : public Buzzer {
+ public:
+  MOCK_METHOD(std::unique_ptr<Buzz>, MakeBuzz, (StringPiece text), (override));
+  MOCK_METHOD(bool, ShareBuzz, (std::unique_ptr<Buzz> buzz, int64_t timestamp),
+              (override));
+};
+```
+
+现在我们已经定义了模拟类，我们可以在测试中使用它。在
+下面的代码示例，我们假设我们已经定义了一个 `MockBuzzer` 对象
+名为“mock_buzzer_”：
+
+```cpp
+  MockBuzzer mock_buzzer_;
+```
+
+首先让我们看看如何设置对`MakeBuzz()`方法的期望，该方法
+返回一个`unique_ptr<Buzz>`。
+
+像往常一样，如果您设置了一个期望但没有执行任何操作（即“.WillOnce()”或
+`.WillRepeatedly()` 子句），当该期望触发时，默认操作
+将采用该方法。由于 `unique_ptr<>` 有一个默认构造函数
+返回一个空的`unique_ptr`，如果你不指定一个，你会得到这个
+行动：
+
+```cpp
+  // Use the default action.
+  EXPECT_CALL(mock_buzzer_, MakeBuzz("hello"));
+
+  // Triggers the previous EXPECT_CALL.
+  EXPECT_EQ(nullptr, mock_buzzer_.MakeBuzz("hello"));
+```
+
+如果您对默认操作不满意，可以照常进行调整；参考
+[设置默认操作](#UseOnCall)。
+
+如果您只需要返回预定义的仅移动值，则可以使用
+`Return(ByMove(...))` 操作：
+
+```cpp
+  // When this fires, the unique_ptr<> specified by ByMove(...) will
+  // be returned.
+  EXPECT_CALL(mock_buzzer_, MakeBuzz("world"))
+      .WillOnce(Return(ByMove(MakeUnique<Buzz>(AccessLevel::kInternal))));
+
+  EXPECT_NE(nullptr, mock_buzzer_.MakeBuzz("world"));
+```
+
+请注意，“ByMove()”在这里至关重要 - 如果删除它，代码将无法编译。
+
+测验时间！如果执行“Return(ByMove(...))”操作，您认为会发生什么
+执行多次（例如，您写“...
+.WillRepeatedly(Return(ByMove(...)));`)?想想吧，第一次之后
+操作运行时，源值将被消耗（因为它是仅移动的
+值），所以下一次，没有任何可以移动的值——你会得到一个
+运行时错误“Return(ByMove(...))”只能运行一次。
+
+如果您需要模拟方法做的不仅仅是移动预定义值，
+请记住，您始终可以使用 lambda 或可调用对象，这可以做到
+几乎任何你想要的东西：
+
+```cpp
+  EXPECT_CALL(mock_buzzer_, MakeBuzz("x"))
+      .WillRepeatedly([](StringPiece text) {
+        return MakeUnique<Buzz>(AccessLevel::kInternal);
+      });
+
+  EXPECT_NE(nullptr, mock_buzzer_.MakeBuzz("x"));
+  EXPECT_NE(nullptr, mock_buzzer_.MakeBuzz("x"));
+```
+每次“EXPECT_CALL”触发时，都会创建一个新的`unique_ptr<Buzz>`
+然后回来了。您不能使用“Return(ByMove(...))”来执行此操作。
+
+这包括返回仅移动值；但我们如何使用方法
+接受仅移动参数？答案是它们工作正常，尽管
+当任何方法的参数是仅移动时，某些操作将无法编译。你
+始终可以使用 `Return` 或 [lambda 或函子](#FunctionsAsActions)：
+
+```cpp
+  using ::testing::Unused;
+
+  EXPECT_CALL(mock_buzzer_, ShareBuzz(NotNull(), _)).WillOnce(Return(true));
+  EXPECT_TRUE(mock_buzzer_.ShareBuzz(MakeUnique<Buzz>(AccessLevel::kInternal)),
+              0);
+
+  EXPECT_CALL(mock_buzzer_, ShareBuzz(_, _)).WillOnce(
+      [](std::unique_ptr<Buzz> buzz, Unused) { return buzz != nullptr; });
+  EXPECT_FALSE(mock_buzzer_.ShareBuzz(nullptr, 0));
+```
+
+许多内置操作（`WithArgs`，`WithoutArgs`，`DeleteArg`，`SaveArg`，...）
+原则上可以支持仅移动参数，但对此的支持并不
+尚未实施。如果这阻碍了您，请提交错误。
+
+一些操作（例如`DoAll`）在内部复制它们的参数，所以它们永远不能
+使用不可复制的对象；你必须使用函子来代替。
+
+#### 仅移动类型的旧解决方法 {#LegacyMoveOnly}
+
+kMock 于 4 月份才引入对仅移动函数参数的支持
+2017 年的版本。在较旧的代码中，您可能会遇到以下解决方法：
+此功能（不再需要 - 我们将其包括在内只是为了
+参考）：
+
+```cpp
+class MockBuzzer : public Buzzer {
+ public:
+  MOCK_METHOD(bool, DoShareBuzz, (Buzz* buzz, Time timestamp));
+  bool ShareBuzz(std::unique_ptr<Buzz> buzz, Time timestamp) override {
+    return DoShareBuzz(buzz.get(), timestamp);
+  }
+};
+```
+
+诀窍是将“ShareBuzz()”方法委托给模拟方法（让我们调用
+它不采用仅移动参数的“DoShareBuzz()”)。然后，代替
+设置对“ShareBuzz()”的期望，您可以在“DoShareBuzz()”模拟上设置它们
+方法：
+
+```cpp
+  MockBuzzer mock_buzzer_;
+  EXPECT_CALL(mock_buzzer_, DoShareBuzz(NotNull(), _));
+
+  // When one calls ShareBuzz() on the MockBuzzer like this, the call is
+  // forwarded to DoShareBuzz(), which is mocked.  Therefore this statement
+  // will trigger the above EXPECT_CALL.
+  mock_buzzer_.ShareBuzz(MakeUnique<Buzz>(AccessLevel::kInternal), 0);
+```
+
+### 使编译更快
+
+不管你相信与否，“绝大多数”时间都花在编译模拟上
+类正在生成其构造函数和析构函数，因为它们执行
+重要的任务（例如验证期望）。更何况还嘲讽
+具有不同签名的方法具有不同的类型，因此它们的
+构造函数/析构函数需要由编译器单独生成。作为一个
+结果，如果您模拟许多不同类型的方法，请编译您的模拟类
+会变得非常慢。
+
+如果您遇到编译缓慢的情况，您可以移动您的定义
+模拟类的构造函数和析构函数从类体中出来并进入“.cc”
+文件。这样，即使你在 N 个文件中 `#include` 你的模拟类，编译器也会
+只需要生成它的构造函数和析构函数一次，从而产生很多
+更快的编译。
+
+让我们用一个例子来说明这个想法。这是模拟的定义
+应用此食谱之前的课程：
+
+```cpp
+// File mock_foo.h.
+...
+class MockFoo : public Foo {
+ public:
+  // Since we don't declare the constructor or the destructor,
+  // the compiler will generate them in every translation unit
+  // where this mock class is used.
+
+  MOCK_METHOD(int, DoThis, (), (override));
+  MOCK_METHOD(bool, DoThat, (const char* str), (override));
+  ... more mock methods ...
+};
+```
+
+更改后，它看起来像：
+
+```cpp
+// File mock_foo.h.
+...
+class MockFoo : public Foo {
+ public:
+  // The constructor and destructor are declared, but not defined, here.
+  MockFoo();
+  virtual ~MockFoo();
+
+  MOCK_METHOD(int, DoThis, (), (override));
+  MOCK_METHOD(bool, DoThat, (const char* str), (override));
+  ... more mock methods ...
+};
+```
+
+和
+
+```cpp
+// File mock_foo.cc.
+#include "path/to/mock_foo.h"
+
+// The definitions may appear trivial, but the functions actually do a
+// lot of things through the constructors/destructors of the member
+// variables used to implement the mock methods.
+MockFoo::MockFoo() {}
+MockFoo::~MockFoo() {}
+```
+
+### 强制验证
+
+当它被销毁时，您的友好模拟对象将自动验证
+对它的所有期望都已得到满足，并将生成 googletest
+如果没有则失败。这很方便，因为它让您少了一件事情
+担心。也就是说，除非您不确定您的模拟对象是否会是
+被毁了。
+
+你的模拟对象怎么可能最终不会被销毁呢？嗯，它
+可能在堆上创建并由您正在测试的代码拥有。认为
+该代码中有一个错误，它没有正确删除模拟对象 - 你
+当实际上存在错误时，最终可能会通过测试。
+
+使用堆检查器是一个好主意，可以减轻这种担忧，但它
+实施并非 100% 可靠。所以，有时你确实想*强制* kMock
+在（希望）销毁模拟对象之前对其进行验证。你可以这样做
+使用“Mock::VerifyAndClearExpectations(&mock_object)”：
+
+```cpp
+TEST(MyServerTest, ProcessesRequest) {
+  using ::testing::Mock;
+
+  MockFoo* const foo = new MockFoo;
+  EXPECT_CALL(*foo, ...)...;
+  // ... other expectations ...
+
+  // server now owns foo.
+  MyServer server(foo);
+  server.ProcessRequest(...);
+
+  // In case that server's destructor will forget to delete foo,
+  // this will verify the expectations anyway.
+  Mock::VerifyAndClearExpectations(foo);
+}  // server is destroyed when it goes out of scope here.
+```
+
+:::info
+**提示：** `Mock::VerifyAndClearExpectations()` 函数返回一个 `bool`
+指示验证是否成功（“true”表示是），因此您可以
+如果没有意义，则将该函数调用包装在“ASSERT_TRUE()”内
+当验证失败时进一步。
+:::
+
+在使用后验证并清除模拟后，不要设定新的期望。
+在执行模拟的代码之后设置期望具有未定义的行为。
+有关更多信息，请参阅[在测试中使用 Mock](kmock_for_dummies.mdx#using-mocks-in-tests)
+信息。
+
+### Using Checkpoints {#UsingCheckPoints}
+
+有时您可能想分阶段测试模拟对象的行为，其大小
+都是可以管理的，或者您可能想要设定更详细的期望
+哪些 API 调用会调用哪些模拟函数。
+
+您可以使用的一种技术是将期望放入序列中并插入
+在特定位置调用虚拟“检查点”函数。然后你可以验证
+模拟函数调用确实在正确的时间发生。例如，如果您
+正在执行代码：
+
+```cpp
+  Foo(1);
+  Foo(2);
+  Foo(3);
+```
+
+并想要验证 `Foo(1)` 和 `Foo(3)` 都调用 `mock.Bar("a")`，但是
+`Foo(2)` 不会调用任何东西，你可以写：
+
+```cpp
+using ::testing::MockFunction;
+
+TEST(FooTest, InvokesBarCorrectly) {
+  MyMock mock;
+  // Class MockFunction<F> has exactly one mock method.  It is named
+  // Call() and has type F.
+  MockFunction<void(string check_point_name)> check;
+  {
+    InSequence s;
+
+    EXPECT_CALL(mock, Bar("a"));
+    EXPECT_CALL(check, Call("1"));
+    EXPECT_CALL(check, Call("2"));
+    EXPECT_CALL(mock, Bar("a"));
+  }
+  Foo(1);
+  check.Call("1");
+  Foo(2);
+  check.Call("2");
+  Foo(3);
+}
+```
+
+期望规范规定第一个 `Bar("a")` 调用必须发生在
+检查点“1”，第二个 `Bar("a")` 调用必须在检查点“2”之后发生，并且
+两个检查点之间不应发生任何事情。显式检查点使
+清楚哪个 `Foo()` 调用了哪个 `Bar("a")`。
+
+### 模拟析构函数
+
+有时你想确保模拟对象在正确的时间被破坏，
+例如在调用 `bar->A()` 之后但在调用 `bar->B()` 之前。我们已经知道
+您可以指定模拟函数的 [order](#OrderedCalls) 约束
+调用，所以我们需要做的就是模拟mock函数的析构函数。
+
+这听起来很简单，除了一个问题：析构函数是一种特殊函数
+具有特殊的语法和特殊的语义，而“MOCK_METHOD”宏则没有
+为之工作：
+
+```cpp
+MOCK_METHOD(void, ~MockFoo, ());  // Won't compile!
+```
+
+好消息是您可以使用简单的模式来达到相同的效果。
+首先，将模拟函数 `Die()` 添加到您的模拟类中并在
+析构函数，像这样：
+
+```cpp
+class MockFoo : public Foo {
+  ...
+  // Add the following two lines to the mock class.
+  MOCK_METHOD(void, Die, ());
+  ~MockFoo() override { Die(); }
+};
+```
+
+（如果名称“Die()”与现有符号冲突，请选择另一个名称。）现在，
+我们已经将“MockFoo”对象死亡时的测试问题翻译为
+测试何时调用其 `Die()` 方法：
+
+```cpp
+  MockFoo* foo = new MockFoo;
+  MockBar* bar = new MockBar;
+  ...
+  {
+    InSequence s;
+
+    // Expects *foo to die after bar->A() and before bar->B().
+    EXPECT_CALL(*bar, A());
+    EXPECT_CALL(*foo, Die());
+    EXPECT_CALL(*bar, B());
+  }
+```
+
+就是这样。
+
+### 使用 kMock 和线程 {#UsingThreads}
+
+在**单元**测试中，最好能够在一个单元中隔离并测试一段代码。
+单线程上下文。这避免了竞争条件和死锁，并且使得
+调试您的测试变得更加容易。
+
+然而大多数程序都是多线程的，有时为了测试我们需要的东西
+从多个线程上敲击它。 kMock 也适用于此目的。
+
+记住使用模拟的步骤：
+
+1. 创建一个模拟对象 `foo`。
+2. 使用`ON_CALL()`设置其默认操作和期望
+`EXPECT_CALL()`。
+3. 被测代码调用`foo`的方法。
+4. （可选）验证并重置模拟。
+5. 自己销毁模拟，或者让被测试的代码销毁它。这
+析构函数会自动验证它。
+
+如果您遵循以下简单规则，您的模拟和线程就可以生存
+幸福地在一起：
+
+* 在*one*中执行您的*测试代码*（而不是正在测试的代码）
+线。这使您的测试易于遵循。
+* 显然，您可以在不锁定的情况下执行步骤 #1。
+* 执行步骤#2 和#5 时，确保没有其他线程正在访问“foo”。
+也很明显吧？
+* #3 和 #4 可以在一个线程或多线程中完成 - 无论如何
+你想要的。 kMock 负责锁定，因此您无需执行任何操作 -
+除非您的测试逻辑需要。
+
+如果您违反了规则（例如，如果您对模拟设定了期望，而
+另一个线程正在调用它的方法），你会得到未定义的行为。那不是
+有趣，所以不要这样做。
+
+kMock 保证模拟函数的操作在同一线程中完成
+调用了模拟函数。例如，在
+```cpp
+  EXPECT_CALL(mock, Foo(1))
+      .WillOnce(action1);
+  EXPECT_CALL(mock, Foo(2))
+      .WillOnce(action2);
+```
+
+如果在线程 1 中调用 `Foo(1)` 并且在线程 2 中调用 `Foo(2)`，kMock 将
+在线程 1 中执行“action1”，在线程 2 中执行“action2”。
+
+kMock *不*对不同线程中执行的操作强加顺序
+（这样做可能会造成僵局，因为这些操作可能需要合作）。这意味着
+上例中“action1”和“action2”的执行*可能*
+交错。如果这是一个问题，您应该添加适当的同步逻辑
+`action1` 和 `action2` 使测试线程安全。
+
+另外，请记住`DefaultValue<T>`是一个全局资源，可能会
+影响程序中的“所有”活动模拟对象。自然，你不会愿意
+从多个线程或者仍然有模拟在运行时弄乱它。
+
+### 控制 kMock 打印的信息量
+
+当 kMock 发现可能出现错误的内容时（例如模拟
+没有期望的函数被调用，又名无趣的调用，即
+允许，但也许您忘记明确禁止该调用），它会打印一些
+警告消息，包括函数的参数、返回值和
+堆栈跟踪。希望这会提醒您看一看是否有
+确实是个问题。
+
+有时您确信自己的测试是正确的，但可能并不欣赏
+如此友好的信息。有时，您正在调试测试或
+了解您正在测试的代码的行为，并希望您能够
+观察发生的每个模拟调用（包括参数值、返回值
+值和堆栈跟踪）。显然，一种尺寸并不适合所有情况。
+
+您可以使用“--kmock_verbose=LEVEL”来控制 kMock 告诉您的信息量
+命令行标志，其中“LEVEL”是一个具有三个可能值的字符串：
+
+* `info`：kMock 将打印所有信息性消息、警告和错误
+（最详细）。在此设置下，kMock 还将记录对
+`ON_CALL/EXPECT_CALL` 宏。它将包含堆栈跟踪
+“无趣的电话”警告。
+* `warning`：kMock 将打印警告和错误（不太详细）；它将
+忽略“无趣的调用”警告中的堆栈跟踪。这是默认设置。
+* `error`：kMock 将仅打印错误（最不详细）。
+
+或者，您可以在测试中调整该标志的值，例如
+所以：
+
+```cpp
+  ::testing::FLAGS_kmock_verbose = "error";
+```
+
+如果您发现 kMock 打印了太多堆栈帧及其信息或
+警告消息，请记住您可以使用以下命令控制其数量
+`--ktest_stack_trace_depth=max_depth` 标志。
+
+现在，明智地使用正确的标志，让 kMock 更好地为您服务！
+
+### 在模拟通话中获得超级视觉
+
+您使用 kMock 进行了测试。它失败了：kMock 告诉你有些期望没有实现
+使满意。但是，您不确定为什么：是否有拼写错误？
+匹配者？您是否搞乱了“EXPECT_CALL”的顺序？或者是下面的代码
+测试做错了什么？怎样才能找出原因呢？
+
+如果你有X光视力，能真正看到一切的痕迹，那该多好啊
+进行“EXPECT_CALL”和模拟方法调用时？对于每次通话，您会
+喜欢查看它的实际参数值以及 kMock 认为的“EXPECT_CALL”
+匹配？如果您仍然需要一些帮助来找出是谁拨打了这些电话，如何
+关于能够在每次模拟调用时看到完整的堆栈跟踪？
+
+您可以通过使用“--kmock_verbose=info”运行测试来解锁此功能
+旗帜。例如，给定测试程序：
+
+```cpp
+#include "kmock/kmock.h"
+
+using testing::_;
+using testing::HasSubstr;
+using testing::Return;
+
+class MockFoo {
+ public:
+  MOCK_METHOD(void, F, (const string& x, const string& y));
+};
+
+TEST(Foo, Bar) {
+  MockFoo mock;
+  EXPECT_CALL(mock, F(_, _)).WillRepeatedly(Return());
+  EXPECT_CALL(mock, F("a", "b"));
+  EXPECT_CALL(mock, F("c", HasSubstr("d")));
+
+  mock.F("a", "good");
+  mock.F("a", "b");
+}
+```
+
+如果您使用“--kmock_verbose=info”运行它，您将看到以下输出：
+
+```shell
+[ RUN       ] Foo.Bar
+
+foo_test.cc:14: EXPECT_CALL(mock, F(_, _)) invoked
+Stack trace: ...
+
+foo_test.cc:15: EXPECT_CALL(mock, F("a", "b")) invoked
+Stack trace: ...
+
+foo_test.cc:16: EXPECT_CALL(mock, F("c", HasSubstr("d"))) invoked
+Stack trace: ...
+
+foo_test.cc:14: Mock function call matches EXPECT_CALL(mock, F(_, _))...
+    Function call: F(@0x7fff7c8dad40"a",@0x7fff7c8dad10"good")
+Stack trace: ...
+
+foo_test.cc:15: Mock function call matches EXPECT_CALL(mock, F("a", "b"))...
+    Function call: F(@0x7fff7c8dada0"a",@0x7fff7c8dad70"b")
+Stack trace: ...
+
+foo_test.cc:16: Failure
+Actual function call count doesn't match EXPECT_CALL(mock, F("c", HasSubstr("d")))...
+         Expected: to be called once
+           Actual: never called - unsatisfied and active
+[  FAILED  ] Foo.Bar
+```
+
+假设错误是第三个“EXPECT_CALL”中的“c”是一个拼写错误，并且
+实际上应该是“a”。通过上面的消息，您应该看到实际的
+`F("a", "good")` 调用与第一个 `EXPECT_CALL` 匹配，而不是第三个，因为
+你想。由此可见，第三个“EXPECT_CALL”是
+写错了。案子解决了。
+
+如果您对模拟调用跟踪感兴趣而不是堆栈跟踪，您可以
+在测试中将 `--kmock_verbose=info` 与 `--ktest_stack_trace_depth=0` 结合起来
+命令行。
+
+
+## 扩展 kMock {#extending-kmock}
+
+### 快速编写新的匹配器 {#NewMatchers}
+
+:::info
+警告：kMock 不保证匹配器何时或多少次
+调用。因此，所有匹配器必须是功能纯的。看
+[本节](#PureMatchers) 了解更多详细信息。
+:::
+
+“MATCHER*”宏系列可用于轻松定义自定义匹配器。
+语法：
+
+```cpp
+MATCHER(name, description_string_expression) { statements; }
+```
+
+将定义一个具有执行语句的给定名称的匹配器，其中
+必须返回一个“bool”来指示匹配是否成功。在声明中，
+您可以引用“arg”匹配的值，并通过以下方式引用其类型
+`arg_type`。
+
+*描述字符串*是一个“字符串”类型的表达式，记录了内容
+matcher 会执行此操作，并用于在匹配失败时生成失败消息。
+它可以（并且应该）引用特殊的“bool”变量“negation”，并且应该
+当“negation”为“false”时评估匹配器的描述，或者
+当“negation”为“true”时匹配器的否定。
+
+为了方便起见，我们允许描述字符串为空（`""`），其中
+case kMock 将使用匹配器名称中的单词序列作为
+描述。
+
+例如：
+
+```cpp
+MATCHER(IsDivisibleBy7, "") { return (arg % 7) == 0; }
+```
+
+允许你写
+
+```cpp
+  // Expects mock_foo.Bar(n) to be called where n is divisible by 7.
+  EXPECT_CALL(mock_foo, Bar(IsDivisibleBy7()));
+```
+
+或者，
+
+```cpp
+  using ::testing::Not;
+  ...
+  // Verifies that a value is divisible by 7 and the other is not.
+  EXPECT_THAT(some_expression, IsDivisibleBy7());
+  EXPECT_THAT(some_other_expression, Not(IsDivisibleBy7()));
+```
+
+如果上述断言失败，它们将打印如下内容：
+
+```shell
+  Value of: some_expression
+  Expected: is divisible by 7
+    Actual: 27
+  ...
+  Value of: some_other_expression
+  Expected: not (is divisible by 7)
+    Actual: 21
+```
+
+其中描述““可被 7 整除””和““不能（可被 7 整除）””是
+根据匹配器名称“IsDivisibleBy7”自动计算。
+
+您可能已经注意到，自动生成的描述（尤其是那些
+否定）可能没有那么大。您始终可以使用“字符串”覆盖它们
+自己的表达：
+```cpp
+MATCHER(IsDivisibleBy7,
+        absl::StrCat(negation ? "isn't" : "is", " divisible by 7")) {
+  return (arg % 7) == 0;
+}
+```
+
+或者，您可以将附加信息流式传输到名为的隐藏参数
+`result_listener` 解释比赛结果。例如，更好的定义
+`IsDivisibleBy7` 的值为：
+
+```cpp
+MATCHER(IsDivisibleBy7, "") {
+  if ((arg % 7) == 0)
+    return true;
+
+  *result_listener << "the remainder is " << (arg % 7);
+  return false;
+}
+```
+
+有了这个定义，上面的断言将给出更好的信息：
+
+```shell
+  Value of: some_expression
+  Expected: is divisible by 7
+    Actual: 27 (the remainder is 6)
+```
+
+您应该让 `MatchAndExplain()` 打印*任何附加信息*
+帮助用户了解比赛结果。请注意，它应该解释为什么
+如果成功则匹配成功（除非很明显） - 这在以下情况下很有用
+匹配器在`Not()`内部使用。不需要打印参数值
+本身，因为 kMock 已经为您打印了它。
+
+:::info
+注意：匹配的值的类型（`arg_type`）由
+您使用匹配器的上下文是由编译器提供给您的，所以
+你不需要担心声明它（你也不能）。这允许
+匹配器是多态的。例如，`IsDivisibleBy7()`可用于匹配
+任何类型，其中 `(arg % 7) == 0` 的值可以隐式转换为
+`布尔`。在上面的 Bar(IsDivisibleBy7()) 示例中，如果方法 Bar() 接受一个
+`int`、`arg_type` 将是 `int`；如果它需要一个“unsigned long”，“arg_type”将
+为“无符号长”；等等。
+:::
+
+### 快速编写新的参数化匹配器
+
+有时您需要定义一个具有参数的匹配器。为此你可以
+使用宏：
+
+```cpp
+MATCHER_P(name, param_name, description_string) { statements; }
+```
+
+其中描述字符串可以是 `""` 或 `string` 表达式
+引用“否定”和“param_name”。
+
+例如：
+
+```cpp
+MATCHER_P(HasAbsoluteValue, value, "") { return abs(arg) == value; }
+```
+
+将允许你写：
+
+```cpp
+  EXPECT_THAT(Blah("a"), HasAbsoluteValue(n));
+```
+
+这可能会导致此消息（假设“n”为 10）：
+
+```shell
+  Value of: Blah("a")
+  Expected: has absolute value 10
+    Actual: -9
+```
+
+请注意，匹配器描述及其参数都会被打印，使得
+消息人性化。
+
+在匹配器定义主体中，您可以编写“foo_type”来引用类型
+名为“foo”的参数。例如，在正文中
+上面`MATCHER_P(HasAbsoluteValue, value)`，可以写`value_type`来引用
+到“值”的类型。
+
+kMock还提供`MATCHER_P2`，`MATCHER_P3`，...，直到`MATCHER_P10`
+支持多参数匹配器：
+
+```cpp
+MATCHER_Pk(name, param_1, ..., param_k, description_string) { statements; }
+```
+
+请注意，自定义描述字符串适用于特定的*实例*
+匹配器，其中参数已绑定到实际值。所以
+通常您会希望参数值成为描述的一部分。模拟
+让您可以通过引用描述字符串中的匹配器参数来做到这一点
+表达。
+
+例如，
+
+```cpp
+using ::testing::PrintToString;
+MATCHER_P2(InClosedRange, low, hi,
+           absl::StrFormat("%s in range [%s, %s]", negation ? "isn't" : "is",
+                           PrintToString(low), PrintToString(hi))) {
+  return low <= arg && arg <= hi;
+}
+...
+EXPECT_THAT(3, InClosedRange(4, 6));
+```
+
+将生成包含以下消息的故障：
+
+```shell
+  Expected: is in range [4, 6]
+```
+如果您指定 `""` 作为描述，则失败消息将包含
+匹配器名称中的单词序列，后跟打印的参数值
+作为一个元组。例如，
+
+```cpp
+  MATCHER_P2(InClosedRange, low, hi, "") { ... }
+  ...
+  EXPECT_THAT(3, InClosedRange(4, 6));
+```
+
+将生成包含以下文本的失败：
+
+```shell
+  Expected: in closed range (4, 6)
+```
+
+为了打字的目的，您可以查看
+
+```cpp
+MATCHER_Pk(Foo, p1, ..., pk, description_string) { ... }
+```
+
+作为简写
+
+```cpp
+template <typename p1_type, ..., typename pk_type>
+FooMatcherPk<p1_type, ..., pk_type>
+Foo(p1_type p1, ..., pk_type pk) { ... }
+```
+当你写 Foo(v1, ..., vk) 时，编译器会推断出 Foo(v1, ..., vk) 的类型
+为您提供参数“v1”、...和“vk”。如果您对结果不满意
+类型推断，您可以通过显式实例化来指定类型
+模板，如`Foo<long, bool>(5, false)`。正如之前所说，你不能
+（或需要）指定“arg_type”，因为它是由上下文确定的
+使用匹配器。
+
+您可以将表达式 `Foo(p1, ..., pk)` 的结果分配给类型变量
+`FooMatcherPk<p1_type, ..., pk_type>`。这在作曲时很有用
+匹配者。没有参数或只有一个参数的匹配器有
+特殊类型：您可以将 `Foo()` 分配给 `FooMatcher` 类型的变量，并且
+将 `Foo(p)` 分配给 `FooMatcherP<p_type>` 类型变量。
+
+虽然您可以使用引用类型实例化匹配器模板，但传递
+通过指针传递参数通常会使代码更具可读性。然而，如果你
+仍然想通过引用传递参数，请注意在失败时
+匹配器生成的消息您将看到引用对象的值
+但不是它的地址。
+
+您可以使用不同数量的参数重载匹配器：
+
+```cpp
+MATCHER_P(Blah, a, description_string_1) { ... }
+MATCHER_P2(Blah, a, b, description_string_2) { ... }
+```
+
+虽然在定义新的时总是使用“MATCHER*”宏很诱人
+matcher，你还应该考虑直接实现matcher接口
+相反（请参阅下面的食谱），特别是如果您需要使用匹配器
+很多。虽然这些方法需要更多的工作，但它们可以让您更好地控制
+被匹配的值的类型和匹配器参数，其中
+General 会带来更好的编译器错误消息，从长远来看会带来回报。
+它们还允许基于参数类型重载匹配器（与
+仅基于参数的数量）。
+
+### 编写新的单态匹配器
+
+参数类型“T”的匹配器实现“T”的匹配器接口并执行
+两件事：它测试类型“T”的值是否与匹配器匹配，并且可以
+描述它匹配什么样的值。后一种能力用于
+当违反期望时生成可读的错误消息。
+
+`T` 的匹配器必须声明一个 typedef，如下所示：
+
+```cpp
+using is_ktest_matcher = void;
+```
+
+并支持以下操作：
+
+```cpp
+// Match a value and optionally explain into an ostream.
+bool matched = matcher.MatchAndExplain(value, maybe_os);
+// where `value` is of type `T` and
+// `maybe_os` is of type `std::ostream*`, where it can be null if the caller
+// is not interested in there textual explanation.
+
+matcher.DescribeTo(os);
+matcher.DescribeNegationTo(os);
+// where `os` is of type `std::ostream*`.
+```
+
+如果您需要自定义匹配器，但 `Truly()` 不是一个好的选择（例如，
+您可能对“Truly(predicate)”的描述方式不满意，或者您
+可能希望你的匹配器像 `Eq(value)` 那样是多态的），你可以定义一个
+匹配器分两步做你想做的事情：首先实现匹配器
+接口，然后定义一个工厂函数来创建匹配器实例。这
+第二步并不是严格需要的，但它使得使用匹配器的语法
+更好。
+
+例如，您可以定义一个匹配器来测试“int”是否能被7整除
+然后像这样使用它：
+
+```cpp
+using ::testing::Matcher;
+
+class DivisibleBy7Matcher {
+ public:
+  using is_ktest_matcher = void;
+
+  bool MatchAndExplain(int n, std::ostream*) const {
+    return (n % 7) == 0;
+  }
+
+  void DescribeTo(std::ostream* os) const {
+    *os << "is divisible by 7";
+  }
+
+  void DescribeNegationTo(std::ostream* os) const {
+    *os << "is not divisible by 7";
+  }
+};
+
+Matcher<int> DivisibleBy7() {
+  return DivisibleBy7Matcher();
+}
+
+...
+  EXPECT_CALL(foo, Bar(DivisibleBy7()));
+```
+
+您可以通过将附加信息流式传输到
+`MatchAndExplain()` 中的 `os` 参数：
+
+```cpp
+class DivisibleBy7Matcher {
+ public:
+  bool MatchAndExplain(int n, std::ostream* os) const {
+    const int remainder = n % 7;
+    if (remainder != 0 && os != nullptr) {
+      *os << "the remainder is " << remainder;
+    }
+    return remainder == 0;
+  }
+  ...
+};
+```
+
+然后，“EXPECT_THAT(x, DivisibleBy7());”可能会生成如下消息：
+
+```shell
+Value of: x
+Expected: is divisible by 7
+  Actual: 23 (the remainder is 2)
+```
+
+`{: .callout .tip}`
+Tip: for convenience, `MatchAndExplain()` can take a `MatchResultListener*`
+instead of `std::ostream*`.
+
+### 编写新的多态匹配器
+
+将我们上面学到的知识扩展到*多态*匹配器现在就一样简单
+在正确的位置添加模板。
+
+```cpp
+
+class NotNullMatcher {
+ public:
+  using is_ktest_matcher = void;
+
+  // To implement a polymorphic matcher, we just need to make MatchAndExplain a
+  // template on its first argument.
+
+  // In this example, we want to use NotNull() with any pointer, so
+  // MatchAndExplain() accepts a pointer of any type as its first argument.
+  // In general, you can define MatchAndExplain() as an ordinary method or
+  // a method template, or even overload it.
+  template <typename T>
+  bool MatchAndExplain(T* p, std::ostream*) const {
+    return p != nullptr;
+  }
+
+  // Describes the property of a value matching this matcher.
+  void DescribeTo(std::ostream* os) const { *os << "is not NULL"; }
+
+  // Describes the property of a value NOT matching this matcher.
+  void DescribeNegationTo(std::ostream* os) const { *os << "is NULL"; }
+};
+
+NotNullMatcher NotNull() {
+  return NotNullMatcher();
+}
+
+...
+
+  EXPECT_CALL(foo, Bar(NotNull()));  // The argument must be a non-NULL pointer.
+```
+
+### 遗留匹配器实施
+
+定义匹配器曾经有点复杂，其中需要
+几个支持类和虚函数。实现匹配器
+使用必须从 `MatcherInterface<T>` 派生的旧版 API 输入 `T` 并
+调用`MakeMatcher`来构造对象。
+
+界面如下所示：
+
+```cpp
+class MatchResultListener {
+ public:
+  ...
+  // Streams x to the underlying ostream; does nothing if the ostream
+  // is NULL.
+  template <typename T>
+  MatchResultListener& operator<<(const T& x);
+
+  // Returns the underlying ostream.
+  std::ostream* stream();
+};
+
+template <typename T>
+class MatcherInterface {
+ public:
+  virtual ~MatcherInterface();
+
+  // Returns true if and only if the matcher matches x; also explains the match
+  // result to 'listener'.
+  virtual bool MatchAndExplain(T x, MatchResultListener* listener) const = 0;
+
+  // Describes this matcher to an ostream.
+  virtual void DescribeTo(std::ostream* os) const = 0;
+
+  // Describes the negation of this matcher to an ostream.
+  virtual void DescribeNegationTo(std::ostream* os) const;
+};
+```
+
+幸运的是，大多数时候您可以轻松地定义多态匹配器
+在 `MakePolymorphicMatcher()` 的帮助下。以下是如何将 `NotNull()` 定义为
+一个例子：
+
+```cpp
+using ::testing::MakePolymorphicMatcher;
+using ::testing::MatchResultListener;
+using ::testing::PolymorphicMatcher;
+
+class NotNullMatcher {
+ public:
+  // To implement a polymorphic matcher, first define a COPYABLE class
+  // that has three members MatchAndExplain(), DescribeTo(), and
+  // DescribeNegationTo(), like the following.
+
+  // In this example, we want to use NotNull() with any pointer, so
+  // MatchAndExplain() accepts a pointer of any type as its first argument.
+  // In general, you can define MatchAndExplain() as an ordinary method or
+  // a method template, or even overload it.
+  template <typename T>
+  bool MatchAndExplain(T* p,
+                       MatchResultListener* /* listener */) const {
+    return p != NULL;
+  }
+
+  // Describes the property of a value matching this matcher.
+  void DescribeTo(std::ostream* os) const { *os << "is not NULL"; }
+
+  // Describes the property of a value NOT matching this matcher.
+  void DescribeNegationTo(std::ostream* os) const { *os << "is NULL"; }
+};
+
+// To construct a polymorphic matcher, pass an instance of the class
+// to MakePolymorphicMatcher().  Note the return type.
+PolymorphicMatcher<NotNullMatcher> NotNull() {
+  return MakePolymorphicMatcher(NotNullMatcher());
+}
+
+...
+
+  EXPECT_CALL(foo, Bar(NotNull()));  // The argument must be a non-NULL pointer.
+```
+
+:::info
+**注意：**您的多态匹配器类**不需要**需要继承自
+`MatcherInterface` 或任何其他类，及其方法**不需要**
+虚拟的。
+:::
+
+就像在单态匹配器中一样，您可以通过流式传输来解释匹配结果
+`MatchAndExplain()` 中的 `listener` 参数的附加信息。
+
+### 编写新的基数
+
+`Times()` 中使用基数来告诉 kMock 你期望出现多少次
+调用发生。它不必是精确的。例如，你可以说
+`AtLeast(5)` 或 `Between(2, 4)`。
+
+如果基数的[内置集](kmock_cheat_sheet.mdx#CardinalityList)
+不适合您，您可以通过实施以下内容自由定义自己的
+接口（在命名空间“testing”中）：
+
+```cpp
+class CardinalityInterface {
+ public:
+  virtual ~CardinalityInterface();
+
+  // Returns true if and only if call_count calls will satisfy this cardinality.
+  virtual bool IsSatisfiedByCallCount(int call_count) const = 0;
+
+  // Returns true if and only if call_count calls will saturate this
+  // cardinality.
+  virtual bool IsSaturatedByCallCount(int call_count) const = 0;
+
+  // Describes self to an ostream.
+  virtual void DescribeTo(std::ostream* os) const = 0;
+};
+```
+
+例如，要指定调用必须发生偶数次，您可以
+写
+
+```cpp
+using ::testing::Cardinality;
+using ::testing::CardinalityInterface;
+using ::testing::MakeCardinality;
+
+class EvenNumberCardinality : public CardinalityInterface {
+ public:
+  bool IsSatisfiedByCallCount(int call_count) const override {
+    return (call_count % 2) == 0;
+  }
+
+  bool IsSaturatedByCallCount(int call_count) const override {
+    return false;
+  }
+
+  void DescribeTo(std::ostream* os) const {
+    *os << "called even number of times";
+  }
+};
+
+Cardinality EvenNumber() {
+  return MakeCardinality(new EvenNumberCardinality);
+}
+
+...
+  EXPECT_CALL(foo, Bar(3))
+      .Times(EvenNumber());
+```
+
+### 编写新动作 {#QuickNewActions}
+
+如果内置操作不适合您，您可以轻松定义自己的操作。
+您所需要的只是一个具有与模拟兼容的签名的调用运算符
+功能。所以你可以使用 lambda：
+
+```
+MockFunction<int(int)> mock;
+EXPECT_CALL(mock, Call).WillOnce([](const int input) { return input * 7; });
+EXPECT_EQ(14, mock.AsStdFunction()(2));
+```
+
+或者带有调用运算符的结构（甚至是模板化的结构）：
+
+```
+struct MultiplyBy {
+  template <typename T>
+  T operator()(T arg) { return arg * multiplier; }
+
+  int multiplier;
+};
+
+// Then use:
+// EXPECT_CALL(...).WillOnce(MultiplyBy{7});
+```
+
+可调用对象不带参数也可以，忽略参数
+提供给模拟函数：
+
+```
+MockFunction<int(int)> mock;
+EXPECT_CALL(mock, Call).WillOnce([] { return 17; });
+EXPECT_EQ(17, mock.AsStdFunction()(0));
+```
+
+当与“WillOnce”一起使用时，可调用对象可以假设它最多会被调用
+一次并且允许是仅移动类型：
+
+```
+// An action that contains move-only types and has an &&-qualified operator,
+// demanding in the type system that it be called at most once. This can be
+// used with WillOnce, but the compiler will reject it if handed to
+// WillRepeatedly.
+struct MoveOnlyAction {
+  std::unique_ptr<int> move_only_state;
+  std::unique_ptr<int> operator()() && { return std::move(move_only_state); }
+};
+
+MockFunction<std::unique_ptr<int>()> mock;
+EXPECT_CALL(mock, Call).WillOnce(MoveOnlyAction{std::make_unique<int>(17)});
+EXPECT_THAT(mock.AsStdFunction()(), Pointee(Eq(17)));
+```
+
+更一般地说，与签名为`R(Args...)`的模拟函数一起使用
+对象可以是任何可转换为 `OnceAction<R(Args...)>` 或
+`操作<R(参数...)>`。两者之间的区别在于 `OnceAction` 有
+较弱的要求（`Action`需要一个可复制构造的输入，可以是
+重复调用，而`OnceAction`只需要可移动构造并且
+支持“&&”限定的调用运算符），但只能与“WillOnce”一起使用。
+`OnceAction` 通常仅在支持仅移动类型或
+需要类型系统的操作保证它们最多被调用一次。
+
+通常不需要引用`OnceAction`和`Action`模板
+直接在您的操作中：带有调用运算符的结构或类就足够了，
+如上面的例子。但更高级的多态行为需要了解
+模拟函数的特定返回类型可以定义模板化转换
+运营商使之成为可能。有关示例，请参阅“kmock-actions.h”。
+
+#### 旧的基于宏的操作
+
+在 C++11 之前，不支持基于函子的操作；老办法
+编写动作是通过一组“ACTION*”宏来完成的。我们建议避免使用它们
+在新代码中；他们在宏背后隐藏了很多逻辑，可能导致
+更难理解的编译器错误。尽管如此，我们还是在这里介绍它们
+完整性。
+
+通过写作
+
+```cpp
+ACTION(name) { statements; }
+```
+
+在命名空间范围内（即不在类或函数内），您将定义一个
+执行语句的具有给定名称的操作。返回的值
+`statements` 将用作操作的返回值。里面的
+语句，您可以将模拟函数的第 K 个（从 0 开始）参数引用为
+`argK`。例如：
+
+```cpp
+ACTION(IncrementArg1) { return ++(*arg1); }
+```
+
+allows you to write
+
+```cpp
+... WillOnce(IncrementArg1());
+```
+
+请注意，您不需要指定模拟函数参数的类型。
+不过请放心，您的代码是类型安全的：如果出现以下情况，您将收到编译器错误：
+`*arg1` 不支持 `++` 运算符，或者如果 `++(*arg1)` 的类型不支持
+与模拟函数的返回类型兼容。
+
+另一个例子：
+
+```cpp
+ACTION(Foo) {
+  (*arg2)(5);
+  Blah();
+  *arg1 = 0;
+  return arg0;
+}
+```
+
+定义一个动作“Foo()”，用 5 调用参数 #2（函数指针），
+调用函数“Blah()”，将参数 #1 指向的值设置为 0，并且
+返回参数#0。
+
+为了更加方便和灵活，您还可以使用以下预定义的
+`ACTION` 正文中的符号：
+
+`argK_type`     | 模拟函数的第 K 个（从 0 开始）参数的类型
+:-------------- | :-----------------------------------------------------------
+`args`          | 模拟函数的所有参数作为元组
+`args_type`     | 模拟函数的所有参数的类型作为元组
+`return_type`   | 模拟函数的返回类型
+`function_type` | 模拟函数的类型
+
+例如，当使用“ACTION”作为模拟函数的存根操作时：
+
+```cpp
+int DoSomething(bool flag, int* ptr);
+```
+
+we have:
+
+Pre-defined Symbol | Is Bound To
+------------------ | ---------------------------------
+`arg0`             | the value of `flag`
+`arg0_type`        | the type `bool`
+`arg1`             | the value of `ptr`
+`arg1_type`        | the type `int*`
+`args`             | the tuple `(flag, ptr)`
+`args_type`        | the type `std::tuple<bool, int*>`
+`return_type`      | the type `int`
+`function_type`    | the type `int(bool, int*)`
+
+#### 传统的基于宏的参数化操作
+
+有时您需要参数化您定义的操作。为此我们有
+另一个宏
+
+```cpp
+ACTION_P(name, param) { statements; }
+```
+
+例如，
+
+```cpp
+ACTION_P(Add, n) { return arg0 + n; }
+```
+
+将允许你写
+
+```cpp
+// Returns argument #0 + 5.
+... WillOnce(Add(5));
+```
+
+为了方便起见，我们使用术语“参数”来表示用于调用
+模拟函数，以及用于实例化的值的术语“参数”
+行动。
+
+请注意，您也不需要提供参数的类型。认为
+参数名为“param”，也可以使用kMock定义的符号
+`param_type` 指编译器推断的参数类型。
+例如，在上面的“ACTION_P(Add, n)”主体中，您可以编写“n_type”
+`n` 的类型。
+
+kMock还提供`ACTION_P2`、`ACTION_P3`等支持多参数
+行动。例如，
+
+```cpp
+ACTION_P2(ReturnDistanceTo, x, y) {
+  double dx = arg0 - x;
+  double dy = arg1 - y;
+  return sqrt(dx*dx + dy*dy);
+}
+```
+
+让你写
+
+```cpp
+... WillOnce(ReturnDistanceTo(5.0, 26.5));
+```
+
+您可以将“ACTION”视为退化的参数化操作，其中
+参数为0。
+
+您还可以轻松定义在多个参数上重载的操作：
+
+```cpp
+ACTION_P(Plus, a) { ... }
+ACTION_P2(Plus, a, b) { ... }
+```
+
+### 限制 ACTION 中参数或参数的类型
+
+为了最大程度地简洁和可重用性，“ACTION*”宏不会要求您
+提供模拟函数参数和操作参数的类型。
+相反，我们让编译器为我们推断类型。
+
+然而，有时我们可能希望更明确地了解类型。有
+有几个技巧可以做到这一点。例如：
+
+```cpp
+ACTION(Foo) {
+  // Makes sure arg0 can be converted to int.
+  int n = arg0;
+  ... use n instead of arg0 here ...
+}
+
+ACTION_P(Bar, param) {
+  // Makes sure the type of arg1 is const char*.
+  ::testing::StaticAssertTypeEq<const char*, arg1_type>();
+
+  // Makes sure param can be converted to bool.
+  bool flag = param;
+}
+```
+
+其中 `StaticAssertTypeEq` 是 googletest 中的编译时断言
+验证两个类型是否相同。
+
+### Writing New Action Templates Quickly
+
+有时你想给一个动作明确的模板参数，但不能
+从其值参数推断。 `ACTION_TEMPLATE()` 支持这一点并且可以
+被视为“ACTION()”和“ACTION_P*()”的扩展。
+
+语法：
+
+```cpp
+ACTION_TEMPLATE(ActionName,
+                HAS_m_TEMPLATE_PARAMS(kind1, name1, ..., kind_m, name_m),
+                AND_n_VALUE_PARAMS(p1, ..., p_n)) { statements; }
+```
+
+定义一个操作模板，它采用 *m* 个显式模板参数和 *n* 个
+值参数，其中 *m* 位于 [1, 10] 中，*n* 位于 [0, 10] 中。 `name_i` 是
+第 *i* 个模板参数的名称，“kind_i”指定它是否是
+`typename`，一个整型常量，或者一个模板。 `p_i` 是第 *i* 个的名称
+值参数。
+
+例子：
+
+```cpp
+// DuplicateArg<k, T>(output) converts the k-th argument of the mock
+// function to type T and copies it to *output.
+ACTION_TEMPLATE(DuplicateArg,
+                // Note the comma between int and k:
+                HAS_2_TEMPLATE_PARAMS(int, k, typename, T),
+                AND_1_VALUE_PARAMS(output)) {
+  *output = T(std::get<k>(args));
+}
+```
+
+要创建操作模板的实例，请编写：
+
+```cpp
+ActionName<t1, ..., t_m>(v1, ..., v_n)
+```
+
+其中“t”是模板参数，“v”是值参数。
+值参数类型由编译器推断。例如：
+
+```cpp
+using ::testing::_;
+...
+  int n;
+  EXPECT_CALL(mock, Foo).WillOnce(DuplicateArg<1, unsigned char>(&n));
+```
+
+如果您想显式指定值参数类型，您可以提供
+附加模板参数：
+
+```cpp
+ActionName<t1, ..., t_m, u1, ..., u_k>(v1, ..., v_n)
+```
+
+where `u_i` is the desired type of `v_i`.
+
+`ACTION_TEMPLATE` 和 `ACTION`/`ACTION_P*` 可以在数量上重载
+value 参数，但不影响模板参数的数量。如果没有
+限制，以下含义不清楚：
+
+```cpp
+  OverloadedAction<int, bool>(x);
+```
+
+我们是否使用单模板参数操作，其中“bool”指的是类型
+`x` 的，或者要求编译器推断的两个模板参数操作
+`x` 的类型？
+
+### Using the ACTION Object's Type
+
+如果您正在编写一个返回“ACTION”对象的函数，则需要
+知道它的类型。类型取决于用于定义操作的宏和
+参数类型。规则相对简单：
+
+| Given Definition              | Expression          | Has Type              |
+| ----------------------------- | ------------------- | --------------------- |
+| `ACTION(Foo)`                 | `Foo()`             | `FooAction`           |
+| `ACTION_TEMPLATE(Foo, HAS_m_TEMPLATE_PARAMS(...), AND_0_VALUE_PARAMS())` | `Foo<t1, ..., t_m>()` | `FooAction<t1, ..., t_m>` |
+| `ACTION_P(Bar, param)`        | `Bar(int_value)`    | `BarActionP<int>`     |
+| `ACTION_TEMPLATE(Bar, HAS_m_TEMPLATE_PARAMS(...), AND_1_VALUE_PARAMS(p1))` | `Bar<t1, ..., t_m>(int_value)` | `BarActionP<t1, ..., t_m, int>` |
+| `ACTION_P2(Baz, p1, p2)`      | `Baz(bool_value, int_value)` | `BazActionP2<bool, int>` |
+| `ACTION_TEMPLATE(Baz, HAS_m_TEMPLATE_PARAMS(...), AND_2_VALUE_PARAMS(p1, p2))` | `Baz<t1, ..., t_m>(bool_value, int_value)` | `BazActionP2<t1, ..., t_m, bool, int>` |
+| ...                           | ...                 | ...                   |
+
+
+请注意，我们必须选择不同的后缀（“Action”、“ActionP”、“ActionP2”、
+等等）对于具有不同数量值参数的操作，或者操作
+定义的数量不能过多。
+
+### 编写新的单态动作 {#NewMonoActions}
+
+虽然“ACTION*”宏非常方便，但有时它们
+不当。例如，尽管前面的食谱中展示了一些技巧，
+它们不允许您直接指定模拟函数参数的类型并且
+操作参数，这通常会导致未优化的编译器错误
+可能会让不熟悉的用户感到困惑的消息。他们也不允许超载
+基于参数类型的操作，无需跳过一些环节。
+
+`ACTION*` 宏的替代方法是实现
+`::testing::ActionInterface<F>`，其中 `F` 是模拟函数的类型
+将使用该操作。例如：
+
+```cpp
+template <typename F>
+class ActionInterface {
+ public:
+  virtual ~ActionInterface();
+
+  // Performs the action.  Result is the return type of function type
+  // F, and ArgumentTuple is the tuple of arguments of F.
+  //
+
+  // For example, if F is int(bool, const string&), then Result would
+  // be int, and ArgumentTuple would be std::tuple<bool, const string&>.
+  virtual Result Perform(const ArgumentTuple& args) = 0;
+};
+```
+
+```cpp
+using ::testing::_;
+using ::testing::Action;
+using ::testing::ActionInterface;
+using ::testing::MakeAction;
+
+typedef int IncrementMethod(int*);
+
+class IncrementArgumentAction : public ActionInterface<IncrementMethod> {
+ public:
+  int Perform(const std::tuple<int*>& args) override {
+    int* p = std::get<0>(args);  // Grabs the first argument.
+    return *p++;
+  }
+};
+
+Action<IncrementMethod> IncrementArgument() {
+  return MakeAction(new IncrementArgumentAction);
+}
+
+...
+  EXPECT_CALL(foo, Baz(_))
+      .WillOnce(IncrementArgument());
+
+  int n = 5;
+  foo.Baz(&n);  // Should return 5 and change n to 6.
+```
+
+### 编写新的多态动作 {#NewPolyActions}
+
+前面的食谱向您展示了如何定义自己的操作。这一切都很好，
+只不过您需要知道该操作将在其中执行的函数的类型
+被使用。有时这可能是一个问题。例如，如果您想使用
+具有*不同*类型的函数中的操作（例如“Return()”和
+`SetArgPointee()`)。
+
+如果一个动作可以在多种类型的模拟函数中使用，我们说它是
+*多态*。 `MakePolymorphicAction()` 函数模板可以很容易地
+定义这样一个动作：
+
+```cpp
+namespace testing {
+template <typename Impl>
+PolymorphicAction<Impl> MakePolymorphicAction(const Impl& impl);
+}  // namespace testing
+```
+
+作为示例，让我们定义一个返回第二个参数的操作
+模拟函数的参数列表。第一步是定义一个实现
+班级：
+
+```cpp
+class ReturnSecondArgumentAction {
+ public:
+  template <typename Result, typename ArgumentTuple>
+  Result Perform(const ArgumentTuple& args) const {
+    // To get the i-th (0-based) argument, use std::get(args).
+    return std::get<1>(args);
+  }
+};
+```
+
+该实现类*不需要*需要从任何特定类继承。
+重要的是它必须有一个`Perform()`方法模板。这个方法
+模板将模拟函数的参数作为 **single** 中的元组
+参数，并返回操作的结果。它可以是 `const` 也可以不是，
+但必须只能使用一个模板参数来调用，这就是结果
+类型。换句话说，您必须能够调用`Perform<R>(args)`，其中`R`是
+模拟函数的返回类型，`args`是元组中的参数。
+
+接下来，我们使用 MakePolymorphicAction() 来转换实现的实例
+类到我们需要的多态动作中。拥有一个会很方便
+对此的包装：
+
+```cpp
+using ::testing::MakePolymorphicAction;
+using ::testing::PolymorphicAction;
+
+PolymorphicAction<ReturnSecondArgumentAction> ReturnSecondArgument() {
+  return MakePolymorphicAction(ReturnSecondArgumentAction());
+}
+```
+
+现在，您可以像使用内置操作一样使用此多态操作：
+
+```cpp
+using ::testing::_;
+
+class MockFoo : public Foo {
+ public:
+  MOCK_METHOD(int, DoThis, (bool flag, int n), (override));
+  MOCK_METHOD(string, DoThat, (int x, const char* str1, const char* str2),
+              (override));
+};
+
+  ...
+  MockFoo foo;
+  EXPECT_CALL(foo, DoThis).WillOnce(ReturnSecondArgument());
+  EXPECT_CALL(foo, DoThat).WillOnce(ReturnSecondArgument());
+  ...
+  foo.DoThis(true, 5);  // Will return 5.
+  foo.DoThat(1, "Hi", "Bye");  // Will return "Hi".
+```
+
+### Teaching kMock How to Print Your Values
+
+当发生无趣或意外的调用时，kMock 会打印参数
+值和堆栈跟踪来帮助您调试。断言宏如
+`EXPECT_THAT` 和 `EXPECT_EQ` 也会在
+断言失败。 kMock 和 googletest 使用 googletest 的用户可扩展来做到这一点
+价值打印机。
+
+该打印机知道如何打印内置 C++ 类型、本机数组、STL
+容器以及任何支持 `<<` 运算符的类型。对于其他类型，它
+打印值中的原始字节，并希望用户能够弄清楚。
+[KumoTest 高级指南](advanced.mdx#teaching-kumotest-how-to-print-your-values)
+解释如何扩展打印机以更好地打印您的内容
+特定类型而不是转储字节。
+
+## 使用 kMock 创建有用的模拟 {#useful-mocks-created-using-kmock}
+
+<!--#include file="includes/g3_testing_LOGs.mdx"-->
+<!--#include file="includes/g3_mock_callbacks.mdx"-->
+
+### Mock std::function {#MockFunction}
+
+`std::function` 是 C++11 中引入的通用函数类型。它是一个
+将回调传递给新接口的首选方式。函数是可复制的，
+并且通常不通过指针传递，这使得它们很难模拟。
+但不要担心 - `MockFunction` 可以帮助你。
+
+`MockFunction<R(T1, ..., Tn)>` 有一个模拟方法 `Call()` ，其签名为：
+
+```cpp
+  R Call(T1, ..., Tn);
+```
+
+它还有一个 `AsStdFunction()` 方法，它创建一个 `std::function` 代理
+转接至呼叫：
+
+```cpp
+  std::function<R(T1, ..., Tn)> AsStdFunction();
+```
+
+要使用`MockFunction`，首先创建`MockFunction`对象并设置
+对其“Call”方法的期望。然后传递从获取的代理
+将“AsStdFunction()”添加到您正在测试的代码中。例如：
+
+```cpp
+TEST(FooTest, RunsCallbackWithBarArgument) {
+  // 1. Create a mock object.
+  MockFunction<int(string)> mock_function;
+
+  // 2. Set expectations on Call() method.
+  EXPECT_CALL(mock_function, Call("bar")).WillOnce(Return(1));
+
+  // 3. Exercise code that uses std::function.
+  Foo(mock_function.AsStdFunction());
+  // Foo's signature can be either of:
+  // void Foo(const std::function<int(string)>& fun);
+  // void Foo(std::function<int(string)> fun);
+
+  // 4. All expectations will be verified when mock_function
+  //     goes out of scope and is destroyed.
+}
+```
+
+请记住，使用 AsStdFunction() 创建的函数对象只是
+货运代理。如果您创建多个，它们将共享同一组
+期望。
+
+虽然 `std::function` 支持无限数量的参数，但 `MockFunction`
+实施仅限于十个。如果你达到了这个极限......好吧，你的
+回调有比可模拟更大的问题。 :-)

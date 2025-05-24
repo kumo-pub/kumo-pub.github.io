@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?><?xml-stylesheet type="text/xsl" href="atom.xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>https://kumo-pub.github.io/blog</id>
+    <title>Kumo AI Blog</title>
+    <updated>2024-09-09T00:00:00.000Z</updated>
+    <generator>https://github.com/jpmonette/feed</generator>
+    <link rel="alternate" href="https://kumo-pub.github.io/blog"/>
+    <subtitle>Keep up to date with upcoming Docusaurus releases and articles by following our feed!</subtitle>
+    <icon>https://kumo-pub.github.io/img/favicon.png</icon>
+    <rights>Copyright © 2025 Facebook, Inc.</rights>
+    <entry>
+        <title type="html"><![CDATA[Flags 使用建议]]></title>
+        <id>https://kumo-pub.github.io/blog/releases/tips/flags</id>
+        <link href="https://kumo-pub.github.io/blog/releases/tips/flags"/>
+        <updated>2024-09-09T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[我真正想要的是我的代码的行为由无法静态预测的全局变量控制，其使用情况未完全记录，并且只能非常困难地从我的代码中删除。” – 从来没有人]]></summary>
+        <content type="html"><![CDATA[<p>我真正想要的是我的代码的行为由无法静态预测的全局变量控制，其使用情况未完全记录，并且只能非常困难地从我的代码中删除。” – 从来没有人</p>
+<p>在生产代码中（尤其是在库中）常见的<code>Flags</code>使用是一个错误。除非确实必要，否则不要使用<code>Flags</code>。在那里，我们说了。</p>
+<p><code>Flags</code>是全局变量，更糟糕的是：您无法通过阅读代码知道该变量的值。<code>Flags</code>不仅可以在启动时设置，而且可以在以后通过任意方式进行更改。
+如果您在二进制文件中运行服务器，通常无法保证<code>Flags</code>的值在每个周期中保持不变，也不能保证<code>Flags</code>值发生变化时发出任何通知，也不能保证任何方式来查找此类变化。</p>
+<p>如果您的生产环境直接记录每个二进制文件的调用并存储这些日志，那就太好了。大多数环境并不是这样工作的。
+对于库代码来说，这种不确定性尤其危险：如何判断某个特定功能的使用何时实际上已失效？简单的答案是：你不能。</p>
+<p><code>Flags</code>也使得将最后的赌注放在死代码中变得具有挑战性。在迁移到新后端的过程中，您可能会认为删除遗留代码只是删除不必要的构建依赖项并发布历史上最令人满意的 git rm 。
+你错了。如果您的遗留二进制文件有数百个由生产代码定义和引用的<code>Flags</code>，那么简单地删除死代码会给您的发布工程师带来巨大的问题：在这样的更改之后几乎不会启动任何作业。</p>
+<p>这一切中最糟糕的部分是什么？ 我在 2023 年初对过去用过的项目，进行的一项分析发现，据我们所知，在上述数据保留限制内，大多数 C++ <code>Flags</code>实际上从未发生过变化。</p>
+<p>然而，<code>Flags</code>在某些用例中是合适的：在没有启用<code>Flags</code>的回溯的情况下进行调试是不一样的。如果处理得当（并随后清理），功能<code>Flags</code>是完全合理的。
+真正需要由英雄 SRE 调整的旋钮是一个方便的安全网。更广泛地说，用于将名称/值输入传递给二进制文件且仅在 main() 中使用的<code>Flags</code>比位置参数更易于维护。</p>
+<p>即使考虑到这些警告，我们现在也应该认真审视一下<code>Flags</code>的使用。下次当您想向库中添加<code>Flags</code>时，请花一些时间寻找更好的方法。显式传递配置：这几乎总是更容易正确推理，
+并且当然更容易维护。考虑将数字<code>Flags</code>放入编译时常量中。如果您在代码审查中遇到新<code>Flags</code>，请推迟。每一个<code>Flags</code>的引入都应该是合理的。</p>]]></content>
+        <author>
+            <name>Jeff Lothar</name>
+            <uri>https://gitee.com/liyinbin</uri>
+        </author>
+        <category label="Tips" term="Tips"/>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[kumo search 0.5]]></title>
+        <id>https://kumo-pub.github.io/blog/releases/0.5</id>
+        <link href="https://kumo-pub.github.io/blog/releases/0.5"/>
+        <updated>2024-08-09T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[欢迎来到kumo search 0.5]]></summary>
+        <content type="html"><![CDATA[<p>欢迎来到kumo search 0.5</p>
+<p>This release contains many <strong>new exciting blog features</strong>.</p>
+]]></content>
+        <author>
+            <name>Sébastien Lorber</name>
+            <uri>https://thisweekinreact.com</uri>
+        </author>
+        <category label="Release" term="Release"/>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[kumo search 1.1.1]]></title>
+        <id>https://kumo-pub.github.io/blog/releases/1.1</id>
+        <link href="https://kumo-pub.github.io/blog/releases/1.1"/>
+        <updated>2024-08-09T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[欢迎来到kumo search 0.5]]></summary>
+        <content type="html"><![CDATA[<p>欢迎来到kumo search 0.5</p>
+<p>This release contains many <strong>new exciting blog features</strong>.</p>
+]]></content>
+        <author>
+            <name>Sébastien Lorber</name>
+            <uri>https://thisweekinreact.com</uri>
+        </author>
+        <category label="Release" term="Release"/>
+    </entry>
+</feed>

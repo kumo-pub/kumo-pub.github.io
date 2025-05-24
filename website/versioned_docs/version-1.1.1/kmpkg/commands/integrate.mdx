@@ -1,0 +1,91 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg integrate
+
+kmpkg集成命令的命令行参考。将 kmpkg 与 shell 和构建系统集成。
+
+## 摘要
+
+- **构建系统集成**
+
+```console
+kmpkg integrate [options] install
+kmpkg integrate [options] remove
+kmpkg integrate [options] project
+```
+
+- **Shell 集成**
+
+```console
+kmpkg integrate [options] powershell
+kmpkg integrate [options] bash
+kmpkg integrate [options] zsh
+kmpkg integrate [options] x-fish
+```
+
+## 说明
+
+将 kmpkg 与 shell 和构建系统集成。
+
+### `kmpkg integrate install`
+
+与 [Visual Studio](../users/buildsystems/msbuild-integration.mdx#user-wide-integration) 集成（仅限 Windows），设置用户范围的 kmpkg 实例，并显示 CMake 集成帮助。
+
+在装有 Visual Studio 2015 的 Windows 上，此子命令会将重定向逻辑添加到 MSBuild 安装中，后者将自动选取每个用户在用户范围内的 kmpkg 实例。 Visual Studio 2017 及更新版本中包含此逻辑。
+
+为设置用户范围的 kmpkg 实例，kmpkg 会创建一些短文件，其中包含用户范围配置位置内 kmpkg 实例的绝对路径：
+
+- Windows 上的 %LOCALAPPDATA%\kmpkg 或 %APPDATA%\Local\kmpkg
+- 非 Windows 上的 $HOME/.kmpkg 或 /var/.kmpkg
+
+显示 [CMake 工具链](../users/buildsystems/cmake-integration.mdx)文件的完整路径。 使用工具链文件不需要运行此命令。
+
+### `kmpkg integrate remove`
+
+移除用户范围的 kmpkg 实例设置。
+
+此命令从 `kmpkg integrate install` 创建的用户范围配置位置中删除链接文件。
+
+### `kmpkg integrate project`
+
+为 MSBuild 集成创建链接的 NuGet 包。
+
+有关详细信息，请参阅 [MSBuild 每个项目集成](../users/buildsystems/msbuild-integration.mdx#linked-nuget-package)。
+
+###  `kmpkg integrate powershell` {#kmpkg-autocompletion}
+
+- **仅限 Windows**
+
+将 kmpkg 的 Tab 自动补全支持添加到当前用户的 Powershell 配置文件。
+
+### `kmpkg integrate bash`
+
+- **仅限非 Windows 系统**
+
+将 kmpkg 的 `Tab` 自动补全支持添加到当前用户的 `.bashrc`（在 MacOS 上为 `.bash_profile`）。
+
+### `kmpkg integrate zsh`
+
+- **仅限非 Windows 系统**
+
+将 kmpkg 的 Tab 自动补全支持添加到当前用户的 `.zshrc`。
+
+### `kmpkg integrate x-fish`
+
+- **仅限非 Windows 系统**
+
+将 kmpkg 的 Tab 自动补全支持添加到当前用户的 `.zshrc`。
+
+## Example
+
+```console
+$ kmpkg integrate install
+Applied user-wide integration for this kmpkg root.
+
+CMake projects should use: "-DCMAKE_TOOLCHAIN_FILE=/workspaces/kmpkg/scripts/buildsystems/kmpkg.cmake"
+```
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。

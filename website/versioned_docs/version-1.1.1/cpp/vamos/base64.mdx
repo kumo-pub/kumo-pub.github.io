@@ -1,0 +1,457 @@
+
+# Base64
+
+## 安装
+
+本教程 `Base64`是快速的`API`，位于`vamos`库中。通常版本位于`turbo/strings`模块中。
+
+## 教程
+
+我们还支持从 [WHATWG forgiving-base64](https://infra.spec.whatwg.org/#forgiving-base64-decode) 转换为二进制，然后再转换回来。
+具体来说，您可以将包含 ASCII 空格 (' '、'\t'、'\n'、'\r'、'\f') 的 base64 输入转换为二进制。我们还支持 base64 URL 编码替代方案。
+这些函数是 Node.js JavaScript 运行时的一部分：特别是 Node.js 中的 `atob` 依赖于 vamos。
+
+将二进制数据转换为 `base64` 总是会成功，而且相对简单：
+
+```C++
+std::vector<char> buffer(vamos::base64_length_from_binary(source.size()));
+vamos::binary_to_base64(source.data(), source.size(), buffer.data());
+```
+
+解码 base64 需要验证，因此需要处理错误。此外，由于
+我们修剪了 ASCII 空格，因此我们可能需要随后调整结果大小。
+
+```C++
+std::vector<char> buffer(vamos::maximal_binary_length_from_base64(base64.data(), base64.size()));
+vamos::result r = vamos::base64_to_binary(base64.data(), base64.size(), buffer.data());
+if(r.error) {
+  /// 我们遇到了一些错误，如果错误是 INVALID_BASE64_CHARACTER，r.count 会告诉您在输入中遇到了错误的位置。如果错误是 BASE64_INPUT_REMAINDER，则
+  /// 剩余一个有效的 base64 字符，并且 r.count 包含解码的字节数。
+} else {
+    /// 根据实际字节数调整缓冲区大小
+  buffer.resize(r.count);
+}
+```
+
+让我们考虑一个更有趣的例子。以以下字符串为例：
+`" A A "`、`" A A G A / v 8 "`、`" A A G A / v 8 = "`、`" A A G A / v 8 = = "`。
+除了最后一个之外，它们都是有效的 WHATWG base64 输入。第一个字符串解码为单个字节值 (0)，而第二个和第三个字符串解码为字节序列 `0, 0x1, 0x80, 0xfe, 0xff`。
+
+
+```C++
+  std::vector<std::string> sources = {
+      "  A  A  ", "  A  A  G  A  /  v  8  ", "  A  A  G  A  /  v  8  =  ", "  A  A  G  A  /  v  8  =  =  "};
+  /// 最后一个是错误的
+  std::vector<std::vector<uint8_t>> expected = {
+      {0}, {0, 0x1, 0x80, 0xfe, 0xff}, {0, 0x1, 0x80, 0xfe, 0xff}, {}};
+  for(size_t i = 0; i < sources.size(); i++) {
+    const std::string &source = sources[i];
+    std::cout << "source: '" << source << "'" << std::endl;
+    /// 为最大二进制长度分配足够的内存
+    std::vector<uint8_t> buffer(vamos::maximal_binary_length_from_base64(
+       source.data(), source.size()));
+   /// 转换为二进制并检查错误
+    vamos::result r = vamos::base64_to_binary(
+        source.data(), source.size(), (char*)buffer.data());
+    if(r.error != vamos::error_code::SUCCESS) {
+      /// expected[i].empty()。
+      std::cout << "output: error" << std::endl;
+    } else {
+     /// 如果成功，r.count 包含输出长度
+      buffer.resize(r.count);
+      /// We have that buffer == expected[i]
+      std::cout << "output: " << r.count << " bytes" << std::endl;
+    }
+  }
+```
+
+此代码应打印以下内容：
+
+```
+source: '  A  A  '
+output: 1 bytes
+source: '  A  A  G  A  /  v  8  '
+output: 5 bytes
+source: '  A  A  G  A  /  v  8  =  '
+output: 5 bytes
+source: '  A  A  G  A  /  v  8  =  =  '
+output: error
+```
+
+如您所见，结果符合预期。
+
+在某些情况下，您可能希望在解码 `base64` 时进一步限制输出的大小。
+为此，您可以使用 `base64_to_binary_safe` 函数。如果您希望将输入解码为具有最大容量的段，这些函数也可能有用。
+
+
+```C++
+  /// 为简单起见，我们选择 len 可以被 3 整除
+  size_t len = 72;
+  /// 我们想要解码‘aaaaa....’
+  std::vector<char> base64(len, 'a');
+  std::vector<char> back((len + 3) / 4 * 3);
+  /// 故意太小
+  size_t limited_length = back.size() / 2;
+  /// 我们继续解码一半：
+  vamos::result r = vamos::base64_to_binary_safe(
+            base64.data(), base64.size(), back.data(), limited_length);
+  assert(r.error == vamos::error_code::OUTPUT_BUFFER_TOO_SMALL);
+    /// 我们将 r.count 个 base64 8 位单元解码为 limited_length 字节
+    /// 现在让我们解码其余部分 !!!
+    ///
+    /// 我们已经在输入缓冲区中读取了 r.count 个，并且
+    /// 生成了 limited_length 字节。
+    ///
+  size_t input_index = r.count;
+  size_t limited_length2 = back.size();
+  r = vamos::base64_to_binary_safe(base64.data() + input_index,
+                                           base64.size() - input_index,
+                                           back.data(), limited_length2);
+  assert(r.error == vamos::error_code::SUCCESS);
+    /// 我们将 r.count base64 8 位单元解码为 limited_length2 字节
+    /// 我们完成了
+  assert(limited_length2 + limited_length == (len + 3) / 4 * 3);
+```
+
+我们可以使用`base64_to_binary_safe` 重复前面使用各种间隔字符串的示例。它的工作原理大致相同，只是`result.count` 内容的约定不同。输出大小通过引用存储在输出长度参数中。
+
+```cpp
+
+ std::vector<std::string> sources = {
+      "  A  A  ", "  A  A  G  A  /  v  8  ", "  A  A  G  A  /  v  8  =  ", "  A  A  G  A  /  v  8  =  =  "};
+  ///最后一个是错误的
+  std::vector<std::vector<uint8_t>> expected = {
+      {0}, {0, 0x1, 0x80, 0xfe, 0xff}, {0, 0x1, 0x80, 0xfe, 0xff}, {}};
+  for(size_t i = 0; i < sources.size(); i++) {
+    const std::string &source = sources[i];
+    std::cout << "source: '" << source << "'" << std::endl;
+    /// 为最大二进制长度分配足够的内存
+    std::vector<uint8_t> buffer(vamos::maximal_binary_length_from_base64(
+       source.data(), source.size()));
+   /// 转换为二进制并检查错误
+    size_t output_length = buffer.size();
+    vamos::result r = vamos::base64_to_binary_safe(
+        source.data(), source.size(), (char*)buffer.data(), output_length);
+    if(r.error != vamos::error_code::SUCCESS) {
+     /// 我们有 expected[i].empty()
+      std::cout << "output: error" << std::endl;
+    } else {
+      /// 如果成功，output_length 包含输出长度
+      buffer.resize(output_length);
+      /// 我们有缓冲区 == 预期[i])
+      std::cout << "output: " << output_length << " bytes" << std::endl;
+      std::cout << "input (consumed): " << r.count << " bytes" << std::endl;
+    }
+```
+
+此代码应输出以下内容：
+
+```
+source: '  A  A  '
+output: 1 bytes
+input (consumed): 8 bytes
+source: '  A  A  G  A  /  v  8  '
+output: 5 bytes
+input (consumed): 23 bytes
+source: '  A  A  G  A  /  v  8  =  '
+output: 5 bytes
+input (consumed): 26 bytes
+source: '  A  A  G  A  /  v  8  =  =  '
+output: error
+```
+
+有关更多详细信息，请参阅我们的函数规范。
+
+在其他情况下，您可能会以 16 位为单位接收 `base64` 输入（例如，来自 `UTF-16` 字符串）：
+我们也有针对这些情况的函数重载。
+
+一些用户可能希望以块的形式解码 `base64` 输入，尤其是在进行
+文件或网络编程时。这些用户应该看到 `tools/fastbase64.cpp`，这是一个命令行
+实用程序，专门为示例而设计。它使用最多几十千字节的块读取和写入 base64 文件。
+
+
+我们支持两种约定：`base64_default` 和 `base64_url`：
+* 默认值 (`base64_default`) 包含字符 `+` 和 `/` 作为其字母表的一部分。它还使用填充字符 (`=`) 填充输出，以便输出可以被 4 整除。因此，我们将
+字符串 `"Hello, World!"` 编码为 `"SGVsbG8sIFdvcmxkIQ=="`，表达式为 `vamos::binary_to_base64(source, size, out, vamos::base64_default)`。
+
+使用默认值时，您可以省略选项参数以简化操作：
+`vamos::binary_to_base64(source, size, out, buffer.data())`。解码时，根据 [WHATWG forgiving-base64](https://infra.spec.whatwg.org/#forgiving-base64-decode)
+标准省略空格字符。此外，如果流末尾有填充字符，则填充字符的数量不得超过两个，如果有，则字符总数（不包括 ASCII 空格“ ”、“\t”、“\n”、“\r”、“\f”，但包括填充字符）必须能被四整除。
+* URL 约定（`base64_url`）使用字符 `-` 和 `_` 作为其字母表的一部分。它不会填充其输出。因此，我们将字符串 `"Hello, World!"` 编码为 `"SGVsbG8sIFdvcmxkIQ"`。
+要指定 URL 约定，您可以将适当的选项传递给我们的解码和编码函数：例如，`vamos::base64_to_binary(source, size, out, vamos::base64_url)`。
+
+当我们遇到既不是 ASCII 空格也不是 base64 字符（垃圾字符）的字符时，我们会检测到错误。要容忍`garbage`字符，您可以使用`base64_default_accept_garbage`或`base64_url_accept_garbage`代替`base64_default`或`base64_ur`”。
+
+因此，我们遵循 Node 或 Bun JavaScript 运行时等系统关于填充的惯例。
+默认 base64 使用填充，而 URL 变体则不使用。
+
+```js
+ console.log(Buffer.from("Hello World").toString('base64'));
+SGVsbG8gV29ybGQ=
+undefined
+ console.log(Buffer.from("Hello World").toString('base64url'));
+SGVsbG8gV29ybGQ
+```
+
+根据 [RFC 4648](https://www.rfc-editor.org/rfc/rfc4648)，这是合理的：
+```text
+> 填充字符`=`在 URI 中使用时通常采用百分比编码，但如果隐含地知道数据长度，则可以通过跳过填充来避免这种情况；参见第 3.2 节。
+```
+尽管如此，一些用户可能希望在 URL 变体中使用填充
+并在默认变体中省略它。这些用户可以
+通过使用 `vamos::base64_url | vamos::base64_reverse_padding` 或 `vamos::base64_default | vamos::base64_reverse_padding` 来“反转”约定。
+为了更方便，您可以使用 `vamos::base64_default_no_padding` 和
+`vamos::base64_url_with_padding` 作为简写。
+
+解码时，我们默认使用松散方法：可以省略填充字符。
+高级用户可以使用 `last_chunk_options` 参数来使用严格方法，
+其中必须使用精确填充，否则会产生错误，或者使用 stop_before_partial
+选项，当填充不合适时，它会简单地丢弃剩余的 base64 字符。
+stop_before_partial 选项可能对流式传输有用：给定网络上的 base64
+字符流，您可能希望能够解码它们，而无需先等待
+整个流进入。
+如果您希望 base64 代码和二进制数据之间有一对一的对应关系，则严格方法很有用。在默认设置中使用（`last_chunk_handling_options::loose`），
+然后 `"ZXhhZg=="`、`"ZXhhZg"`、`"ZXhhZh=="` 都解码为相同的二进制内容。
+如果将 `last_chunk_options` 设置为 `last_chunk_handling_options::strict`，则解码 `"ZXhhZg=="` 会成功，但解码 `"ZXhhZg"` 会失败，并出现 `vamos::error_code::BASE64_INPUT_REMAINDER`，而解码 `"ZXhhZh=="` 会失败，并出现
+`vamos::error_code::BASE64_EXTRA_BITS`。
+
+我们的base64函数的规范如下：
+
+```C++
+
+/// base64_options 用于指定 base64 编码选项。
+/// ASCII 空格为 ' '、'\t'、'\n'、'\r'、'\f'
+/// 垃圾字符是不属于 base64 字母表或 ASCII 空格的字符。
+using base64_options = uint64_t;
+enum base64_options : uint64_t {
+  base64_default = 0,         /* standard base64 format (with padding) */
+  base64_url = 1,             /* base64url format (no padding) */
+  base64_reverse_padding = 2, /* modifier for base64_default and base64_url */
+  base64_default_no_padding =
+      base64_default |
+      base64_reverse_padding, /* standard base64 format without padding */
+  base64_url_with_padding =
+      base64_url | base64_reverse_padding, /* base64url with padding */
+  base64_default_accept_garbage = 4,       /* standard base64 format accepting garbage characters */
+  base64_url_accept_garbage = 5,           /* base64url format accepting garbage characters */
+};
+
+/// last_chunk_handling_options 用于指定 base64 解码中最后一个
+/// 块的处理。
+/// https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
+enum last_chunk_handling_options : uint64_t {
+  loose = 0,               /* standard base64 format, decode partial final chunk */
+  strict = 1,              /* error when the last chunk is partial, 2 or 3 chars, and unpadded, or non-zero bit padding */
+  stop_before_partial = 2, /* if the last chunk is partial (2 or 3 chars), ignore it (no error) */
+};
+
+/**
+* 根据 base64 输入提供最大二进制长度（以字节为单位）。
+* 通常，如果输入包含 ASCII 空格，结果将小于
+* 最大长度。
+*
+* @param input 要处理的 base64 输入
+* @param length base64 输入的长度（以字节为单位）
+* @return 最大二进制字节数
+*/
+vamos_warn_unused size_t maximal_binary_length_from_base64(const char * input, size_t length) noexcept;
+
+/**
+* 根据 base64 输入提供最大二进制长度（以字节为单位）。
+* 通常，如果输入包含 ASCII 空格，结果将小于
+* 最大长度。
+*
+* @param input 要处理的 base64 输入，以 ASCII 格式存储为 16 位单元
+* @param length 以 16 位单元为单位的 base64 输入的长度
+* @return 最大二进制字节数
+*/
+vamos_warn_unused size_t maximal_binary_length_from_base64(const char16_t * input, size_t length) noexcept;
+
+
+/**
+* 将 base64 输入转换为二进制输出。
+*
+* 此函数遵循 WHATWG forgiving-base64 格式，这意味着它
+* 将忽略输入中的任何 ASCII 空格。您可以提供填充的输入
+*（末尾有一个或两个等号）或未填充的输入（末尾没有任何
+* 等号）。
+*
+* 参见https://infra.spec.whatwg.org/#forgiving-base64-decode
+*
+* 如果输入无效，此函数将失败。当 last_chunk_options = loose 时，
+* 有两个可能的失败原因：输入包含多个
+* base64 字符，除以 4 后只剩下一个余数字符
+* (BASE64_INPUT_REMAINDER)，或者输入包含的字符不是
+* 有效的 base64 字符 (INVALID_BASE64_CHARACTER)。
+*
+* 当错误为 INVALID_BASE64_CHARACTER 时，r.count 包含输入中发现无效字符的索引。当错误为
+* BASE64_INPUT_REMAINDER 时，r.count 包含解码的字节数。
+*
+* 默认选项 (vamos::base64_default) 期望字符 `+` 和
+* `/` 作为其字母表的一部分。URL 选项 (vamos::base64_url) 期望字符 `-` 和 `_` 作为其字母表的一部分。
+*
+* 如果存在填充 (`=`)，则对其进行验证。输入末尾最多可以有两个填充
+* 字符。如果有任何填充字符，则
+* 总字符数（不包括空格但包括填充
+* 字符）必须能被四整除。
+*
+* 您应该使用至少为
+* maximal_binary_length_from_base64(input, length) 字节长的缓冲区来调用此函数。如果您未能
+* 提供那么多空间，该函数可能会导致缓冲区溢出。
+*
+* 高级用户可能希望定制最后一个块的处理方式。默认情况下，
+* 我们使用松散（宽容）方法，但我们也支持严格方法
+* 以及 stop_before_partial 方法，如以下提议所示：
+*
+* https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
+*
+* @param input 要处理的 base64 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param output 指向可以保存转换结果的缓冲区的指针
+* 结果（应至少为 maximal_binary_length_from_base64(input, length)
+* 字节长）。
+* @param options 要使用的 base64 选项，通常是 base64_default 或
+* base64_url，默认情况下为 base64_default。
+* @param last_chunk_options 最后一个块处理选项，
+* 默认情况下为 last_chunk_handling_options::loose
+* 但也可以是 last_chunk_handling_options::strict 或
+* last_chunk_handling_options::stop_before_partial。
+* @return 一个结果对结构（类型为 vamos::result，包含两个
+* 字段 error 和 count），带有错误代码和错误的位置（如果存在）
+*（在输入中以字节为单位），或写入的字节数（如果成功）。
+*/
+vamos_warn_unused result
+base64_to_binary(const char *input, size_t length, char *output,
+                 base64_options options = base64_default,
+                 last_chunk_handling_options last_chunk_options = loose) noexcept;
+
+/**
+* 根据二进制输入的长度，提供 base64 长度（以字节为单位）。
+*
+* @param length 输入的长度（以字节为单位）
+* @parem options 要使用的 base64 选项，可以是 base64_default 或 base64_url，默认为 base64_default。
+* @return base64 字节数
+*/
+vamos_warn_unused size_t base64_length_from_binary(size_t length, base64_options options = base64_default) noexcept;
+
+
+/**
+* 将二进制输入转换为 base64 输出。
+*
+* 默认选项 (vamos::base64_default) 使用字符 `+` 和 `/` 作为其字母表的一部分。
+* 此外，它在输出末尾添加填充 (`=`) 以确保输出长度是四的倍数。
+*
+* URL 选项 (vamos::base64_url) 使用字符 `-` 和 `_` 作为其字母表的一部分。输出末尾不添加任何填充。
+*
+* 此函数始终成功。
+*
+* @param input 要处理的二进制文件
+* @param length 输入的长度（以字节为单位）
+* @param output 指向可以保存转换结果的缓冲区的指针（长度至少应为 base64_length_from_binary(length) 字节）
+* @param options 要使用的 base64 选项，可以是 base64_default 或 base64_url，默认情况下为 base64_default。
+* @return 写入的字节数，将等于 base64_length_from_binary(length, options)
+*/
+size_t binary_to_base64(const char * input, size_t length, char* output, base64_options options = base64_default) noexcept;
+
+/**
+* 将 base64 输入转换为二进制输出。
+*
+* 此函数遵循 WHATWG forgiving-base64 格式，这意味着它将
+* 忽略输入中的任何 ASCII 空格。您可以提供填充的输入（末尾有一个或两个
+* 等号）或未填充的输入（末尾没有任何等号）。
+*
+* 请参阅 https://infra.spec.whatwg.org/#forgiving-base64-decode
+*
+* 如果输入无效，此函数将失败。当 last_chunk_options = loose 时，
+* 有两个可能的失败原因：输入包含多个
+* base64 字符，当除以 4 时，会剩下一个余数字符
+* (BASE64_INPUT_REMAINDER)，或者输入包含一个不是
+* 有效 base64 字符的字符 (INVALID_BASE64_CHARACTER)。
+*
+* 当错误为 INVALID_BASE64_CHARACTER 时，r.count 包含输入中发现无效字符的索引
+* 当错误为 BASE64_INPUT_REMAINDER 时，
+* r.count 包含解码的字节数。
+*
+* 您应该使用至少为 maximal_binary_length_from_base64(input, length) 字节长的缓冲区来调用此函数。
+* 如果您无法提供那么多空间，该函数可能会导致缓冲区溢出。
+*
+* 高级用户可能希望定制如何处理最后一个块。默认情况下，
+* 我们使用松散（宽容）方法，但我们也支持严格方法
+* 以及 stop_before_partial 方法，如以下提议：
+*
+* https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
+*
+* @param input 要处理的 base64 字符串，以 ASCII 格式存储为 16 位单位
+* @param length 字符串的长度（以 16 位为单位）
+* @param output 指向可保存转换结果的缓冲区的指针（长度至少应为 maximal_binary_length_from_base64(input, length) 字节）。
+* @param options 要使用的 base64 选项，可以是 base64_default 或 base64_url，默认为 base64_default。
+* @param last_chunk_options 最后一个块处理选项，
+* 默认为 last_chunk_handling_options::loose
+* 但也可以是 last_chunk_handling_options::strict 或
+* last_chunk_handling_options::stop_before_partial。
+* @return 一个结果对结构（vamos::result 类型，包含两个字段 error 和 count），带有错误代码
+* 以及 INVALID_BASE64_CHARACTER 错误的位置（以单位表示输入中）（如果有），或者写入的字节数（如果成功）。
+*/
+vamos_warn_unused result base64_to_binary(const char16_t * input, size_t length, char* output, base64_options options = base64_default, last_chunk_handling_options last_chunk_options =
+                     last_chunk_handling_options::loose)  noexcept;
+
+/**
+* 将 base64 输入转换为二进制输出。
+*
+* 此函数遵循 WHATWG forgiving-base64 格式，这意味着它
+* 将忽略输入中的任何 ASCII 空格。您可以提供填充的输入
+*（末尾有一个或两个等号）或未填充的输入（末尾没有任何
+* 等号）。
+*
+* 请参阅 https://infra.spec.whatwg.org/#forgiving-base64-decode
+*
+* 如果输入无效，此函数将失败。当 last_chunk_options = loose 时，
+* 有三个可能的失败原因：输入包含多个 base64
+* 字符，当除以 4 时，会剩下一个余数字符
+* (BASE64_INPUT_REMAINDER)，输入包含一个无效的 base64 字符 (INVALID_BASE64_CHARACTER)，或者输出缓冲区太小 (OUTPUT_BUFFER_TOO_SMALL)。
+*
+* 当 OUTPUT_BUFFER_TOO_SMALL 时，我们返回写入的字节数
+* 和处理的单元数，请参阅参数和
+* 返回值的描述。
+*
+* 当错误为 INVALID_BASE64_CHARACTER 时，r.count 包含输入中发现无效字符的索引。当错误为
+* BASE64_INPUT_REMAINDER 时，r.count 包含解码的字节数。
+*
+* 默认选项 (vamos::base64_default) 期望字符 `+` 和
+* `/` 作为其字母表的一部分。URL 选项 (vamos::base64_url) 期望字符 `-` 和 `_` 作为其字母表的一部分。
+*
+* 如果存在填充 (`=`)，则对其进行验证。输入末尾最多可以有两个填充
+* 字符。如果有任何填充字符，则
+* 总字符数（不包括空格但包括填充
+* 字符）必须能被四整除。
+*
+* INVALID_BASE64_CHARACTER 情况被视为致命错误，因此您需要
+* 丢弃输出。
+*
+* 高级用户可能希望定制最后一个块的处理方式。默认情况下，
+* 我们使用松散（宽容）方法，但我们也支持严格方法
+* 以及 stop_before_partial 方法，如以下建议所示：
+*
+* https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
+*
+* @param input 要处理的 base64 字符串，以 ASCII 格式存储为 8 位
+* 或 16 位单位
+* @param length 字符串的长度（以 8 位或 16 位为单位）。
+* @param output 指向可保存转换结果的缓冲区的指针。
+* @param outlen 可写入输出缓冲区的字节数。返回时，会对其进行修改以反映写入的字节数。
+* @param options 要使用的 base64 选项，可以是 base64_default 或
+* base64_url，默认情况下为 base64_default。
+* @param last_chunk_options 最后一个块处理选项，
+* 默认情况下 last_chunk_handling_options::loose
+* 但也可以是 last_chunk_handling_options::strict 或
+* last_chunk_handling_options::stop_before_partial。
+* @return 一个结果对结构（类型为 vamos::result，包含两个
+* 字段 error 和 count），其中包含错误代码和
+* INVALID_BASE64_CHARACTER 错误的位置（以单位为单位输入）（如果有），或
+* 成功时处理的单位数。
+*/
+vamos_warn_unused result base64_to_binary_safe(const char * input, size_t length, char* output, size_t& outlen, base64_options options = base64_default,
+      last_chunk_handling_options last_chunk_options = loose) noexcept;
+vamos_warn_unused result base64_to_binary_safe(const char16_t * input, size_t length, char* output, size_t& outlen, base64_options options = base64_default,
+      last_chunk_handling_options last_chunk_options = loose) noexcept;
+```

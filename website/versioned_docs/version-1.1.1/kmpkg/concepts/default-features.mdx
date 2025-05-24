@@ -1,0 +1,119 @@
+---
+date: 02/01/2024
+---
+
+# Concept: 默认功能
+
+本文详细解释了默认功能的概念、它们的功能以及它们的预期内容。
+
+默认功能是安装端口时自动包含的一组[功能](features.mdx)，除非明确禁用。这些功能可确保库保持功能的基线水平，即使其依赖关系图的复杂性增加也是如此。
+
+:::warning
+并非所有端口都包含默认功能。
+:::
+
+## 默认功能的作用 {#role-of-default-features}
+
+默认功能通过确保具有模块化功能的库中提供基本功能来提供用户友好的体验。
+
+例如，能够提取各种存档格式的库可能将每种格式作为可选功能。如果没有默认功能，该库可能不包含任何现成的提取算法，从而使初始使用变得复杂。
+除非另有明确要求，否则 kmpkg 安装的软件包将始终包含其默认功能。此行为适用于用户通过清单文件或 kmpkg 安装调用直接需要的包，以及作为依赖项所需的包。
+
+### 在清单模式下禁用默认功能 {#disabling-default-features-in-manifest-mode}
+
+Add the `"default-features": false` attribute to a dependency declaration to disable installation of its default features.
+
+Disabling the automatic installation of default features is only possible for user requested dependencies.
+
+If you want to disable default features for a transitive dependency, you need to promote it to a direct dependency on your project's manifest.
+
+### 禁用经典模式下的默认功能 {#disabling-default-features-in-classic-mode}
+
+添加特殊的`core`功能作为您要安装的软件包的请求功能的一部分。
+
+:::info
+与清单模式的工作方式类似，如果您想禁用传递依赖项的默认功能；您需要在命令行中将其提升为直接安装请求。
+:::
+
+### 示例 1：包含具有默认功能的库 {#example-1}
+
+```json
+{
+  "name": "my-application",
+  "version": "0.15.2",
+  "dependencies": [
+    "extract-any"
+  ]
+}
+```
+
+在这种情况下，`extract-any`将以其默认功能安装，以确保立即发挥作用。
+
+### 示例 2：禁用默认功能（清单模式） {#example-2}
+
+```json
+{
+  "name": "my-application",
+  "version": "0.15.2",
+  "dependencies": [
+    {
+      "name": "extract-any",
+      "default-features": false
+    }
+  ]
+}
+```
+
+此处，`extract-any`安装时没有默认功能，因此可以进行定制设置。
+
+### 示例 3：禁用默认功能（经典模式）{#example-3}
+
+```console
+kmpkg install extract-any[core]
+```
+
+此处，通过使用特殊的`core`功能安装`extract-any`，但没有默认功能。
+
+## 默认功能交互 {#default-features-interactions}
+
+1. **安装具有默认功能的端口（默认行为）**：
+由于没有特定的功能请求，`kmpkg install extract-any` 将安装 `extract-any` 及其默认功能 (`extract-any[format-a]`)。
+
+2. **指定功能而不禁用默认值**：
+`kmpkg install extract-any[format-b]` 会安装具有指定（`format-b`）和默认（`format-a`）功能的 `extract-any`（`extract-any[format -a,格式-b]`)。
+
+3. **明确禁用默认功能**：
+`kmpkg install extract-any[core]` 安装 `extract-any` 时不带任何默认功能，因为 `[core]` 明确排除它们。
+
+4. **传递依赖和默认功能**：
+如果`portB`依赖于`extract-any[format-a]`，`kmpkg install extract-any[format-b] portB`可能会导致安装`extract-any[format-a,format-b] portB`，但没有明确禁用`extract-any`的默认功能。
+
+5. **将具有不同功能规格的端口组合**：
+`kmpkg install extract-any[format-b] portB` 安装 `extract-any[format-a, format-b] portB`，包括 `extract-any` 的默认功能，除非明确排除。
+
+6. **全面禁用默认功能**：
+`kmpkg install extract-any[core] portB` 确保安装 `extract-any` 仅包含明确请求的功能，不包括默认功能。
+
+
+## 管理默认功能 {#managing-default-features}
+
+To effectively manage default features within your projects:
+
+- **Be Explicit**: Specify only the features you need. Use `[core]` to disable default features when necessary.
+- **Inspect Dependencies**: Use `kmpkg depend-info <port>` to understand dependency resolutions and adjust your configurations accordingly.
+- **Utilize Overrides and Baselines**: Leverage [versioning and baseline features](../users/versioning.concepts.mdx) for more control over dependency resolutions.
+
+For more information, see the following:
+
+- **明确**：仅指定您需要的功能。必要时使用`[core]`禁用默认功能。
+- **检查依赖关系**：使用`kmpkg dependent-info <port>`来了解依赖关系解析并相应地调整您的配置。
+- **利用覆盖和基线**：利用[版本控制和基线功能](../users/versioning.concepts.mdx) 对依赖项解析进行更多控制。
+
+有关详细信息，请参阅以下内容：
+
+* [依赖信息](../commands/depend-info.mdx)
+* [覆盖](../reference/kmpkg-json.mdx#overrides)
+* [基线](../users/versioning.mdx#baselines)
+* [版本控制](../users/versioning.mdx)
+
+采用清晰的策略来管理默认功能将有助于简化项目的依赖关系管理，确保您仅包含应用程序功能所需的内容。

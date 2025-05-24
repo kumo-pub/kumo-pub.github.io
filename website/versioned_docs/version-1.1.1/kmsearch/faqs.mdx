@@ -1,0 +1,180 @@
+---
+sidebarDepth: 1
+---
+
+# 常见问题解答 FAQ
+
+以下是用户常问的一些问题及其解答。
+
+## 关键字搜索
+
+### 什么是前缀搜索？ {#what-is-prefix-search}
+
+前缀搜索是指当您输入一个部分单词时，系统会返回所有以此部分单词开头的完整单词。假设数据集中有单词 `example`，而用户搜索 `exa`（前 3 个字符），在前缀搜索模式（`prefix=true` 搜索参数）下，仍会返回单词 `example`。
+
+以下是一些在前缀搜索中将返回单词 `example` 作为匹配命中项的搜索示例：
+
+- `e`
+- `ex`
+- `exa`
+- `exam`
+- `examp`
+- `exampl`
+- `example`
+
+前缀搜索特别适用于**即输入即搜索**体验，在用户输入部分单词时，立即显示结果，而不需要输入完整单词。
+
+kumosearch 中默认启用前缀搜索。如果禁用前缀搜索（通过设置 `prefix=false` 作为搜索参数），那么只有完全输入 `example` 作为搜索关键字时才会返回结果，上述的所有其他子字符串都不会返回结果。
+
+### 什么是中缀搜索？
+
+中缀搜索允许在字符串中间进行匹配。仍然假设数据集中有单词 `example`，而用户搜索 `xa`（出现在字符串中间），默认情况下 kumosearch 不会返回它，因为默认仅启用了 [前缀搜索](#what-is-prefix-search)。
+
+要启用中缀搜索，必须在每个字段的索引表schema中显式启用它。可以在字段定义中添加[infix: true 参数](../api/kmsearch/collections.mdx#field-parameters)，
+并在搜索时使用[`infix`](../api/kmsearch/search_api.mdx#search-parameter)搜索参数。
+
+:::warning
+中缀搜索是 CPU 密集型的，并且需要额外的内存。对于高流量用例，请务必对集群进行基准测试，以确保在启用此功能之前有足够的 CPU 容量。
+:::
+
+如果单词中有 [特殊字符](#如何处理特殊字符)，更有效的替代方法是在索引表schema中使用 `token_separators`，使 kumosearch 将单词索引为单独的标记，因此可以搜索每个 `token`，而无需进行中缀搜索。
+
+### 如何处理特殊字符？
+
+默认情况下，kumosearch 在索引之前删除所有特殊字符。可以使用 `token_separators` 和 `symbols_to_index` 参数来控制此行为。
+
+[此处](./tips-for-searching-common-types-of-data.mdx) 有一篇详细的文章，介绍了在搜索不同类型的数据时如何使用这两个参数。
+
+### 搜索短字符串时，没有得到所有结果。该如何解决？
+
+默认情况下，出于性能原因，kumosearch 仅考虑前 4 个前缀匹配。
+
+例如，搜索 `ap`，将匹配包含 `apple`、`apply`、`apart`、`apron` 或数据集中以 `ap` 开头的数百个类似单词中的任何一个的记录。此外，搜索 `jofn` 将匹配包含 `john`、`joan` 以及数据集中存在 1 个拼写错误的所有类似变体的记录。
+
+但出于性能原因，kumosearch 默认情况下仅考虑前 4 个前缀和拼写错误变体。 `4` 可使用 `max_candidates` 搜索参数进行配置，详见[此处](../api/kmsearch/search_api.mdx#ranking-and-sorting-parameters)。
+
+简而言之，如果搜索诸如 `a` 之类的短词，并且并未返回所期望的所有记录，则需要将 `max_candidates` 增加
+到更高的值，或在索引表schema中更改[`default_sorting_field`](../api/kmsearch/collections.mdx#schema-parameter) 使用记录中的受欢
+迎度分数来定义优先排序的值，否则 kumosearch 只会根据每个前缀的记录数量来定义优先排序的值。
+
+### 为什么关键字的顺序会改变结果的数量？
+
+通常有以下几个原因：
+
+1、默认情况下，kumosearch 仅对搜索查询中的最后一个词进行[前缀搜索](#what-is-prefix-search)。
+
+例如：假设您搜索 `hello worl`，只有 `worl` 会用于前缀搜索，并且 `hello` 需要完全匹配。因此，对于 `hello worl`（前缀）搜索查询，将返回以下所有记录：
+   
+   - ✅ `hello world`
+   - ✅ `hello worlds`
+   - ✅ `hello worldwide`
+   - ✅ `hello worldwide`
+   - ✅ `hello worldy`
+   - ✅ `hello worldly`
+
+但是，对于 `hello world` 的搜索查询将不会返回以下记录。 这是因为 `hello` 不是搜索查询中的最后一个词，因此不会进行前缀搜索。
+   
+   - ❌ `hellow world`
+   - ❌ `hellowy world`
+   - ❌ `hellos world`
+   - ❌ `hellowing world`
+ 
+然而，如果翻转搜索词的顺序搜索 `world hello`，那么将返回上面的四个记录，因为现在 `hello` 被用作前缀搜索。
+  
+如果您想禁用前缀搜索，可以设置`prefix=false`。
+
+2、默认情况下，当多关键字搜索查询没有找到结果时，kumosearch 将开始依次删除查询中的单词，并重复搜索，直到找到足够的结果。
+
+`足够` 的定义可以使用[`drop_tokens_threshold`](../api/kmsearch/search_api.mdx#typo-tolerance-parameters) 搜索参数进行配置，
+而删除方向（从左到右或从右到左）可以使用[`drop_tokens_mode`](../api/kmsearch/search_api.mdx#typo-tolerance-parameters)参数进行配置。
+
+因此，如果搜索查询是 `hello world`，并且没有记录包含所有关键字，则 kumosearch 将删除 `world` 并重复搜索 `hello`。
+现在，如果搜索查询是 `wordl hello`，并且没有记录包含所有关键字，则 kumosearch 这次将删除 `hello` 并重复搜索，这将产生与上次不同的结果。
+
+### 如何搜索多个索引表并将结果合并到一个排名列表中？
+
+在进行联合/多重搜索时，kumosearch 每次命中返回的 `text_match` 分数可用于比较来自不同索引表的文档的相关性，并在客户端聚合结果。然而，使用这种客户端聚合方法，分页可能会变得很棘手。
+
+另一种方法是将不同的文档类型存储在一个单一索引表中（需要在schema中将所有索引表字段设置为 `optional: true`），并添加一个 `document_type` 字段来标示记录类型，以便在应用程序中访问相应字段。
+
+例如，假设有两种类型的数据，分别称为 `product` 和 `article`，并且希望在单个列表中显示结果。可以创建一个包含 `product` 和 `article` 的单一索引表，将所有字段设置为可选，并添加一个名为 `document_type:product | Article` 的字段来识别文档是 `product` 还是 `article`。当发送搜索查询时，两种类型的记录都会在同一排名列表中返回，并且可以使用 `document_type` 字段在搜索界面中直观地区分每种类型的记录。
+
+## 语义搜索
+
+### 如何微调语义搜索结果？
+
+语义搜索结果的质量取决于以下几个因素：用于生成嵌入的机器学习模型、训练模型所用的数据集，以及嵌入的维度数等。
+
+kumosearch 的工作原理是获取您的搜索查询，使用您指定的 ML 模型生成查询嵌入，然后进行最近邻向量搜索，并根据查询嵌入和每个文档嵌入之间的余弦相似度对结果进行排序。与标准关键字搜索不同，这种搜索模式没有文档 `匹配` 或 `不匹配` 的二元概念。相反，每个文档都有一个向量距离分数，用于定义它与查询嵌入的接近程度。
+
+如果您发现通过语义搜索获得了太多不相关的结果，可以使用 `vector_query` 中的 `distance_threshold` 参数来选择适合您需求的阈值。了解更多信息请点击[此处](../api/kmsearch/vector-search.mdx#max-distance)。
+
+如果使用混合搜索，则可以使用 `vector_query` 的 `alpha` 参数控制关键字与语义匹配的权重。了解更多信息请点击[此处](../api/kmsearch/vector-search.mdx#weightage-for-semantic-vs-keyword-matches)。
+
+还可以尝试使用不同的 ML 模型，选择使用更接近您领域的数据集进行训练，以生成更高质量的嵌入。
+
+## 分面搜索
+
+### 如何获取用户未过滤的值的构面计数？
+
+假设您有一个食谱搜索网站，用户可以使用过滤器组件来过滤 `ingredients`：
+
+import docusaurusImport from '@site/static/img/kmsearch/ingredients-filter-widget.png';
+
+<img src={docusaurusImport} alt="按原料过滤" height="400"/>
+
+当执行食谱搜索时，将获得 `facet_by：ingredients` 所有原料的分面计数。
+
+当应用了 `filter_by：ingredients：= Eggs`，然后按 `ingredients` 进行分面，结果集将仅包含 `ingredients` 为 `Eggs` 的文档，因此分面计数将仅包含此值。
+
+如仍希望向用户显示未过滤/未选择的项目的计数。例如，在上述情况中，您仍然希望获取 `Eggs`、`Sugar`、`Butter` 等的计数。要获取这些计数，需要执行第二次搜索查询，删除用户选择的 `filter_by` 参数，仅发送 `facet_by：ingredients` 参数。这样将获得所有其他未过滤项目的分面计数。
+
+可以在 [multi_search](../api/kmsearch/federated-multi-search.mdx)中更高效地执行第二个查询，这样只需一个HTTP请求。
+
+
+如果有多个过滤器组件，则需要为每个组件单独发出一个附加查询。在这些查询中，移除当前组件的特定过滤器，同时保留其他所有过滤器。
+
+:::tip 实例演示
+
+要查看所需生成查询类型的实时示例，请访问 [recipe.kumo-ai.tech/](http://recipe.kumo-ai.tech/)。
+
+在搜索栏中输入 `cake`，然后单击 `Eggs`。
+
+可在浏览器的开发者控制台网络选项卡中查找对 `multi_search` 的请求，并查看生成的查询结构。
+:::
+
+### 过滤和分面有什么区别？
+
+假设您有一个[食谱数据网站](http://recipe.kumo-ai.tech/)，如下面的截图所示。
+
+左侧每个 `ingredients` 旁边的**计数**是通过对 `ingredients` 字段进行分面获得的。
+
+如果您单击 `Butter` 并且只想获取原料有 `Butter` 的歌曲，这就是过滤。
+
+`![Faceting Usecase Example](~@images/faqs/faceting_usecase_example.png)`
+
+## 索引
+
+### 当我同步数据时，为什么数据库中的所有记录都没有显示在 kumosearch 中？
+
+如果您使用[import API](../api/kmsearch/documents.mdx#index-multiple-documents)端点批量导入文件到 kumosearch，即使有少数文档导入失败了，该端点仍会返回 HTTP 200 成功状态码，以说明部分成功。
+
+因此，即使在发生错误期间，您的 HTTP 客户端也可能不会报错。
+
+请务必检查 API 响应中是否有任何 `{success: false, ...}` 记录，以查看是否存在任何导入失败的文档，这通常是由于schema验证错误导致的。
+
+您可以使用 [`?return_id=true`](../api/kmsearch/documents.mdx#return-with-import-doc-id)查询参数让 kumosearch 返回出错的确切文档 ID。
+
+## 系统资源监控
+
+### 如何获取单个索引表或字段的内存使用情况？
+
+kumosearch 不跟踪单个索引表或字段的内存使用情况。它仅跟踪聚合进程级别的内存指标。您可以使用[`GET /metrics.json`](../api/kmsearch/cluster-operations.mdx#cluster-metrics)访问这些指标端点。
+
+### 如何使用 kumosearch 设置 HTTPS？
+
+默认情况下，kumosearch 在端口 `8868` 上运行并提供 HTTP 流量。
+
+要启用 HTTPS，您需要将[`api-port`](../api/kmsearch/server-configuration.mdx#network)更改为 `443`，然后使用[`ssl-certificate` 和 `ssl-certificate-key`](../api/kmsearch/server-configuration.mdx#ssl-https)参数分别指向您的 SSL 证书和 SSL 私钥。
+
+[LetsEncrypt](https://letsencrypt.org) 等提供商提供免费的 SSL 证书。

@@ -1,0 +1,67 @@
+
+# 字符串替换
+
+## `turbo::substitute()` 字符串替换
+
+设置向用户显示的字符串格式通常有不同的需求。传统上，大多数 C++ 代码使用内置函数，例如`sprintf()`和
+`snprintf()`;这些功能有一些问题，因为它们不支持
+必须管理`std::string_view`和格式化缓冲区的内存。
+
+```cpp
+// Bad. Need to worry about buffer size and NUL-terminations.
+
+std::string GetErrorMessage(char *op, char *user, int id) {
+  char buffer[50];
+  sprintf(buffer, "Error in %s for user %s (id %i)", op, user, id);
+  return buffer;
+}
+```
+
+```cpp
+// Better. Using turbo::str_cat() avoids the pitfalls of sprintf() and is faster.
+std::string GetErrorMessage(std::string_view op, std::string_view user, int id) {
+  return turbo::str_cat("Error in ", op, " for user ", user, " (", id, ")");
+}
+```
+
+```cpp
+// Best. Using turbo::substitute() is easier to read and to understand.
+std::string GetErrorMessage(std::string_view op, std::string_view user, int id) {
+  return turbo::substitute("Error in $0 for user $1 ($2)", op, user, id);
+}
+```
+
+`turbo::substitute()` 将 `turbo::str_cat()` 的效率和类型安全特性与传统函数（如 `sprintf()`）的参数绑定相
+结合。 `turbo::substitute` 使用格式字符串，其中包含由美元符号 ($) 指示的位置标识符和单位数字位置 ID，以指示在格式字符串
+中的该位置使用哪些替换参数。
+
+```cpp
+std::string s = substitute("$1 purchased $0 $2. Thanks $1!", 5, "Bob", "Apples");
+// Produces the string "Bob purchased 5 Apples. Thanks Bob!"
+
+std::string s = "Hi. ";
+SubstituteAndAppend(&s, "My name is $0 and I am $1 years old.", "Bob", 5);
+// Produces the string "Hi. My name is Bob and I am 5 years old."
+```
+
+但请注意，“turbo::substitute()”，因为它需要解析格式运行时的字符串，比“turbo::str_cat()”慢。选择`substitute()`
+仅当代码清晰度比速度更重要时才使用`str_cat()`。
+
+### 与 string_printf() 的区别
+
+`turbo::substitute` 与 `string_printf()` 有以下不同之处：
+
+* 格式字符串不识别参数的类型。相反，参数隐式转换为字符串。
+* 格式字符串中的替换由“$”后跟一个数字来标识。您可以无序地使用参数并多次使用相同的参数。
+* 格式字符串中的“$$”序列表示输出文字“$”字符。
+* `turbo::substitute()` 明显比 `string_printf()` 快。对于非常大的字符串，速度可能会快几个数量级。
+
+### 支持的类型
+
+`turbo::substitute()` 理解以下类型：
+
+* `std::string_view`, `std::string`, `const char*` (null is equivalent to "")
+* `int32_t`, `int64_t`, `uint32_t`, `uint64_t`
+* `float`, `double`
+* `bool` （打印为“true”或“false”）
+* char* 以外的指针类型（打印为 `0x<小写十六进制字符串>`，除了 null 打印为“NULL”）

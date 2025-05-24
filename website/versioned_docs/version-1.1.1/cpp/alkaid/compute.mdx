@@ -1,0 +1,1237 @@
+# 计算与计算函数 {#compute-functions}
+
+## 通用`compute` API
+
+
+### 函数和函数注册表
+
+函数表示对可能不同类型的输入执行的计算操作。在内部，函数由一个或多个`kernal`实现，具体取决于具体
+的输入类型（例如，将两个输入的值相加的函数可以具有不同的内核，具体取决于输入是整数还是浮点数）。
+
+函数存储在全局`FunctionRegistry`中, 可以通过名称进行查找。
+
+### 输入数据形状
+
+计算输入表示为通用的 :class:`Datum` 类，它是多种数据形状（如 :class:`Scalar`、
+:class:`Array` 和 :class:`ChunkedArray`）的标记联合。许多计算函数都支持数
+组（分块或非分块）和标量输入，但有些函数会要求特定的输入类型。例如，虽
+然 ``array_sort_indices`` 要求其第一个也是唯一的输入是数组，但通用的 ``sort_indices`` 函
+数接受数组、分块数组、记录批处理或表。
+
+### 调用函数 {#invoking-compute-functions}
+
+可以使用名称调用计算函数`alkaid::compute::call_function`:
+```cpp
+    std::shared_ptr<alkaid::Array> numbers_array = ...;
+    std::shared_ptr<alkaid::Scalar> increment = ...;
+    alkaid::Datum incremented_datum;
+
+    ARROW_ASSIGN_OR_RAISE(incremented_datum,
+                          alkaid::compute::call_function("add", {numbers_array, increment}));
+    std::shared_ptr<Array> incremented_array = std::move(incremented_datum).make_array();
+```
+（请注意，此示例使用了从`std::shared_ptr<Array>` to `Datum`)
+许多计算函数也可直接作为具体 API 使用，此处 `alkaid::compute::Add`:
+```cpp
+    std::shared_ptr<alkaid::Array> numbers_array = ...;
+    std::shared_ptr<alkaid::Scalar> increment = ...;
+    alkaid::Datum incremented_datum;
+
+    ARROW_ASSIGN_OR_RAISE(incremented_datum,
+                          alkaid::compute::Add(numbers_array, increment));
+    std::shared_ptr<Array> incremented_array = std::move(incremented_datum).make_array();
+```
+某些函数接受或需要选项结构来确定函数的确切语义：
+```cpp
+    ScalarAggregateOptions scalar_aggregate_options;
+    scalar_aggregate_options.skip_nulls = false;
+
+    std::shared_ptr<alkaid::Array> array = ...;
+    alkaid::Datum min_max;
+
+    ARROW_ASSIGN_OR_RAISE(min_max,
+                          alkaid::compute::call_function("min_max", {array},
+                                                       &scalar_aggregate_options));
+
+    // Unpack struct scalar result (a two-field {"min", "max"} scalar)
+    std::shared_ptr<alkaid::Scalar> min_value, max_value;
+    min_value = min_max.scalar_as<alkaid::StructScalar>().value[0];
+    max_value = min_max.scalar_as<alkaid::StructScalar>().value[1];
+```
+However,
+`Grouped Aggregations <grouped-aggregations-group-by>` are not invocable via `call_function`.
+
+:::info
+`Compute API reference <api/compute>`
+:::
+
+## 隐式强制转换
+
+
+如果内核与参数类型不完全匹配，函数可能需要在执行之前转换其参数。
+例如，任何内核都不直接支持字典编码数组的比较，但可以进行隐式转换，
+允许与解码数组进行比较。每个函数可以根据需要定义隐式转换行为。例如，
+比较和算术内核需要相同类型的参数，并且通过将其参数提升为可以容纳来自
+任一输入的任何值的数字类型来支持针对不同数字类型的执行。
+
+### 常见数字类型
+
+一组输入数字类型的公共数字类型是可以容纳任何输入的任何值的最小数字类型。
+如果任何输入是浮点类型，则公共数字类型是输入中最宽的浮点类型。否则，公
+共数字类型是整数，并且如果有任何输入是有符号的，则公共数字类型是有符号
+的。例如：
+
+| Input types      | Common numeric type | Notes                                      |
+  |------------------|---------------------|--------------------------------------------|
+| int32, int32     | int32               |                                            |
+| int16, int32     | int32               | Max width is 32, promote LHS to int32      |
+| uint16, int32    | int32               | One input signed, override unsigned        |
+| uint32, int32    | int64               | Widen to accommodate range of uint32       |
+| uint16, uint32   | uint32              | All inputs unsigned, maintain unsigned     |
+| int16, uint32    | int64               |                                            |
+| uint64, int16    | int64               | int64 cannot accommodate all uint64 values |
+| float32, int32   | float32             | Promote RHS to float32                     |
+| float32, float64 | float64             |                                            |
+| float32, int64   | float32             | int64 is wider, still promotes to float32  |
+
+特别需要注意的是，如果其中一个 `uint64` 值不能表示为通用类型 `int64`（例如 `2 ** 63`），则将 `uint64` 列与 `int16` 列进行比较可能会引发错误。
+
+## 可用函数 {#compute-function-list}
+
+
+### 类型类别
+
+为了避免详尽列出支持的类型，下表使用了许多通用类型类别：
+
+- `Numeric`：整数类型（Int8 等）和浮点类型（Float32、Float64，有时为 Float16）。某些函数还接受 Decimal128 和 Decimal256 输入。
+- `Temporal`：日期类型（Date32、Date64）、时间类型（Time32、Time64）、时间戳、持续时间、间隔。
+- `Binary-like`：二进制、LargeBinary，有时也为 FixedSizeBinary。
+- `String-like`：字符串、LargeString。
+- `List-like`：列表、LargeList、ListView、LargeListView，有时也为 FixedSizeList。
+- `Nested`：列表类型（包括 FixedSizeList）、结构、联合和相关类型（如 Map）。
+
+如果您不确定某个函数是否支持具体的输入类型，我们建议您尝试一下。不支持的输入类型会返回`TypeError`
+`Status`。
+
+### 聚合 {#aggregation-option-list}
+
+标量聚合对（分块）数组或标量值进行操作，并将输入减少为单个输出值。
+
+
+| Function name       | Arity   | Input types      | Output type                         | Options class            | Notes |
+  |---------------------|---------|------------------|-------------------------------------|--------------------------|-------|
+| all                 | Unary   | Boolean          | Scalar Boolean                      | `ScalarAggregateOptions` | (1)   |
+| any                 | Unary   | Boolean          | Scalar Boolean                      | `ScalarAggregateOptions` | (1)   |
+| approximate\_median | Unary   | Numeric          | Scalar Float64                      | `ScalarAggregateOptions` |       |
+| count               | Unary   | Any              | Scalar Int64                        | `CountOptions`           | (2)   |
+| count\_all          | Nullary | Scalar Int64     |                                     |                          |       |
+| count\_distinct     | Unary   | Non-nested types | Scalar Int64                        | `CountOptions`           | (2)   |
+| first               | Unary   | Numeric, Binary  | Scalar Input type                   | `ScalarAggregateOptions` | (11)  |
+| first\_last         | Unary   | Numeric, Binary  | Scalar Struct                       | `ScalarAggregateOptions` | (11)  |
+| index               | Unary   | Any              | Scalar Int64                        | `IndexOptions`           | (3)   |
+| last                | Unary   | Numeric, Binary  | Scalar Input type                   | `ScalarAggregateOptions` | (11)  |
+| max                 | Unary   | Non-nested types | Scalar Input type                   | `ScalarAggregateOptions` |       |
+| mean                | Unary   | Numeric          | Scalar  Decimal/Float64             | `ScalarAggregateOptions` | (4)   |
+| min                 | Unary   | Non-nested types | Scalar Input type                   | `ScalarAggregateOptions` |       |
+| min\_max            | Unary   | Non-nested types | Scalar Struct                       | `ScalarAggregateOptions` | (5)   |
+| mode                | Unary   | Numeric          | Struct                              | `ModeOptions`            | (6)   |
+| product             | Unary   | Numeric          | Scalar Numeric                      | `ScalarAggregateOptions` | (7)   |
+| quantile            | Unary   | Numeric          | Scalar Numeric    `QuantileOptions` | (8)                      |       |
+| stddev              | Unary   | Numeric          | Scalar Float64                      | `VarianceOptions`        | (9)   |
+| sum                 | Unary   | Numeric          | Scalar Numeric                      | `ScalarAggregateOptions` | (7)   |
+| tdigest             | Unary   | Numeric          | Float64                             | `TDigestOptions`         | (10)  |
+| variance            | Unary   | Numeric          | Scalar Float64                      | `VarianceOptions`        | (9)   |
+
+- \(1) 如果通过设置 ScalarAggregateOptions 参数 skip\_nulls = false 来考虑空值，
+    则应用 [Kleene 逻辑](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics) 逻辑。
+    不遵守 min\_count 选项。
+- \(2) CountMode 控制是否仅计算非空值（默认）、仅计算空值或计算所有值。
+- \(3) 如果未找到该值，则返回 -1。无论输入中是否有空值，空值的索引始终为 -1。
+- \(4) 对于十进制输入，生成的十进制将具有相同的精度和小数位数。结果从零开始四舍五入。
+- \(5) 输出是 `{"min": 输入类型，"max": 输入类型}` 结构。
+
+在间隔类型中，仅支持月份间隔，因为
+day-time 和 month-day-nano 类型不可排序。
+
+- \(6) 输出是一个 `{"mode": 输入类型, "count": Int64}` 结构数组。
+
+它包含输入中最常见的 *N* 个元素，按降序排列，其中 *N* 在 `ModeOptions::n` 中给出。如果两个值的计数相同，则最小的值排在最前面。请注意，如果输入具有少于 *N* 个不同值，则输出可以具有少于 *N* 个元素。
+
+- \(7) 输出为 Int64、UInt64、Float64 或 Decimal128/256，具体取决于输入类型。
+
+- \(8) 输出为 Float64 或输入类型，具体取决于 QuantileOptions。
+
+- \(9) Decimal 参数首先转换为 Float64。
+
+- \(10) tdigest/t-digest 计算近似分位数，因此只需要固定数量的内存。有关详细信息，请参阅[参考
+实现](https://github.com/tdunning/t-digest)。
+- \(11) 结果基于输入数据的排序
+
+十进制参数首先转换为 Float64。
+
+#### 分组聚合 (\"group by\")
+
+分组聚合不能直接调用，但可用作 SQL 样式`group by`操作的一部分。与标量聚合一样，分组聚合将
+多个输入值简化为单个输出值。但是，分组聚合不会聚合输入的所有值，而是根据一组`key`列对输入值进
+行分区，然后分别聚合每个组，为每个输入组发出一个输出值。例如，对于下表：
+
+| Column `key` | Column `x` |
+|--------------|------------|
+| \"a\"        | 2          |
+| \"a\"        | 5          |
+| \"b\"        | null       |
+| \"b\"        | null       |
+| null         | null       |
+| null         | 9          |
+
+我们可以计算列`x`的总和，并按列`key`分组。
+这为我们提供了三组，结果如下。请注意，null
+被视为不同的键值。
+
+
+| Column `key` | Column `sum(x)` |
+|--------------|-----------------|
+| \"a\"        | 7               |
+| \"b\"        | null            |
+| null         | 9               |
+
+支持的聚合函数如下。所有函数名都以 `hash_` 为前缀，这将它们与上面的标量等价函数区分开来，并反映了它们的内部实现方式。
+
+| Function name             | Arity   | Input types                         | Output type              | Options class            | Notes    |
+|---------------------------|---------|-------------------------------------|--------------------------|--------------------------|----------|
+| hash\_all                 | Unary   | Boolean                             | Boolean                  | `ScalarAggregateOptions` | (1)      |
+| hash\_any                 | Unary   | Boolean                             | Boolean                  | `ScalarAggregateOptions` | (1)      |
+| hash\_approximate\_median | Unary   | Numeric                             | Float64                  | `ScalarAggregateOptions` |          |
+| hash\_count               | Unary   | Any                                 | Int64                    | `CountOptions`           | (2)      |
+| hash\_count\_all          | Nullary |                                     | Int64                    |                          |          |
+| hash\_count\_distinct     | Unary   | Any                                 | Int64                    | `CountOptions`           | (2)      |
+| hash\_distinct            | Unary   | Any                                 | List of input type       | `CountOptions`           | \(2) (3) |
+| hash\_first               | Unary   | Numeric, Binary                     | Input type               | `ScalarAggregateOptions` | (10)     |
+| hash\_first\_last         | Unary   | Numeric, Binary                     | Struct                   | `ScalarAggregateOptions` | (10)     |
+| hash\_last                | Unary   | Numeric, Binary                     | Input type               | `ScalarAggregateOptions` | (10)     |
+| hash\_list                | Unary   | Any                                 | List of input type       |                          | (3)      |
+| hash\_max                 | Unary   | Non-nested, non-binary/string-like  | Input type               | `ScalarAggregateOptions` |          |
+| hash\_mean                | Unary   | Numeric                             | Decimal/Float64          | `ScalarAggregateOptions` | (4)      |
+| hash\_min                 | Unary   | Non-nested,  non-binary/string-like | Input type               | `ScalarAggregateOptions` |          |
+| hash\_min\_max            | Unary   | Non-nested types                    | Struct                   | `ScalarAggregateOptions` | (5)      |
+| hash\_one                 | Unary   | Any                                 | Input type               | (6)                      |          |
+| hash\_product             | Unary   | Numeric                             | Numeric                  | `ScalarAggregateOptions` | (7)      |
+| hash\_stddev              | Unary   | Numeric                             | Float64                  | `VarianceOptions`        | (8)      |
+| hash\_sum                 | Unary   | Numeric                             | Numeric                  | `ScalarAggregateOptions` | (7)      |
+| hash\_tdigest             | Unary   | Numeric                             | FixedSizeList\[Float64\] | `TDigestOptions`         | (9)      |
+| hash\_variance            | Unary   | Numeric                             | Float64                  | `VarianceOptions`        | (8)      |
+
+
+- \(1) 如果考虑了空值，则通过将`ScalarAggregateOptions::skip_nulls`  设置为
+false，然后应用 [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics)
+逻辑。不遵守 min\_count 选项。
+- \(2) CountMode 控制是否仅计算非空值（默认）、仅计算空值或计算所有值。对于
+hash\_distinct，它控制是否发出空值。
+这永远不会影响分组键，只会影响组值（即，您可能会得到一个键为空的组）。
+- \(3) `hash_distinct` 和 `hash_list` 将分组值收集到列表数组中。
+- \(4) 对于十进制输入，结果十进制将具有相同的
+精度和小数位数。结果从零开始四舍五入。
+- \(5) 输出为 `{"min": 输入类型，"max": 输入类型}` 结构数组。
+
+在间隔类型中，仅支持月份间隔，因为
+day-time 和 month-day-nano 类型不可排序。
+
+- \(6) `hash_one` 为每个组返回一个来自输入的任意值。该函数偏向于非空值：如果某个组至少有一个非空值，则返回该值，并且只有当该组的所有值均为 `null` 时，函数才会返回 `null`。
+- \(7) 输出为 Int64、UInt64、Float64 或 Decimal128/256，具体取决于输入类型。
+- \(8) Decimal 参数首先转换为 Float64。
+- \(9) T-digest 计算近似分位数，因此只需要固定数量的内存。有关详细信息，请参阅 [参考实现](https://github.com/tdunning/t-digest)。
+- \(10) 结果基于输入数据的排序。
+
+十进制参数首先转换为 Float64。
+
+### functions 元素级 (\"scalar\") 函数
+
+所有元素函数都接受数组和标量作为输入。
+一元函数的语义如下：
+
+- 标量输入产生标量输出
+- 数组输入产生数组输出
+
+二元函数具有以下语义（在其他系统（如 NumPy）中有时称为
+\"broadcasting\"）：
+
+- `(scalar, scalar)` 输入产生标量输出
+- `(array, array)` 输入产生数组输出（并且两个输入
+必须具有相同的长度）
+-  `(scalar, array)` 和 `(array, scalar)` 产生数组输出。
+标量输入被处理为与其他输入长度相同的数组 N，并且相同的值重复 N 次。
+
+#### 算术函数
+
+这些函数需要数字类型的输入，并对从输入中收集的每个元素应用给定的
+算术运算。如果
+任何输入元素为空，则相应的输出元素为
+空。对于二进制函数，在应用操作之前，输入将转换为
+`通用数字类型 <common-numeric-type>`（如果适用，则对字典进行解码）。
+
+这些函数的默认变体不检测溢出（结果通常会回绕）。大多数函数也提供溢出检查变体，后缀
+为“_checked”，当检测到溢出时，它会返回“无效”状态。
+
+对于支持十进制输入的函数（目前为“加”、“减”、“乘”和“除”及其已检查的变体），将
+适当提升不同精度/小数位数的十进制。混合十进制和浮点参数会将所有参数转换为浮点，
+而混合十进制和整数参数会将所有参数转换为十进制。混合时间分辨率时间输入将转换为最精细的输入分辨率。
+
+
+| Function name     | Arity                     | Input types                 | Output type              | Notes |
+|-------------------|---------------------------|-----------------------------|--------------------------|-------|
+| abs               | Unary                     | Numeric/Duration            | Numeric/Duration         |       |
+| abs\_checked      | Unary                     | Numeric/Duration            | Numeric/Duration         |       |
+| add               | Binary                    | Numeric/Temporal            | Numeric/Temporal         | (1)   |
+| add\_checked      | Binary                    | Numeric/Temporal            | Numeric/Temporal         | (1)   |
+| divide            | Binary                    | Numeric/Temporal            | Numeric/Temporal         | (1)   |
+| divide\_checked   | Binary   Numeric/Temporal | Numeric/Temporal            | (1)                      |       |
+| exp               | Unary                     | Numeric                     | Float32/Float64          |       |
+| expm1             | Unary                     | Numeric                     | Float32/Float64          |       |
+| multiply          | Binary                    | Numeric/Temporal            | Numeric/Temporal         | (1)   |
+| multiply\_checked | Binary                    | Numeric/Temporal            | Numeric/Temporal         | (1)   |
+| negate            | Unary                     | Numeric/Duration            | Numeric/Duration         |       |
+| negate\_checked   | Unary                     | Signed     Numeric/Duration | Signed  Numeric/Duration |       |
+| power             | Binary                    | Numeric                     | Numeric                  |       |
+| power\_checked    | Binary                    | Numeric                     | Numeric                  |       |
+| sign              | Unary                     | Numeric/Duration            | Int8/Float32/Float64     | (2)   |
+| sqrt              | Unary                     | Numeric                     | Numeric                  |       |
+| sqrt\_checked     | Unary                     | Numeric                     | Numeric                  |       |
+| subtract          | Binary                    | Numeric/Temporal            | Numeric/Temporal         | (1)   |
+| subtract\_checked | Binary                    | Numeric/Temporal            | Numeric/Temporal         | (1)   |
+
+
+- \(1) 计算 DECIMAL 结果的精度和小数位数
+
+
+    | Operation  | Result precision and scale                  |
+    |----------- |---------------------------------------------|
+    |  add      |  scale = max(s1, s2)                       |
+    |  subtract |  precision = max(p1-s1, p2-s2) + 1 + scale |
+    | multiply   |  scale = s1 + s2     precision = p1 + p2 + 1                      |
+    | divide     |  scale = max(4, s1 + p2 - s2 + 1)    precision = p1 - s1 + s2 + scale       |
+
+    它与 Redshift 的十进制提升规则兼容。对于“加”、“减”和“乘”运算，所有十进制数字均会保留。除法的结果精度至少是两
+    个操作数的精度之和，且保留足够的小数位数。如果结果精度超出十进制值范围，则会返回错误。
+
+- \(2) 对于非零输入，输出为 (-1,1) 中的任意一个，对于零输入，输出为 0。NaN
+       值返回 NaN。整数和十进制值以 Int8的形式返回符号，浮点值以与输入
+        值相同的类型返回符号。
+
+#### 按位函数
+
+
+| Function name         | Arity  | Input types | Output type |
+|-----------------------|--------|-------------|-------------|
+| bit\_wise\_and        | Binary | Numeric     | Numeric     |
+| bit\_wise\_not        | Unary  | Numeric     | Numeric     |
+| bit\_wise\_or         | Binary | Numeric     | Numeric     |
+| bit\_wise\_xor        | Binary | Numeric     | Numeric     |
+| shift\_left           | Binary | Numeric     | Numeric     |
+| shift\_left\_checked  | Binary | Numeric     | Numeric (1) |
+| shift\_right          | Binary | Numeric     | Numeric     |
+| shift\_right\_checked | Binary | Numeric     | Numeric (1) |
+
+
+- \(1) 如果移位量（即第二个输入）超出数据类型的范围，则会发出错误。但是，移位第一个输入时溢出不会出错（截断的位会被默默丢弃）。
+
+#### 舍入函数
+
+舍入函数根据舍入标准，将数字输入替换为具有更简单表示形式的近似值。
+
+
+| Function name       | Arity  | Input types | Output type             | Options class            | Notes  |
+|---------------------|--------|-------------|-------------------------|--------------------------|--------|
+| ceil                | Unary  | Numeric     | Float32/Float64/Decimal |                          |        |
+| floor               | Unary  | Numeric     | Float32/Float64/Decimal |                          |        |
+| round               | Unary  | Numeric     | Input Type              | `RoundOptions`           | (1)(2) |
+| round\_to\_multiple | Unary  | Numeric     | Input Type              | `RoundToMultipleOptions` | (1)(3) |
+| round\_binary       | Binary | Numeric     | Input Type              | `RoundBinaryOptions`     | (1)(4) |
+| trunc               | Unary  | Numeric     | Float32/Float64/Decimal |                          |        |
+
+
+- \(1) 默认情况下，舍入函数会将值更改为最接近的整数
+使用 HALF\_TO\_EVEN 来解决平局。可以使用选项来控制
+舍入标准。所有 `round` 函数都有 `round_mode`
+选项来设置舍入模式。
+- \(2) 四舍五入到一定位数，其中 `RoundOptions` 的 `ndigits` 选项指定以位数表示的四舍五入
+精度。负值对应于非小数部分的数字。例如，-2 对应于四舍五入到最接近的 100 的倍数（将个位和十位清零）。
+`ndigits` 的默认值为 0，四舍五入到最接近的整数。对于整数输入，非负 `ndigits` 值将被忽略，输入将保
+持不变。对于整数输入，如果 `-ndigits` 大于输入类型可以容纳的最大位数，则返回错误。
+- \(3) 四舍五入为倍数，其中`RoundToMultipleOptions`的`multiple`选项指定
+舍入比例。舍入倍数必须是正值，并且可以转换为输入类型。例如，100 对应于舍入到 100 的
+最接近的倍数（将个位和十位数字归零）。`倍数` 的默认值为 1，即舍入到最接近的整数。
+- \(4) 将第一个输入四舍五入为第二个输入的倍数。四舍五入倍数必须是正值，并且可以转换为第一
+个输入类型。例如，100 对应于四舍五入到最接近的 100 的倍数（将个位和十位数字清零）。
+
+对于 `round` 函数，可以使用以下舍入模式。
+平局决胜模式以 HALF 为前缀，并将非平局舍入为最接近的整数。示例值针对 `ndigits` 和 `multiple` 的默认值给出。
+
+
+| `round_mode`            | Operation performed                                                                  | Example values                                 |
+|-------------------------|--------------------------------------------------------------------------------------|------------------------------------------------|
+| DOWN                    | Round to nearest integer less than or equal in magnitude; also known as `floor(x)`   | 3.2 -\> 3, 3.7-\> 3, -3.2 -\>-4, -3.7 -\> -4   |
+| UP                      | Round to nearest integer greater than or equal in magnitude; also known as `ceil(x)` | 3.2 -\> 4, 3.7-\> 4, -3.2 -\> -3, -3.7 -\> -3  |
+| TOWARDS\_ZERO           | Get the integral part without fractional digits; also known as `trunc(x)`            | 3.2 -\> 3, 3.7 -\> 3, -3.2 -\> -3, -3.7 -\> -3 |
+| TOWARDS\_INFINITY       | Round negative values with `DOWN` rule, round positive values with `UP` rule         | 3.2 -\> 4, 3.7 -\> 4, -3.2 -\> -4, -3.7 -\> -4 |
+| HALF\_DOWN              | Round ties with `DOWN` rule                                                          | 3.5 -\> 3, 4.5 -\> 4, -3.5 -\> -4, -4.5 -\> -5 |
+| HALF\_UP                | Round ties with `UP` rule                                                            | 3.5 -\> 4, 4.5 -\> 5, -3.5 -\> -3, -4.5 -\> -4 |
+| HALF\_TOWARDS\_ZERO     | Round ties with `TOWARDS_ZERO` rule                                                  | 3.5 -\> 3, 4.5 -\> 4, -3.5 -\> -3, -4.5 -\> -4 |
+| HALF\_TOWARDS\_INFINITY | Round ties with `TOWARDS_INFINITY` rule                                              | 3.5 -\> 4, 4.5 -\> 5, -3.5 -\> -4, -4.5 -\> -5 |
+| HALF\_TO\_EVEN          | Round ties to nearest even integer                                                   | 3.5 -\> 4, 4.5 -\> 4, -3.5 -\> -4, -4.5 -\> -4 |
+| HALF\_TO\_ODD           | Round ties to nearest odd integer                                                    | 3.5 -\> 3, 4.5 -\> 5, -3.5 -\> -3, -4.5 -\> -5 |
+
+
+
+
+下表分别举例说明了 `ndigits`（用于 `round` 和
+`round_binary` 函数）和 `multiple`（用于 `round_to_multiple`）如何影响所执行的运算。
+
+
+| Round `multiple` | Round `ndigits` | Operation performed       |
+|------------------|-----------------|---------------------------|
+| 1                | 0               | Round to integer          |
+| 0.001            | 3               | Round to 3 decimal places |
+| 10               | -1              | Round to multiple of 10   |
+| 2                | NA              | Round to multiple of 2    |
+
+
+#### 对数函数
+
+还支持对数函数，并且还提供 `_checked`变体，用于在需要时检查域错误。
+
+接受十进制值，但首先将其转换为 Float64。
+
+
+| Function name  | Arity  | Input types             | Output type     |
+|----------------|--------|-------------------------|-----------------|
+| ln             | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| ln\_checked    | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| log10          | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| log10\_checked | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| log1p          | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| log1p\_checked | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| log2           | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| log2\_checked  | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| logb           | Binary | Float32/Float64/Decimal | Float32/Float64 |
+| logb\_checked  | Binary | Float32/Float64/Decimal | Float32/Float64 |
+
+
+#### 三角函数
+
+还支持三角函数，并提供 `_checked`
+变体，用于在需要时检查域错误。
+
+接受十进制值，但首先将其转换为 Float64。
+
+
+| Function name | Arity  | Input types             | Output type     |
+|---------------|--------|-------------------------|-----------------|
+| acos          | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| acos\_checked | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| asin          | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| asin\_checked | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| atan          | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| atan2         | Binary | Float32/Float64/Decimal | Float32/Float64 |
+| cos           | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| cos\_checked  | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| sin           | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| sin\_checked  | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| tan           | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+| tan\_checked  | Unary  | Float32/Float64/Decimal | Float32/Float64 |
+
+
+#### 双曲三角函数
+
+还支持双曲三角函数，并且在适用的情况下，还提供`_checked`变体，用于检查域错误（如果需要）。
+
+接受十进制值，但首先转换为Float64。
+
+| Function name  | Arity | Input types             | Output type     |
+|----------------|-------|-------------------------|-----------------|
+| acosh          | Unary | Float32/Float64/Decimal | Float32/Float64 |
+| acosh\_checked | Unary | Float32/Float64/Decimal | Float32/Float64 |
+| asinh          | Unary | Float32/Float64/Decimal | Float32/Float64 |
+| atanh          | Unary | Float32/Float64/Decimal | Float32/Float64 |
+| atanh\_checked | Unary | Float32/Float64/Decimal | Float32/Float64 |
+| cosh           | Unary | Float32/Float64/Decimal | Float32/Float64 |
+| sinh           | Unary | Float32/Float64/Decimal | Float32/Float64 |
+| tanh           | Unary | Float32/Float64/Decimal | Float32/Float64 |
+
+
+#### 比较函数
+
+这些函数需要两个数字类型的输入（在这种情况下，它们将在比较之前转换为`通用数字类型 <common-numeric-type>`），或两个
+二进制或字符串类型的输入，或两个时间类型的输入。如果任何输入是字典编码的，它将被扩展以进行比较。如果一对中的任何输入元素为空，
+则相应的输出元素为空。十进制参数将以与`add`和`subtract`相同的方式提升。
+
+
+| Function names | Arity  | Input types                                | Output type |
+|----------------|--------|--------------------------------------------|-------------|
+| equal          | Binary | Numeric, Temporal, Binary- and String-like | Boolean     |
+| greater        | Binary | Numeric, Temporal, Binary- and String-like | Boolean     |
+| greater\_equal | Binary | Numeric, Temporal, Binary- and String-like | Boolean     |
+| less           | Binary | Numeric, Temporal, Binary- and String-like | Boolean     |
+| less\_equal    | Binary | Numeric, Temporal, Binary- and String-like | Boolean     |
+| not\_equal     | Binary | Numeric, Temporal, Binary- and String-like | Boolean     |
+
+
+
+这些函数接受任意数量的数字类型输入（在这种情况下，它们将在比较之前转换为`通用数字类型 <common-numeric-type>`）或时间
+类型输入。如果任何输入是字典编码的，它将被扩展以用于比较。
+
+| Function names   | Arity      | Input types                                 | Output type         | Options class                         | Notes |
+|--------------------|---------|--------------------------------------------------------|----------|------------------------------------------|-------|
+| max_element_wise | Varargs    | Numeric, Temporal, Binary- and String-like  | Numeric or Temporal | :struct:`ElementWiseAggregateOptions` | \(1)  |
+| min_element_wise | Varargs    | Numeric, Temporal, Binary- and String-like  | Numeric or Temporal | :struct:`ElementWiseAggregateOptions` | \(1)  |
+
+- \(1) 默认情况下，会跳过空值（但可以配置内核以传播空值）。对于浮点值，NaN 将取代空值，但不会取代任何其他值。对于二进制和字符串类值，仅支持相同类型参数。
+
+#### 逻辑函数
+
+这些函数的正常行为是，如果任何输入为空，则发出一个空值（类似于浮点计算中“NaN”的语义）。
+
+其中一些也可用于 [Kleene 逻辑](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics) 变体（后缀为 `_kleene`），其中 null 被视为“未定义”。
+
+例如，这是 SQL 系统以及 R 和 Julia 中使用的 null 的解释。
+
+因此，对于 Kleene 逻辑变体：
+
+- “true AND null”、“null AND true” 给出“null”（结果为
+未定义）
+- “true OR null”、“null OR true” 给出“true”
+- “false AND null”、“null AND false” 给出“false”
+- “false OR null”、“null OR false” 给出“null”（结果为
+未定义）
+
+| Function name  | Arity  | Input types | Output type |
+|----------------|--------|-------------|-------------|
+| and            | Binary | Boolean     | Boolean     |
+| and_kleene     | Binary | Boolean     | Boolean     |
+| and_not        | Binary | Boolean     | Boolean     |
+| and_not_kleene | Binary | Boolean     | Boolean     |
+| invert         | Unary  | Boolean     | Boolean     |
+| or             | Binary | Boolean     | Boolean     |
+| or_kleene      | Binary | Boolean     | Boolean     |
+| xor            | Binary | Boolean     | Boolean     |
+
+#### 字符串谓词
+
+这些函数根据输入字符串元素的字符内容对其进行分类。空字符串元素在输出中发出 false。
+对于函数的 ASCII 变体（前缀为 `ascii_`），包含非 ASCII 字符的字符串元素在输出中发出 false。
+
+第一组函数以每个字符为基础进行操作，
+如果输入仅包含给定类别的字符，则在输出中发出 true：
+
+
+| Function name      | Arity | Input types | Output type | Matched character class | Notes |
+|--------------------|-------|-------------|-------------|-------------------------|-------|
+| ascii_is_alnum     | Unary | String-like | Boolean     | Alphanumeric ASCII      |       |
+| ascii_is_alpha     | Unary | String-like | Boolean     | Alphabetic ASCII        |       |
+| ascii_is_decimal   | Unary | String-like | Boolean     | Decimal ASCII           | \(1)  |
+| ascii_is_lower     | Unary | String-like | Boolean     | Lowercase ASCII         | \(2)  |
+| ascii_is_printable | Unary | String-like | Boolean     | Printable ASCII         |       |
+| ascii_is_space     | Unary | String-like | Boolean     | Whitespace ASCII        |       |
+| ascii_is_upper     | Unary | String-like | Boolean     | Uppercase ASCII         | \(2)  |
+| utf8_is_alnum      | Unary | String-like | Boolean     | Alphanumeric Unicode    |       |
+| utf8_is_alpha      | Unary | String-like | Boolean     | Alphabetic Unicode      |       |
+| utf8_is_decimal    | Unary | String-like | Boolean     | Decimal Unicode         |       |
+| utf8_is_digit      | Unary | String-like | Boolean     | Unicode digit           | \(3)  |
+| utf8_is_lower      | Unary | String-like | Boolean     | Lowercase Unicode       | \(2)  |
+| utf8_is_numeric    | Unary | String-like | Boolean     | Numeric Unicode         | \(4)  |
+| utf8_is_printable  | Unary | String-like | Boolean     | Printable Unicode       |       |
+| utf8_is_space      | Unary | String-like | Boolean     | Whitespace Unicode      |       |
+| utf8_is_upper      | Unary | String-like | Boolean     | Uppercase Unicode       | \(2)  |
+
+
+- \(1) 还匹配所有数字 ASCII 字符和所有 ASCII 数字。
+- \(2) 非大小写字符（如标点符号）不匹配。
+- \(3) 目前与 `utf8_is_decimal` 相同。
+- \(4) 与 `utf8_is_decimal` 不同，非十进制数字字符也匹配。
+
+第二组函数还考虑字符串元素中的字符顺序：
+
+
+| Function name            | Arity      | Input types        | Output type         | Notes   |
+|--------------------------|------------|--------------------|---------------------|---------|
+| ascii_is_title           | Unary      | String-like        | Boolean             | \(1)    |
+| utf8_is_title            | Unary      | String-like        | Boolean             | \(1)    |
+
+
+- \(1) 当且仅当输入字符串元素为标题大小写时，输出为真，即任何单词都以大写字母开头，后跟小写字母。单词边界由非大小写字符定义。
+
+第三组函数以逐字节为基础检查字符串元素：
+
+
+| Function name   | Arity | Input types | Output type | Notes |
+|-----------------|-------|-------------|-------------|-------|
+| string_is_ascii | Unary | String-like | Boolean     | \(1)  |
+
+
+- \(1) 当且仅当输入字符串元素仅包含 ASCII 字符（即仅包含 \[0, 127\] 内的字节）时，输出为真。
+
+#### String transforms
+
+
+
+| Function name           | Arity  | Input types                             | Output type            | Options class                     | Notes |
+|-------------------------|--------|-----------------------------------------|------------------------|-----------------------------------|-------|
+| ascii_capitalize        | Unary  | String-like                             | String-like            |                                   | \(1)  |
+| ascii_lower             | Unary  | String-like                             | String-like            |                                   | \(1)  |
+| ascii_reverse           | Unary  | String-like                             | String-like            |                                   | \(2)  |
+| ascii_swapcase          | Unary  | String-like                             | String-like            |                                   | \(1)  |
+| ascii_title             | Unary  | String-like                             | String-like            |                                   | \(1)  |
+| ascii_upper             | Unary  | String-like                             | String-like            |                                   | \(1)  |
+| binary_length           | Unary  | Binary- or String-like                  | Int32 or Int64         |                                   | \(3)  |
+| binary_repeat           | Binary | Binary/String (Arg 0); Integral (Arg 1) | Binary- or String-like |                                   | \(4)  |
+| binary_replace_slice    | Unary  | String-like                             | Binary- or String-like | :struct:`ReplaceSliceOptions`     | \(5)  |
+| binary_reverse          | Unary  | Binary                                  | Binary                 |                                   | \(6)  |
+| replace_substring       | Unary  | String-like                             | String-like            | :struct:`ReplaceSubstringOptions` | \(7)  |
+| replace_substring_regex | Unary  | String-like                             | String-like            | :struct:`ReplaceSubstringOptions` | \(8)  |
+| utf8_capitalize         | Unary  | String-like                             | String-like            |                                   | \(9)  |
+| utf8_length             | Unary  | String-like                             | Int32 or Int64         |                                   | \(10) |
+| utf8_lower              | Unary  | String-like                             | String-like            |                                   | \(9)  |
+| utf8_replace_slice      | Unary  | String-like                             | String-like            | :struct:`ReplaceSliceOptions`     | \(7)  |
+| utf8_reverse            | Unary  | String-like                             | String-like            |                                   | \(11) |
+| utf8_swapcase           | Unary  | String-like                             | String-like            |                                   | \(9)  |
+| utf8_title              | Unary  | String-like                             | String-like            |                                   | \(9)  |
+| utf8_upper              | Unary  | String-like                             | String-like            |                                   | \(9)  |
+
+- \(1) 输入中的每个 ASCII 字符都转换为小写或
+大写。非 ASCII 字符保持不变。
+- \(2) ASCII 输入与输出相反。如果存在非 ASCII 字符，则将返回 `Invalid` `Status`。
+- \(3) 输出是每个输入元素的物理长度（以字节为单位）。输出
+类型为二进制/字符串的 Int32，大型二进制/大型字符串的 Int64。
+- \(4) 重复输入二进制字符串给定次数。
+- \(5) 将子字符串的切片从
+`ReplaceSliceOptions::start`
+(含) 替换为 `ReplaceSliceOptions::stop`
+(不含)，替换为
+`ReplaceSubstringOptions::replacement` 。
+二进制内核以字节为单位测量切片，而 UTF8 内核以代码单元为单位测量切片。
+- \(6) 执行字节级反转。
+- \(7) 替换与匹配的非重叠子字符串
+`ReplaceSubstringOptions::pattern` 由
+`ReplaceSubstringOptions::replacement` 实现。
+如果 `ReplaceSubstringOptions::max_replacements`
+!= -1，则确定进行的最大替换次数，从左侧开始计数。
+- \(8) 使用 Google RE2 库，通过
+`ReplaceSubstringOptions::replacement` 替换与正则表达式 `ReplaceSubstringOptions::pattern` 匹配的非重叠子字符串。如果
+`ReplaceSubstringOptions::max_replacements` != -1，则确定进行的最大替换次数，从左侧开始计数。请注意，如果模式包含组，则可以使用反向引用。
+- \(9) 输入中的每个 UTF8 编码字符都转换为小写或大写。
+- \(10) 输出是每个输入元素的字符数（而非字节数）。对于字符串，输出类型为 Int32；对于 LargeString，输出类型为 Int64。
+- \(11) 每个 UTF8 编码的代码单元都以相反的顺序写入输出。如果输入不是有效的 UTF8，则输出未定义（但输出缓冲区的大小将保留）。
+
+#### 字符串填充
+
+这些函数附加/添加给定的填充字节 (ASCII) 或代码点
+(UTF8)，以便将字符串居中 (center)、右对齐 (lpad) 或左对齐
+(rpad)。
+
+
+| Function name            | Arity      | Input types             | Output type         | Options class                          |
+|--------------------------|------------|------------------------|---------------------|----------------------------------------|
+| ascii_center             | Unary      | String-like             | String-like         | :struct:`PadOptions`                   |
+| ascii_lpad               | Unary      | String-like             | String-like         | :struct:`PadOptions`                   |
+| ascii_rpad               | Unary      | String-like             | String-like         | :struct:`PadOptions`                   |
+| utf8_center              | Unary      | String-like             | String-like         | :struct:`PadOptions`                   |
+| utf8_lpad                | Unary      | String-like             | String-like         | :struct:`PadOptions`                   |
+| utf8_rpad                | Unary      | String-like             | String-like         | :struct:`PadOptions`                   |
+
+
+#### 字符串修剪
+
+这些函数会修剪两侧 (trim) 或左侧 (ltrim) 或右侧 (rtrim) 的字符。
+
+
+| Function name            | Arity      | Input types             | Output type         | Options class                          | Notes   |
+|--------------------------|------------|-------------------------|---------------------|----------------------------------------|---------|
+| ascii_ltrim              | Unary      | String-like             | String-like         | :struct:`TrimOptions`                  | \(1)    |
+| ascii_ltrim_whitespace   | Unary      | String-like             | String-like         |                                        | \(2)    |
+| ascii_rtrim              | Unary      | String-like             | String-like         | :struct:`TrimOptions`                  | \(1)    |
+| ascii_rtrim_whitespace   | Unary      | String-like             | String-like         |                                        | \(2)    |
+| ascii_trim               | Unary      | String-like             | String-like         | :struct:`TrimOptions`                  | \(1)    |
+| ascii_trim_whitespace    | Unary      | String-like             | String-like         |                                        | \(2)    |
+| utf8_ltrim               | Unary      | String-like             | String-like         | :struct:`TrimOptions`                  | \(3)    |
+| utf8_ltrim_whitespace    | Unary      | String-like             | String-like         |                                        | \(4)    |
+| utf8_rtrim               | Unary      | String-like             | String-like         | :struct:`TrimOptions`                  | \(3)    |
+| utf8_rtrim_whitespace    | Unary      | String-like             | String-like         |                                        | \(4)    |
+| utf8_trim                | Unary      | String-like             | String-like         | :struct:`TrimOptions`                  | \(3)    |
+| utf8_trim_whitespace     | Unary      | String-like             | String-like         |                                        | \(4)    |
+
+
+- \(1) 仅会修剪掉
+`TrimOptions::characters` 中指定的字符。输入字符串和 `characters` 参数均被解释为 ASCII 字符。
+- \(2) 仅会修剪掉 ASCII 空格字符（“\t”、“\n”、“\v”、“\f”、“\r”和“ ”）。
+- \(3) 仅会修剪掉
+`TrimOptions::characters` 中指定的字符。
+- \(4) 仅会修剪掉 Unicode 空格字符。
+
+#### 字符串分割
+
+这些函数将字符串拆分为字符串列表。所有内核都可以选择配置 `max_splits` 和 `reverse` 参数，其中 `max_splits == -1` 表示无限制（默认值）。当 `reverse` 为真时，拆分从字符串末尾开始；这仅在给定正 `max_splits` 时才有意义。
+
+
+| Function name            | Arity      | Input types             | Output type       | Options class                    | Notes   |
+|--------------------------|------------|-------------------------|-------------------|----------------------------------|---------|
+| ascii_split_whitespace   | Unary      | String-like             | List-like         | :struct:`SplitOptions`           | \(1)    |
+| split_pattern            | Unary      | Binary- or String-like  | List-like         | :struct:`SplitPatternOptions`    | \(2)    |
+| split_pattern_regex      | Unary      | Binary- or String-like  | List-like         | :struct:`SplitPatternOptions`    | \(3)    |
+| utf8_split_whitespace    | Unary      | String-like             | List-like         | :struct:`SplitOptions`           | \(4)    |
+
+
+- \(1) 长度非零的 ASCII 定义空白字节序列
+(`'\t'`、`'\n'`、`'\v'`、`'\f'`、`'\r'` 和 `' '`) 被视为分隔符。
+- \(2) 当找到精确模式时，字符串会被拆分（模式
+本身不包含在输出中）。
+- \(3) 当找到正则表达式匹配时，字符串会被拆分（匹配的
+子字符串本身不包含在输出中）。
+- \(4) 长度非零的 Unicode 定义空白代码点序列
+被视为分隔符。
+
+#### 字符串成分提取
+
+
+| Function name | Arity | Input types            | Output type | Options class                 | Notes |
+|---------------|-------|------------------------|-------------|-------------------------------|-------|
+| extract_regex | Unary | Binary- or String-like | Struct      | :struct:`ExtractRegexOptions` | \(1)  |
+
+
+- \(1) 使用 Google RE2 库提取由正则表达式定义的子字符串。输出结构字段名称引用命名的捕获组，例如正则表达式`(?P<letter>[ab])(?P<digit>\\d)` 的 \'letter\' 和 \'digit\'。
+
+#### String joining
+
+这些函数执行字符串拆分的逆操作。
+
+
+| Function name            | Arity   | Input type 1                     | Input type 2           | Output type            | Options class         | Notes   |
+|--------------------------|---------|----------------------------------|------------------------|------------------------|-----------------------|---------|
+| binary_join              | Binary  | List of Binary- or String-like   | String-like            | String-like            |                       | \(1)    |
+| binary_join_element_wise | Varargs | Binary- or String-like (varargs) | Binary- or String-like | Binary- or String-like | :struct:`JoinOptions` | \(2)    |
+
+- \(1) 第一个输入必须是数组，而第二个输入可以是标量
+或数组。第一个输入中的每个值列表使用每个
+第二个输入作为分隔符进行连接。如果任何输入列表为空或包含空值，则
+相应的输出将为空。
+- \(2) 所有参数按元素连接，最后一个参数
+被视为分隔符（无论哪种情况，标量都会被回收）。空分隔符发出空值。如果任何其他参数为空，则默认情况下
+相应的输出将为空，但可以跳过
+或用给定的字符串替换它。
+
+#### 字符串切片
+
+此函数根据起始和终止索引以及非零步长（默认为 1）将数组的每个序列转换为子序列。切片语义遵循 Python 切片语义：起始索引包括在内，终止索引不包括在内；如果步长为负，则按相反顺序执行序列。
+
+
+| Function name            | Arity      | Input types             | Output type             | Options class            | Notes   |
+|--------------------------|------------|-------------------------|-------------------------|--------------------------|---------|
+| binary_slice             | Unary      | Binary-like             | Binary-like             | :struct:`SliceOptions`   | \(1)    |
+| utf8_slice_codeunits     | Unary      | String-like             | String-like             | :struct:`SliceOptions`   | \(2)    |
+
+
+- \(1) 将字符串切片为由 `SliceOptions` 定义的 (`start`, `stop`, `step`) 子字符串，其中
+`start` 和 `stop` 以字节为单位。空输入将发出空值。
+- \(2) 将字符串切片为由 `SliceOptions` 定义的 (`start`, `stop`, `step`) 子字符串，其中
+`start` 和 `stop` 以代码单位为单位。空输入将发出空值。
+
+#### 遏制测试
+
+
+| Function name         | Arity | Input types                       | Output type    | Options class                   | Notes |
+|-----------------------|-------|-----------------------------------|----------------|---------------------------------|-------|
+| count_substring       | Unary | Binary- or String-like            | Int32 or Int64 | :struct:`MatchSubstringOptions` | \(1)  |
+| count_substring_regex | Unary | Binary- or String-like            | Int32 or Int64 | :struct:`MatchSubstringOptions` | \(1)  |
+| ends_with             | Unary | Binary- or String-like            | Boolean        | :struct:`MatchSubstringOptions` | \(2)  |
+| find_substring        | Unary | Binary- and String-like           | Int32 or Int64 | :struct:`MatchSubstringOptions` | \(3)  |
+| find_substring_regex  | Unary | Binary- and String-like           | Int32 or Int64 | :struct:`MatchSubstringOptions` | \(3)  |
+| index_in              | Unary | Boolean, Null, Numeric, Temporal, | Int32          | :struct:`SetLookupOptions`      | \(4)  |
+|                       |       | Binary- and String-like           |                |                                 |       |
+| is_in                 | Unary | Boolean, Null, Numeric, Temporal, | Boolean        | :struct:`SetLookupOptions`      | \(5)  |
+|                       |       | Binary- and String-like           |                |                                 |       |
+| match_like            | Unary | Binary- or String-like            | Boolean        | :struct:`MatchSubstringOptions` | \(6)  |
+| match_substring       | Unary | Binary- or String-like            | Boolean        | :struct:`MatchSubstringOptions` | \(7)  |
+| match_substring_regex | Unary | Binary- or String-like            | Boolean        | :struct:`MatchSubstringOptions` | \(8)  |
+| starts_with           | Unary | Binary- or String-like            | Boolean        | :struct:`MatchSubstringOptions` | \(2)  |
+
+
+- \(1) 输出是相应输入字符串中
+
+`MatchSubstringOptions::pattern` 出现的次数。输出类型为 Int32（二进制/字符串），
+LargeBinary/LargeString 的 Int64。
+
+- \(2) 当且仅当
+`MatchSubstringOptions::pattern` 是相应输入的
+后缀/前缀时，输出为真。
+
+- \(3) 输出是相应输入字符串中
+`MatchSubstringOptions::pattern` 第一次出现的索引，否则为 -1。输出类型为 Int32（二进制/字符串），
+LargeBinary/LargeString 的 Int64。
+
+- \(4) 输出是
+`SetLookupOptions::value_set` 中相应输入元素的索引（如果在
+`SetLookupOptions::value_set` 中找到）。否则，输出为空。
+- \(5) 当且仅当相应的输入元素等于 `SetLookupOptions::value_set`
+
+中的一个元素时，输出为真。
+
+- \(6) 当且仅当 SQL 样式的 LIKE 模式
+`MatchSubstringOptions::pattern`
+完全匹配相应的输入元素时，输出为真。也就是说，`%` 将匹配任意数量的字符，`_` 将精确匹配一个字符，而任何其他字符都与其自身匹配。要匹配文字百分号或
+下划线，请在字符前加上反斜杠。
+
+- \(7) 当且仅当`MatchSubstringOptions::pattern`
+是相应输入元素的子字符串时，输出为真。
+
+- \(8) 当且仅当`MatchSubstringOptions::pattern`
+在任意位置匹配相应的输入元素时，输出为真。
+
+#### Categorizations
+
+
+| Function name     | Arity      | Input types             | Output type         | Options class          | Notes   |
+|-------------------|------------|-------------------------|---------------------|------------------------|---------|
+| is_finite         | Unary      | Null, Numeric           | Boolean             |                        | \(1)    |
+| is_inf            | Unary      | Null, Numeric           | Boolean             |                        | \(2)    |
+| is_nan            | Unary      | Null, Numeric           | Boolean             |                        | \(3)    |
+| is_null           | Unary      | Any                     | Boolean             | :struct:`NullOptions`  | \(4)    |
+| is_valid          | Unary      | Any                     | Boolean             |                        | \(5)    |
+| true_unless_null  | Unary      | Any                     | Boolean             |                        | \(6)    |
+
+
+- \(1) 当且仅当相应的输入元素是有限的（既不是无穷大、-无穷大也不是 NaN），则输出为真。因此，对于十进制和整数输入，这始终返回真。
+- \(2) 当且仅当相应的输入元素是无穷大/-无穷大，则输出为真。因此，对于十进制和整数输入，这始终返回假。
+- \(3) 当且仅当相应的输入元素是 NaN，则输出为真。因此，对于十进制和整数输入，这始终返回假。
+- \(4) 当且仅当相应的输入元素为空，则输出为真。通过设置`NullOptions::nan_is_null`，NaN 值也可以被视为空。
+- \(5) 当且仅当相应的输入元素非空，则输出为真，否则为假。
+-
+
+（6）当且仅当相应的输入元素非空时，输出为真，否则为空。
+主要用于表达简化/保证。
+
+#### 选择/多路复用 {#cpp-compute-scalar-selections}
+
+对于输入值的每个“行”，这些函数根据条件发出其中一个输入值。
+
+
+| Function name    | Arity      | Input types                                       | Output type         | Notes   |
+|------------------|------------|---------------------------------------------------|---------------------|---------|
+| case_when        | Varargs    | Struct of Boolean (Arg 0), Any (rest)             | Input type          | \(1)    |
+| choose           | Varargs    | Integral (Arg 0), Fixed-width/Binary-like (rest)  | Input type          | \(2)    |
+| coalesce         | Varargs    | Any                                               | Input type          | \(3)    |
+| if_else          | Ternary    | Boolean (Arg 0), Any (rest)                       | Input type          | \(4)    |
+
+
+- \(1) 此函数的作用类似于 SQL \“case when\”语句或
+switch-case。输入是 \“条件\”值，它是布尔结构，后跟每个 \“分支\”的值。条件结
+构的每个子项必须只有一个值参数，或者值参数比子项多一个（在这种情况下，我们
+有 \“else\”或 \“default\”值）。输出与值输入的类型相同；每行将是第一个布尔值为真值的值
+数据的对应值，或\“default\”输入的对应值，否则为空。
+
+请注意，目前虽然支持所有类型，但字典将被解包。
+
+- \(2) 第一个输入必须是整数类型。其余参数可以是任何类型，但必须全部为同一类型或可升级为通用类型。第一个输入的每个值（“索引”）用作
+其余参数的从零开始的索引（即索引 0 是第二个参数，索引 1 是第三个参数，等等），并且该行的输出值将是该行所选输入的对应值。如果索引为空，则输出也将为空。
+- \(3) 输出的每一行将是该行第一个输入的对应值，该值非空，否则为空。
+- \(4) 第一个输入必须是布尔标量或数组。第二个和第三个输入可以是标量或数组，并且必须是同一类型。输出
+是与第二/第三个输入相同类型的数组（如果所有输入都是标量，则为标量）。如果第一个输入上存在空值，则它们将被提升到输出，否则将根据第一个输入值选择空值。
+
+另请参阅：
+`replace_with_mask <cpp-compute-vector-replace-functions>`。
+
+#### 结构变换
+
+
+| Function name       | Arity      | Input types | Output type      | Options class                | Notes  |
+|---------------------|------------|-------------|------------------|------------------------------|--------|
+| list_value_length   | Unary      | List-like   | Int32 or Int64   |                              | \(1)   |
+| make_struct         | Varargs    | Any         | Struct           | :struct:`MakeStructOptions`  | \(2)   |
+
+
+- \(1) 每个输出元素的长度等于相应输入元素的长度
+（如果输入为空，则为空）。对于 List、ListView 和
+FixedSizeList，输出类型为 Int32；对于 LargeList 和 LargeListView，输出类型为 Int64。
+- \(2) 输出结构的字段类型是其参数的类型。字段名称使用
+`MakeStructOptions` 的实例指定。如果所有输入都是标量，则输出形状
+将为标量，否则任何标量都将广播到数组。
+
+#### 转换
+
+提供了一个名为“cast”的通用转换函数，它接受大量输入和输出类型。要转换的类型可以在“CastOptions”实例
+中传递。或者，具体函数“~alkaid::compute::Cast”也提供相同的服务。
+
+
+| Function name   | Arity      | Input types        | Output type      | Options class                  | Notes |
+|-----------------|------------|--------------------|------------------|--------------------------------|-------|
+| ceil_temporal   | Unary      | Temporal           | Temporal         | :struct:`RoundTemporalOptions` |       |
+| floor_temporal  | Unary      | Temporal           | Temporal         | :struct:`RoundTemporalOptions` |       |
+| round_temporal  | Unary      | Temporal           | Temporal         | :struct:`RoundTemporalOptions` |       |
+| cast            | Unary      | Many               | Variable         | :struct:`CastOptions`          |       |
+| strftime        | Unary      | Temporal           | String           | :struct:`StrftimeOptions`      | \(1)  |
+| strptime        | Unary      | String-like        | Timestamp        | :struct:`StrptimeOptions`      |       |
+
+
+可以使用 `cast` 进行的转换如下所示。在所有情况下，
+
+空输入值都将转换为空输出值。
+
+- \(1) `%S`（秒）标志的输出精度取决于输入的
+
+时间戳精度。具有秒精度的时间戳表示为
+
+整数，而毫秒、微秒和纳秒分别表示为具有 3、6 和 9 个小数位的固定浮点数。要获得整数秒，请转
+换为具有秒精度的时间戳。小数点的字符根据语言环境进行本地化。有关其他标志的描
+述，请参阅[详细格式文档](https://howardhinnant.github.io/date/date.html#to_stream_formatting)。
+
+**Truth value extraction**
+
+
+| Input type                  | Output type                        | Notes        |
+|-----------------------------|------------------------------------|--------------|
+| Binary- and String-like     | Boolean                            | \(1)         |
+| Numeric                     | Boolean                            | \(2)         |
+
+
+- \(1) 当且仅当相应的输入值具有非零长度时，输出为真。
+- \(2) 当且仅当相应的输入值非零时，输出为真。
+
+**同类转换**
+
+
+| Input type                  | Output type                        | Notes        |
+|-----------------------------|------------------------------------|--------------|
+| Int32                       | 32-bit Temporal                    | \(1)         |
+| Int64                       | 64-bit Temporal                    | \(1)         |
+| (Large)Binary               | (Large)String                      | \(2)         |
+| (Large)String               | (Large)Binary                      | \(3)         |
+| Numeric                     | Numeric                            | \(4) \(5)    |
+| 32-bit Temporal             | Int32                              | \(1)         |
+| 64-bit Temporal             | Int64                              | \(1)         |
+| Temporal                    | Temporal                           | \(4) \(5)    |
+
+- \(1) 无操作转换：原始值保持不变，仅更改类型。
+- \(2) 如果`CastOptions::allow_invalid_utf8` 为
+false，则验证内容。
+- \(3) 无操作转换：仅更改类型。
+- \(4) 根据给定的`CastOptions`启用溢出和截断检查。
+- \(5) 并非所有此类转换都已实现。
+
+**字符串表示**
+
+
+| Input type                  | Output type                        | Notes   |
+|-----------------------------|------------------------------------|---------|
+| Boolean                     | String-like                        |         |
+| Numeric                     | String-like                        |         |
+
+
+**通用转换**
+
+
+| Input type                  | Output type                        | Notes   |
+|-----------------------------|------------------------------------|---------|
+| Dictionary                  | Dictionary value type              | \(1)    |
+| Extension                   | Extension storage type             |         |
+| Struct                      | Struct                             | \(2)    |
+| List-like                   | List-like or (Large)ListView       | \(3)    |
+| (Large)ListView             | List-like or (Large)ListView       | \(4)    |
+| Map                         | Map or List of two-field struct    | \(5)    |
+| Null                        | Any                                |         |
+| Any                         | Extension                          | \(6)    |
+
+- \(1) 字典索引不变，字典值从输入值类型转换为输出值类型（如果可以转换）。
+- \(2) 输出类型的字段名称必须与输入类型的字段名称相同或为子集；它们还必须具有相同的顺序。
+转换为字段名称的子集\“选择\”这些字段，使得每个输出字段都与具有相同名称的输入字段的数据匹配。
+- \(3) 列表偏移量不变，列表值从输入值类型转换为输出值类型（如果可以转换）。如果输出类型为（大）ListView，则大小从偏移量得出。
+- \(4) 如果输出类型为列表类型，则可能必须重建偏移量（因此，值数组）以进行充分排序和间隔。如果
+输出类型是列表视图类型，则偏移量和大小保持不变。在任何情况下，列表值都会从输入值类型转换为
+输出值类型（如果可以进行转换）。
+- \(5) 偏移量保持不变，键和值会从相应的
+输入转换为
+输出类型（如果可以进行转换）。如果输出类型是
+结构列表，则无论选择的字段名称是什么，键字段都会作为第一个字段输出，而值字段则会作为第二个字段输出。
+- \(6) 任何可以转换为结果扩展的
+存储类型的输入类型。这不包括扩展类型，除非转换为
+相同的扩展类型。
+
+#### 时间成分提取
+
+这些函数从时间类型中提取日期时间组件（年、月、日等）。对于时区非空的时间戳输入，将返回本地化的时间戳组件。
+
+
+| Function name      | Arity      | Input types       | Output type   | Options class              | Notes |
+|--------------------|------------|-------------------|---------------|----------------------------|-------|
+| day                | Unary      | Temporal          | Int64         |                            |       |
+| day_of_week        | Unary      | Temporal          | Int64         | :struct:`DayOfWeekOptions` | \(1)  |
+| day_of_year        | Unary      | Temporal          | Int64         |                            |       |
+| hour               | Unary      | Timestamp, Time   | Int64         |                            |       |
+| is_dst             | Unary      | Timestamp         | Boolean       |                            |       |
+| iso_week           | Unary      | Temporal          | Int64         |                            | \(2)  |
+| iso_year           | Unary      | Temporal          | Int64         |                            | \(2)  |
+| iso_calendar       | Unary      | Temporal          | Struct        |                            | \(3)  |
+| is_leap_year       | Unary      | Timestamp, Date   | Boolean       |                            |       |
+| microsecond        | Unary      | Timestamp, Time   | Int64         |                            |       |
+| millisecond        | Unary      | Timestamp, Time   | Int64         |                            |       |
+| minute             | Unary      | Timestamp, Time   | Int64         |                            |       |
+| month              | Unary      | Temporal          | Int64         |                            |       |
+| nanosecond         | Unary      | Timestamp, Time   | Int64         |                            |       |
+| quarter            | Unary      | Temporal          | Int64         |                            |       |
+| second             | Unary      | Timestamp, Time   | Int64         |                            |       |
+| subsecond          | Unary      | Timestamp, Time   | Float64       |                            |       |
+| us_week            | Unary      | Temporal          | Int64         |                            | \(4)  |
+| us_year            | Unary      | Temporal          | Int64         |                            | \(4)  |
+| week               | Unary      | Timestamp         | Int64         | :struct:`WeekOptions`      | \(5)  |
+| year               | Unary      | Temporal          | Int64         |                            |       |
+| year_month_day     | Unary      | Temporal          | Struct        |                            | \(6)  |
+
+
+- \(1) 输出星期几的数字。默认情况下，星期从星期一开始，用 0 表示，到星期日结束，用 6 表示。根据`DayOfWeekOptions::count_from_zero` 参
+数，星期数可以从 0 或 1 开始。`DayOfWeekOptions::week_start` 可用于设置星期的起始日，使用 ISO 惯例（星期一 = 1，星期日 = 7）。
+`DayOfWeekOptions::week_start` 参数不受`DayOfWeekOptions::count_from_zero` 的影响。
+- \(2) 第一个 ISO 周的大多数天数（4 天或以上）都在一月。ISO 年份从第一个 ISO 周开始。ISO 周从星期一开始。有关更多详细信息，请
+参阅 [ISO 8601 周日期定义](https://en.wikipedia.org/wiki/ISO_week_date#First_week)。
+- \(3) 输出是
+`{"iso_year": 输出类型, "iso_week": 输出类型, "iso_day_of_week": 输出类型}`
+结构。
+- \(4) 美国第一个星期的大多数天数（4 天或以上）都在一月。
+美国年份从美国第一个星期开始。美国星期从星期日开始。
+- \(5) 返回允许设置多个参数的周数。如果`WeekOptions::week_starts_monday`为真，则一周从星期一
+开始，否则如果为假，则从星期日开始。如果`WeekOptions::count_from_zero`为真，则当前年份中属于上一年最后
+一个 ISO 周的日期将编号为第 0 周，否则如果为假，则编号为第 52 或第 53 周。如果`WeekOptions::first_week_is_fully_in_year`为
+真，则第一周（第 1 周）必须完全在一月；否则如果为假，则从 12 月 29 日、30 日或 31 日开始的一周将被视为新年的第一周。
+- \(6) 输出为 `{"year": int64(), "month": int64(), "day": int64()}`
+结构。
+
+#### 时间差异
+
+这些函数计算指定单位内两个时间戳之间的差异。差异由跨越的边界数决定，而不是时间跨度。例如，一天的 23:59:59 和第二天的 00:00:01 之间
+的天数差异是一天（自跨越午夜以来），而不是零天（即使不到 24 小时）。此外，如果时间戳有定义的时区，则差异在当地时区计算。例
+如，“2019-12-31 18:00:00-0500”和“2019-12-31 23:00:00-0500”之间的年数差异为零年，因为当地年份相同，即使 UTC 年份不同。
+
+
+
+| Function name                   | Arity      | Input types       | Output type           | Options class              |
+|---------------------------------|------------|-------------------|-----------------------|----------------------------|
+| day_time_interval_between       | Binary     | Temporal          | DayTime interval      |                            |
+| days_between                    | Binary     | Timestamp, Date   | Int64                 |                            |
+| hours_between                   | Binary     | Temporal          | Int64                 |                            |
+| microseconds_between            | Binary     | Temporal          | Int64                 |                            |
+| milliseconds_between            | Binary     | Temporal          | Int64                 |                            |
+| minutes_between                 | Binary     | Temporal          | Int64                 |                            |
+| month_day_nano_interval_between | Binary     | Temporal          | MonthDayNano interval |                            |
+| month_interval_between          | Binary     | Timestamp, Date   | Month interval        |                            |
+| nanoseconds_between             | Binary     | Temporal          | Int64                 |                            |
+| quarters_between                | Binary     | Timestamp, Date   | Int64                 |                            |
+| seconds_between                 | Binary     | Temporal          | Int64                 |                            |
+| weeks_between                   | Binary     | Timestamp, Date   | Int64                 | :struct:`DayOfWeekOptions` |
+| years_between                   | Binary     | Timestamp, Date   | Int64                 |                            |
+
+
+#### 时区处理
+
+`assume_timezone` 函数用于当外部系统生成需要转换为“时区感知”时间戳的“时区无关”时间戳时（例如，请参阅 Python 文
+档中的 [定义](https://docs.python.org/3/library/datetime.html#aware-and-naive-objects)）。
+
+输入时间戳被假定为相对于 `AssumeTimezoneOptions::timezone` 中给出的时区。它们被转换为 UTC 相对时间戳，并将时区元数据设置为上述值。如果
+时间戳已经设置了时区元数据，则会返回错误。
+
+`local_timestamp` 函数将 UTC 相对时间戳转换为本地“时区无关”时间戳。时区取自输入时间戳的时区元数
+据。此函数是`assume_timezone`的逆函数。请注意：**所有时间函数都已对时间戳进行操作，就好像它们是在元数据提供的时区的本地时间一样**。
+仅当外部系统需要本地时间戳时，才使用`local_timestamp`。
+
+
+| Function name   | Arity | Input types | Output type   | Options class                   | Notes |
+|-----------------|-------|-------------|---------------|---------------------------------|-------|
+| assume_timezone | Unary | Timestamp   | Timestamp     | :struct:`AssumeTimezoneOptions` | \(1)  |
+| local_timestamp | Unary | Timestamp   | Timestamp     |                                 | \(2)  |
+
+
+
+- \(1) 除了时区值之外，
+`AssumeTimezoneOptions` 还允许选择当给定时区中的时间戳不明确或不存在时（由于夏令时转换）的行为。
+
+#### 随机数生成
+
+此函数生成一个均匀分布的双精度数数组，范围在 \[0, 1)。选项提供输出的长度和生成随机数的算法，使用种子或系统提供的、特定于平台的随机生成器。
+
+
+| Function name      | Arity      | Output type   | Options class           |
+|--------------------|------------|---------------|-------------------------|
+| random             | Nullary    | Float64       | :struct:`RandomOptions` |
+
+
+
+### 数组 (\"vector\") 函数
+
+#### 累积函数
+
+累积函数是向量函数，使用给定的二进制关联运算对输入执行运行累积，并输出包含相应中间运行值的数组。输入应为数字类
+型。默认情况下，这些函数不检测溢出。它们还有溢出检查变体，后缀为“_checked”，当检测到溢出时，它会返回“无效”状态。
+
+
+| Function name           | Arity | Input types | Output type | Options class                  | Notes     |
+|-------------------------|-------|-------------|-------------|--------------------------------|-----------|
+| cumulative_sum          | Unary | Numeric     | Numeric     | :struct:`CumulativeOptions`    | \(1)      |
+| cumulative_sum_checked  | Unary | Numeric     | Numeric     | :struct:`CumulativeOptions`    | \(1)      |
+| cumulative_prod         | Unary | Numeric     | Numeric     | :struct:`CumulativeOptions`    | \(1)      |
+| cumulative_prod_checked | Unary | Numeric     | Numeric     | :struct:`CumulativeOptions`    | \(1)      |
+| cumulative_max          | Unary | Numeric     | Numeric     | :struct:`CumulativeOptions`    | \(1)      |
+| cumulative_min          | Unary | Numeric     | Numeric     | :struct:`CumulativeOptions`    | \(1)      |
+| cumulative_mean         | Unary | Numeric     | Float64     | :struct:`CumulativeOptions`    | \(1) \(2) |
+
+
+
+- \(1) CumulativeOptions 有两个可选参数。第一个参数`CumulativeOptions::start` 是运行累积的起始值。对于 `sum`，它的默认
+值为 0，对于 `prod`，它的默认值为 1，对于 `max`，它的输入类型为最小值，对于 `min`，它的输入类型为最大值。指定的 `start` 值必须可
+转换为输入类型。第二个参数`CumulativeOptions::skip_nulls` 是布尔值。设置为 false（默认值）时，将传播遇到的第一个 null。设置
+为 true 时，输入中的每个 null 都会在输出中产生相应的 null，并且不会影响后续累积。
+- \(2) `CumulativeOptions::start` 被忽略。
+
+#### 关联变换
+
+| Function name     | Arity | Input types                       | Output type | Notes |
+|-------------------|-------|-----------------------------------|-------------|-------|
+| dictionary_encode | Unary | Boolean, Null, Numeric, Temporal, Binary- and String-like          | Dictionary  | \(1)  |
+| unique            | Unary | Boolean, Null, Numeric, Temporal, Binary- and String-like          | Input type  | \(2)  |
+| value_counts      | Unary | Boolean, Null, Numeric, Temporal, Binary- and String-like          | Input type  | \(3)  |
+
+
+- \(1) 输出为 `Dictionary(Int32, 输入类型)`。如果输入已经是 Dictionary 数组，则为无操作。
+- \(2) 输出中重复项将被删除，同时保持原始顺序。
+- \(3) 输出为 `{"values": 输入类型，"counts": Int64}` 结构。每个输出元素对应于输入中的唯一值，以及该值出现的次数。
+
+#### 选集
+
+这些函数选择并返回其输入的子集。
+
+
+| Function name       | Arity  | Input type 1   | Input type 2 | Output type         | Options class                       | Notes |
+|---------------------|--------|----------------|--------------|---------------------|-------------------------------------|-------|
+| array_filter        | Binary | Any            | Boolean      | Input type 1        | :struct:`FilterOptions`             | \(2)  |
+| array_take          | Binary | Any            | Integer      | Input type 1        | :struct:`TakeOptions`               | \(3)  |
+| drop_null           | Unary  | Any            |              | Input type 1        |                                     | \(1)  |
+| filter              | Binary | Any            | Boolean      | Input type 1        | :struct:`FilterOptions`             | \(2)  |
+| inverse_permutation | Unary  | Signed Integer |              | Signed Integer \(4) | :struct:`InversePermutationOptions` | \(5)  |
+| scatter             | Binary | Any            | Integer      | Input type 1        | :struct:`ScatterOptions`            | \(6)  |
+| take                | Binary | Any            | Integer      | Input type 1        | :struct:`TakeOptions`               | \(3)  |
+
+
+- \(1) 当且仅当输入中的每个元素非空时，才将其附加到输出。如果输入是记录批次或表，则列中的任何空值都会删除整行。
+- \(2) 当且仅当输入 2（过滤器）中的相应元素为真时，才将输入 1（值）中的每个元素附加到输出。可以使用 FilterOptions 配置过滤器中空值的处理方式。
+- \(3) 对于输入 2（索引）中的每个元素 *i*，输入 1（值）中的第 *i* 个元素将附加到输出。
+- \(4) 输出类型在 `InversePermutationOptions` 中指定。
+- \(5) 对于 *indices\[i\] = x*，*inverse\_permutation\[x\] = i*。并且
+
+如果 *x* 未出现在输入索引中，则 *inverse\_permutation\[x\] = null*。索引必须在 *\[0, max\_index\]* 范围内，或为 null，否则将被忽略。如果多个索引指向同一个值，则使用最后一个索引。
+- \(6) 对于 *indices\[i\] = x*，*output\[x\] = values\[i\]*。并且
+
+如果 *x* 未出现在输入索引中，则 *output\[x\] = null*。索引必须在 *\[0, max\_index\]* 范围内，或为 null，否则将被忽略。如果多个索引指向同一个值，则使用最后一个索引。
+
+#### 遏制测试
+
+此函数返回数组元素非空且非零的索引。
+
+
+| Function name         | Arity | Input types                       | Output type    | Options class                   | Notes |
+|-----------------------|-------|-----------------------------------|----------------|---------------------------------|-------|
+| indices_nonzero       | Unary | Boolean, Null, Numeric, Decimal   | UInt64         |                                 |       |
+#### 排序和分区
+
+默认情况下，在这些函数中，空值被认为大于任何其他值（它们将在数组末尾排序或分区）。浮点 NaN 值被认为大于任何其他非空值，但小于空值。可以使用相应选项类中的 `null_placement` 设置更改此行为。
+
+:::note
+二进制和字符串类输入按字典顺序排列为字节串，即使对于字符串类型也是如此。
+:::
+
+
+| Function name         | Arity      | Input types                                             | Output type       | Options class                 | Notes          |
+|-----------------------|------------|---------------------------------------------------------|-------------------|-------------------------------|----------------|
+| array_sort_indices    | Unary      | Boolean, Numeric, Temporal, Binary- and String-like     | UInt64            | :struct:`ArraySortOptions`    | \(1) \(2)      |
+| partition_nth_indices | Unary      | Boolean, Numeric, Temporal, Binary- and String-like     | UInt64            | :struct:`PartitionNthOptions` | \(3)           |
+| rank                  | Unary      | Boolean, Numeric, Temporal, Binary- and String-like     | UInt64            | :struct:`RankOptions`         | \(4)           |
+| rank_quantile         | Unary      | Boolean, Numeric, Temporal, Binary- and String-like     | Float64           | :struct:`RankQuantileOptions` | \(5)           |
+| select_k_unstable     | Unary      | Boolean, Numeric, Temporal, Binary- and String-like     | UInt64            | :struct:`SelectKOptions`      | \(6) \(7)      |
+| sort_indices          | Unary      | Boolean, Numeric, Temporal, Binary- and String-like     | UInt64            | :struct:`SortOptions`         | \(1) \(6)      |
+
+
+- \(1) 输出是输入中的索引数组，用于定义输入的
+稳定排序。
+- \(2) 输入必须是数组。默认顺序为升序。
+- \(3) 输出是输入数组中的索引数组，用于定义
+部分非稳定排序，使得 *N*\'th 索引指向排序后的
+*N*\'th 元素，并且 *N*\'th 之前的所有索引
+指向小于或等于 *N*\'th 或之后元素的元素
+（类似于 `std::nth_element`）。*N* 在 `PartitionNthOptions::pivot` 中给出。
+- \(4) 输出是基于 1 的数值等级数组。
+- \(5) 输出是严格介于 0 和 1 之间的分位数数组。
+- \(6) 输入可以是数组、分块数组、记录批次或表。如果
+输入是记录批次或表，则必须
+指定一个或多个排序键。
+- \(7) 输出是输入中的索引数组，用于定义输入的
+非稳定排序。
+
+#### 结构变换 {#cpp-compute-vector-structural-transforms}
+
+
+| Function name       | Arity      | Input types                         | Output type      | Options class                | Notes  |
+|---------------------|------------|-------------------------------------|------------------|------------------------------|--------|
+| list_element        | Binary     | List-like (Arg 0), Integral (Arg 1) | List value type  |                              | \(1)   |
+| list_flatten        | Unary      | List-like                           | List value type  |                              | \(2)   |
+| list_parent_indices | Unary      | List-like                           | Int64            |                              | \(3)   |
+| list_slice          | Unary      | List-like                           | List-like        | :struct:`ListSliceOptions`   | \(4)   |
+| map_lookup          | Unary      | Map                                 | Computed         | :struct:`MapLookupOptions`   | \(5)   |
+| struct_field        | Unary      | Struct or Union                     | Computed         | :struct:`StructFieldOptions` | \(6)   |
+
+
+- \(1) 输出是与输入列表数组长度相同的数组。
+
+输出值是每个子列表的指定索引处的值。
+
+- \(2) 删除顶层嵌套：列表子数组中的所有值（包括空值）都附加到输出中。但是，父列表数组中的空值将被丢弃。
+
+- \(3) 对于列表子数组中的每个值，在类似列表的数组中找到它的索引将附加到输出中。如果父数组中的空列表是非空的空列表，则它们可能仍存在于输出中。如果父级是列表视图，则任何非空列表视图未使用的子数组值在输出中为空。
+
+- \(4) 对于每个列表元素，计算该列表元素的切片，然后返回这些切片的另一个类似列表的数组。可以返回固定或可变大小的列表状数组，由提供的选项决定。
+- \(5) 从映射中提取 `FIRST`、`LAST` 或 `ALL` 项，该映射的键与通过选项传递的给定查询键匹配。输出类型是 `FIRST`/`LAST` 选项的项数组和 `ALL` 选项的项列表数组。
+- \(6) 根据选项中传递的索引序列提取子值。结果的有效性位图将是所有中间有效性位图的交集。例如，对于类型为 `struct<a: int32, b: struct<c: int64, d: float64>>` 的数组：
+
+- 空的索引序列将产生未改变的原始值。
+- 索引 `0` 产生一个类型为 `int32` 的数组，其有效性位图是最外层结构位图和子结构 `a` 位图的交集。
+- 索引 `1, 1` 产生一个类型为 `float64` 的数组，其有效性位图是最外层结构、结构 `b` 和子结构 `d` 位图的交集。
+
+对于联合，有效性位图是根据类型代码合成的。此外，索引始终是子索引，而不是类型代码。因此，对于类型为 `sparse_union<2: int32, 7: utf8>` 的数组：
+
+- 索引 `0` 生成类型为 `int32` 的数组，当且仅当子数组 `a` 在索引 *n* 处有效且索引 *n* 处的类型代码为 2 时，该数组在索引 *n* 处有效。
+- 索引 `2` 和 `7` 无效。
+
+#### 替换功能 {#cpp-compute-vector-replace-functions}
+
+这些函数根据剩余的输入创建第一个输入的副本，并替换其中的一些元素。
+
+
+| Function name            | Arity      | Input type 1          | Input type 2 | Input type 3 | Output type  | Notes |
+|--------------------------|------------|-----------------------|--------------|--------------|--------------|-------|
+| fill_null_backward       | Unary      | Fixed-width or binary |              |              | Input type 1 | \(1)  |
+| fill_null_forward        | Unary      | Fixed-width or binary |              |              | Input type 1 | \(1)  |
+| replace_with_mask        | Ternary    | Fixed-width or binary | Boolean      | Input type 1 | Input type 1 | \(2)  |
+
+
+
+- \(1) 有效值向前/向后传递以填充空值。
+- \(2) 输入 1 中的每个元素，如果输入 2 中对应的布尔值为真，则将替换为输入 3 中的下一个值。输入 2 中的空值会导致输出中出现相应的空值。
+
+另请参阅：[`if_else`](#cpp-compute-scalar-selections)。
+
+#### 成对函数
+
+成对函数是一元向量函数，对输入数组中的一对元素（通常是相邻元素）执行二元运算。通过将二元运算应用于第 n 个和第 (n-p) 个输入来计
+算第 n 个输出，其中 p 是周期。默认周期为 1，在这种情况下，二元运算应用于相邻的输入对。周期也可以是负数，在这种情况下，通过将二元
+运算应用于第 n 个和第 (n+abs(p)) 个输入来计算第 n 个输出。
+
+
+| Function name          | Arity | Input types          | Output type          | Options class                  | Notes    |
+|------------------------|-------|----------------------|----------------------|--------------------------------|----------|
+| pairwise_diff          | Unary | Numeric/Temporal     | Numeric/Temporal     | :struct:`PairwiseOptions`      | \(1)(2)  |
+| pairwise_diff_checked  | Unary | Numeric/Temporal     | Numeric/Temporal     | :struct:`PairwiseOptions`      | \(1)(3)  |
+
+- \(1) 计算数组的一阶差分，它在内部调用标量函数 `Subtract`（或已检查的变体）来计算差分，因此其行为和支持的类型与 `Subtract` 相同。可以在 `PairwiseOptions` 中指定周期。
+- \(2) 检测到溢出时，将结果环绕起来。
+- \(3) 检测到溢出时，返回 `Invalid` `Status`。

@@ -1,0 +1,88 @@
+
+
+# 输入/输出和文件系统
+
+输入/输出和文件系统
+Alkaid 提供了一系列 C++ 接口，抽象了输入/输出操作的具体细节。它们对无类型的二进
+制数据流进行操作。这些抽象可用于各种目的，例如读取 CSV 或 Parquet 数据、传输 IPC 流等。
+
+`输入/输出设施的 API 参考 <alkaid/core/io>`.
+
+## 读取二进制数据 {#reading-binary-data}
+
+读取二进制数据的接口有两种形式：
+
+- 顺序读取：`InputStream` 接口提供 `Read`
+方法；建议将 `Read` 读入 `Buffer`，因为在某些情况下可以避免内存复制。
+
+- 随机访问读取：`RandomAccessFile` 接口提供
+额外的定位功能，最重要的是，`ReadAt` 方法允许从多个线程并行读取。
+
+具体实现如下：
+`in-memory reads <BufferReader>`,
+`unbuffered file reads <ReadableFile>`,
+`memory-mapped file reads <MemoryMappedFile>`,
+`buffered reads <BufferedInputStream>`,
+`compressed reads <CompressedInputStream>`.
+
+## 写入二进制数据
+
+写入二进制数据主要通过 `OutputStream` 接口完成。
+
+具体实现可用于
+`in-memory writes <BufferOutputStream>`,
+`unbuffered file writes <FileOutputStream>`,
+`memory-mapped file writes <MemoryMappedFile>`,
+`buffered writes <BufferedOutputStream>`,
+`compressed writes <CompressedOutputStream>`.
+
+## 文件系统
+
+`文件系统接口 <FileSystem>` 允许抽象访问各种数据存储后端，例如本地文件系统或 S3 存储桶。它提供输入和输出流以及目录操作。
+
+`文件系统 API 参考 <alkiad/filesystem>`.
+
+文件系统接口公开了底层数据存储的简化视图。数据路径表示为*抽象路径*，即使在 Windows 上也是如此，这些路径以 `/` 分隔，并
+且不应包含特殊路径组件，例如 `.` 和 `..`。如果底层存储支持符号链接，则会自动取消引用。仅提供有关文件条目的基
+本`元数据 <FileStats>`，例如文件大小和修改时间。
+
+文件系统实例可以使用 `FromUri 工厂 <filesystem-factory-functions>` 之一从 URI 字符串构建，该工厂根据 URI
+的 `scheme` 调度到特定于实现的工厂。新实例的其他属性是从 URI 的其他属性中提取的，例如 `hostname`、`username`
+等。Alkaid 支持新文件系统的运行时注册，并为多个文件系统提供内置支持。
+
+支持哪些内置文件系统是在构建时配置的，可能包括`本地文件系统访问 <LocalFileSystem>`、`HDFS <HadoopFileSystem>`、`Amazon S3 兼容存储 <S3FileSystem>`
+和`Google Cloud Storage <GcsFileSystem>`。
+
+:::info
+使用文件系统的任务通常会在
+`I/O 线程池<io_thread_pool>` 上运行。对于支持高并发级别的文件系统，增加
+I/O 线程池的大小可能会带来好处。
+:::
+
+## 定义新的文件系统
+
+通过使用`~alkaid::fs::RegisterFileSystemFactory`为每个新的 URI 方案注册一个工厂，可以将对其他 URI 方案的支持添加到
+`FromUri 工厂 <filesystem-factory-functions>`。为了实现通常情况下希望自动注册的功能，可以在命名空间范围内定义一
+个`~alkaid::fs::FileSystemRegistrar`实例，每当加载实例时，它都会注册一个工厂：
+
+``` sourceCode
+auto kExampleFileSystemModule = ARROW_REGISTER_FILESYSTEM(
+  "example",
+  [](const Uri& uri, const io::IOContext& io_context,
+      std::string* out_path) -> Result<std::shared_ptr<alkaid::fs::FileSystem>> {
+    EnsureExampleFileSystemInitialized();
+    return std::make_shared<ExampleFileSystem>();
+  },
+  &EnsureExampleFileSystemFinalized
+);
+```
+
+如果文件系统实现需要在构造任何实例之前进行初始化，则应将其包含在相应的工厂中，或者在调用工厂之
+前自动确保这一点。同样，如果文件系统实现需要在进程结束之前拆除，则可以将其包装在函数中并与工厂一起
+注册。所有终结器都将由`~alkaid::fs::EnsureFinalized`调用。
+
+通过将文件系统实现划分为单独的共享库，可以降低构建复杂性，应用程序可以动态链接或加载该共享库。Alkaid
+的内置文件系统实现也遵循此模式。如果必须动态加载包含`~alkaid::fs::FileSystemRegistrar` 实例的共享
+库，则应使用`~alkaid::fs::LoadFileSystemFactories` 来加载它。如果这样的库可能静态链接到 arrow，它应
+该只有一个源`#include "arrow/filesystem/filesystem_library.h"`，以确
+保`~alkaid::fs::LoadFileSystemFactories` 所依赖的符号的存在。

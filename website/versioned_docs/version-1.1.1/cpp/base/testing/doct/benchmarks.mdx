@@ -1,0 +1,197 @@
+
+# 框架性能
+
+## 概述
+
+基准测试是使用 CMake 通过 [**this**](https://gitee.com/kumo-hub/doctest/tree/master/scripts/bench/bench.py) 脚本完成的。有3种基准测试场景：
+
+- [包含标头的成本](#cost-of-including-the-header)
+- [断言宏的成本](#cost-of-an-assertion-macro)
+- [大量断言的运行时速度](#runtime-benchmarks)
+
+使用的编译器：
+
+- Windows：Microsoft Visual Studio 社区 2017 - 版本 15.8.1+28010.2003
+- WINDOWS：gcc 8.1.0（x86_64-posix-seh-rev0，由 MinGW-W64 项目构建）
+- Linux：gcc 6.3.0 20170406（Ubuntu 6.3.0-12ubuntu2）
+- LINUX：clang 4.0.0-1（标签/RELEASE_400/rc1）目标：x86_64-pc-linux-gnu
+
+使用环境（Intel i7 3770k，16g RAM）：
+- Windows 7 - 在 SSD 上
+- VirtualBox VM 中的 Ubuntu 17.04 - 在 HDD 上
+
+**doctest**版本：2.2.0（2018年12月2日发布）
+
+[**Catch**](https://github.com/catchorg/Catch2) version: 2.3.0 (released on 2018.07.22)
+
+## 编译时间基准 {#compile-time-benchmarks}
+
+### 包含标题的成本 {#cost-of-including-the-header}
+
+这是一个仅与单个标头和仅标头框架相关的基准 - 例如 **doctest** 和 [**Catch**](https://github.com/catchorg/Catch2)。
+
+该脚本生成 201 个源文件，其中 200 个以 `int f135() { return 135; 的形式创建一个函数。 }` 并在 `main.cpp` 中向前声明了所有 200 个这样的虚拟函数，并累积它们的结果以从 `main()` 函数返回。这样做是为了确保构建所有源文件并且链接器不会删除/优化任何内容。
+
+- **基线** - 使用 `msbuild`/`make` 进行单线程构建源文件需要多少时间
+- **+ Implement** - 仅在 `main.cpp` 中，标头包含在其前面的 `#define` 中，以便测试运行器得以实现：
+
+```c++
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "doctest.h"
+```
+- **+ header everywhere** - the framework header is also included in all the other source files
+- **+ disabled** - remove everything testing-related from the binary
+
+| doctest             | baseline | + implement | + header everywhere | + disabled |
+|---------------------|----------|-------------|---------------------|------------|
+| MSVC Debug          |    4.89 |    6.21 |    8.33 |    6.39 |
+| MSVC Release        |    4.38 |    6.39 |    8.71 |    6.02 |
+| MinGW GCC Debug     |    8.12 |   10.86 |   14.73 |   10.17 |
+| MinGW GCC Release   |    8.21 |   11.11 |   15.03 |   10.71 |
+| Linux GCC Debug     |    4.20 |    6.23 |    9.81 |    6.24 |
+| Linux GCC Release   |    4.29 |    6.93 |   11.05 |    6.76 |
+| Linux Clang Debug   |    8.70 |   10.02 |   14.43 |   11.13 |
+| Linux Clang Release |    9.30 |   11.68 |   16.20 |   11.58 |
+
+| Catch               | baseline | + implement | + header everywhere | + disabled |
+|---------------------|----------|-------------|---------------------|------------|
+| MSVC Debug          |    4.82 |    7.83 |   88.85 |   88.72 |
+| MSVC Release        |    4.38 |    9.97 |   87.17 |   88.35 |
+| MinGW GCC Debug     |    8.00 |   57.28 |  137.28 |  132.73 |
+| MinGW GCC Release   |    8.38 |   22.94 |   97.17 |   97.22 |
+| Linux GCC Debug     |    4.42 |   15.57 |   97.94 |   97.18 |
+| Linux GCC Release   |    4.50 |   19.59 |   99.48 |  100.75 |
+| Linux Clang Debug   |    8.76 |   15.60 |  107.99 |  110.61 |
+| Linux Clang Release |    9.32 |   25.75 |  118.67 |  117.11 |
+
+<img src="https://gitee.com/kumo-hub/doctest/raw/master/scripts/data/benchmarks/header.png" width="410" align="right"/>
+<img src="https://gitee.com/kumo-hub/doctest/raw/master/scripts/data/benchmarks/implement.png" width="410"/>
+
+#### Conclusion
+
+##### doctest
+
+- 在一个源文件中实例化测试运行器大约需要 1-3 秒`实现 - 基线`
+- 在一个源文件中包含“doctest.h”会花费 11 毫秒 - 23 毫秒“（header_everywhere - 实现）/ 200”
+- 包括随处可见的库，但所有禁用的内容大约需要 2 秒“禁用 - 基线”，对于 200 个文件
+
+##### [Catch](https://github.com/catchorg/Catch2)
+
+- 在一个源文件中实例化测试运行器大约需要 3-50 秒`实现 - 基线`
+- 在一个源文件中包含 `catch.hpp` 需要 380 毫秒 - 470 毫秒 `（header_everywhere - 实现）/ 200`
+- 使用配置选项禁用库（**`CATCH_CONFIG_DISABLE`**）对标头成本没有影响
+
+----------
+
+因此，如果“doctest.h”在 MSVC 上花费 11 毫秒，“catch.hpp”花费 400 毫秒 - 那么 **doctest** 标头为`>>` **36**`<<`轻十倍（对于 MSVC）！
+
+----------
+
+结果在几秒钟内就出来了，并且**绝不**打算抨击[**Catch**](https://github.com/catchorg/Catch2) - 如果没有**doctest**框架就不会存在它。
+
+**doctest** 标头在编译时间上如此之少的原因是因为它向前声明了所有内容并且不会在源文件中拖动任何标头（除了实现测试运行器的源文件）。这是一个关键的设计决策。
+
+### Cost of an assertion macro
+
+该脚本生成 11 个 .cpp 文件，其中 10 个文件创建了 50 个测试用例，其中包含 100 个断言（格式为 `CHECK(a==b)`，其中 `a` 和 `b` 始终是相同的 `int` 变量） - **50k** 断言！测试框架在“main.cpp”中实现。
+
+- **基线** - 单线程构建需要多少时间，并且标头包含在各处 - 没有测试用例或断言！
+- `CHECK(a==b)` - 将添加 `CHECK()` 断言，使用模板机制分解表达式
+
+**doctest** specific:
+
+- **+fast 1** - 将添加 [**`DOCTEST_CONFIG_SUPER_FAST_ASSERTS`**](configuration.mdx#doctest_config_super_fast_asserts) 以加快正常断言的编译速度 `CHECK(a==b) `
+- `CHECK_EQ(a,b)` - 将使用 `CHECK_EQ(a,b)` 而不是分解表达式
+- **+fast 2** - 将添加 [**`DOCTEST_CONFIG_SUPER_FAST_ASSERTS`**](configuration.mdx#doctest_config_super_fast_asserts) 以加快二进制断言 `CHECK_EQ(a,b)` 的编译速度
+- **+disabled** - 所有测试用例和断言宏都将被禁用 [**`DOCTEST_CONFIG_DISABLE`**](configuration.mdx#doctest_config_disable)
+
+[**Catch**](https://github.com/catchorg/Catch2) specific:
+
+- **+fast** - 将添加 [**`CATCH_CONFIG_FAST_COMPILE`**](https://github.com/catchorg/Catch2/blob/master/docs/configuration.mdx#catch_config_fast_compile) 来加快速度正常断言的编译 `CHECK(a==b)`
+- **+disabled** - 所有测试用例和断言宏都将被禁用 **`CATCH_CONFIG_DISABLE`**
+
+| doctest             | baseline | `CHECK(a==b)` | +fast 1 | `CHECK_EQ(a,b)` | +fast 2 | +disabled |
+|---------------------|----------|-------------------|---------|---------------------|---------|-----------|
+| MSVC Debug          |    2.69 |   27.37 |   10.37 |   17.17 |    4.82 |    1.91 |
+| MSVC Release        |    3.15 |   58.73 |   20.73 |   26.07 |    6.43 |    1.83 |
+| MinGW GCC Debug     |    3.78 |   97.29 |   43.05 |   59.86 |   11.88 |    1.67 |
+| MinGW GCC Release   |    4.09 |  286.70 |   95.42 |  156.73 |   18.16 |    2.03 |
+| Linux GCC Debug     |    2.39 |   91.36 |   41.92 |   52.26 |   10.16 |    1.32 |
+| Linux GCC Release   |    3.29 |  257.40 |   97.46 |  128.84 |   19.38 |    1.79 |
+| Linux Clang Debug   |    2.40 |   85.52 |   43.53 |   51.24 |    8.32 |    1.62 |
+| Linux Clang Release |    3.40 |  160.65 |   79.34 |   81.52 |   11.90 |    1.82 |
+
+这里是 [**Catch**](https://github.com/catchorg/Catch2)，它只有正常的 `CHECK(a==b)` 断言：
+
+| Catch               | baseline | `CHECK(a==b)` | +fast | +disabled |
+|---------------------|----------|-------------------|-------|-----------|
+| MSVC Debug          |    8.20 |   31.22 |   25.54 |    8.22 |
+| MSVC Release        |   10.13 |  448.68 |  168.67 |   10.20 |
+| MinGW GCC Debug     |   53.54 |  152.38 |  131.85 |   49.07 |
+| MinGW GCC Release   |   19.26 |  590.16 |  466.69 |   18.99 |
+| Linux GCC Debug     |   15.05 |  117.30 |   95.33 |   14.79 |
+| Linux GCC Release   |   18.77 |  608.94 |  482.73 |   18.96 |
+| Linux Clang Debug   |   12.27 |   94.39 |   77.33 |   12.11 |
+| Linux Clang Release |   20.75 |  545.84 |  506.02 |   20.15 |
+
+<img src="https://gitee.com/kumo-hub/doctest/raw/master/scripts/data/benchmarks/asserts.png"/>
+
+#### Conclusion
+
+**doctest**:
+
+- 使用正则表达式分解 `CHECK(a==b)` 断言时，比 [**Catch**](https://github.com/catchorg/Catch2) 快 0 到 8 倍
+- 断言形式为`CHECK_EQ(a,b)`，没有表达式分解 - 比`CHECK(a==b)`快约 31-63%
+- [**`DOCTEST_CONFIG_SUPER_FAST_ASSERTS`**](configuration.mdx#doctest_config_super_fast_asserts) 标识符使正常断言速度提高 57-68%
+- [**`DOCTEST_CONFIG_SUPER_FAST_ASSERTS`**](configuration.mdx#doctest_config_super_fast_asserts) 标识符使二进制断言速度又快了 84-91%
+- 使用 [**`DOCTEST_CONFIG_DISABLE`**](configuration.mdx#doctest_config_disable) 标识符，断言就消失了，就好像它们从未被写入一样 - 甚至低于基线（因为大部分实现也消失了）
+
+[**Catch**](https://github.com/catchorg/Catch2):
+
+- 使用 [**`CATCH_CONFIG_FAST_COMPILE`**](https://github.com/catchorg/Catch2/blob/master/docs/configuration.mdx#catch_config_fast_compile) 可以将构建时间加快 10-30%断言（在一种情况下为 73%）。
+- 使用 **`CATCH_CONFIG_DISABLE`** 标识符为断言宏提供了与 doctest 版本相同的巨大好处（[**`DOCTEST_CONFIG_DISABLE`**](configuration.mdx#doctest_config_disable)） -但不包括标头成本
+
+### Runtime benchmarks
+
+运行时基准测试由单个测试用例组成，该测试用例具有执行任务的 1000 万次迭代循环 - 单个正常断言（使用表达式分解）或断言 + 循环迭代器“i”的日志记录：
+
+```c++
+for(int i = 0; i < 10000000; ++i)
+    CHECK(i == i);
+```
+
+or
+
+```c++
+for(int i = 0; i < 10000000; ++i) {
+    INFO(i);
+    CHECK(i == i);
+}
+```
+
+请注意，断言总是通过 - 目标应该是针对常见情况进行优化 - 许多通过的测试用例和一些可能会失败。
+
+| doctest             | assert  | + info  | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Catch               | assert  | + info  |
+|---------------------|---------|---------|-|---------------------|---------|---------|
+| MSVC Debug          |    4.00 |   11.41 | | MSVC Debug          |    5.60 |  213.91 |
+| MSVC Release        |    0.40 |    1.47 | | MSVC Release        |    0.76 |    7.60 |
+| MinGW GCC Debug     |    1.05 |    2.93 | | MinGW GCC Debug     |    1.17 |    9.54 |
+| MinGW GCC Release   |    0.34 |    1.27 | | MinGW GCC Release   |    0.36 |    4.28 |
+| Linux GCC Debug     |    1.24 |    2.34 | | Linux GCC Debug     |    1.44 |    9.69 |
+| Linux GCC Release   |    0.29 |    0.52 | | Linux GCC Release   |    0.29 |    3.60 |
+| Linux Clang Debug   |    1.15 |    2.38 | | Linux Clang Debug   |    1.21 |    9.91 |
+| Linux Clang Release |    0.28 |    0.50 | | Linux Clang Release |    0.32 |    3.27 |
+
+<img src="https://gitee.com/kumo-hub/doctest/raw/master/scripts/data/benchmarks/runtime_info.png" width="410" align="right"/>
+<img src="https://gitee.com/kumo-hub/doctest/raw/master/scripts/data/benchmarks/runtime_assert.png" width="410"/>
+
+#### Conclusion
+
+**doctest** 断言比的 catch 快约 20%，但在记录变量和上下文时快了几倍（在一个特定编译器的情况下快了 18 倍以上）。
+----------
+
+条形图是使用[**此谷歌电子表格**](https://docs.google.com/spreadsheets/d/1p3MAURUfPzKT7gtJOVuJU2_yVKSqkoD1nbypA1K3618)通过粘贴表格中的数据生成的。
+
+如果您想要一个非综合的基准测试 - 请查看 [Baptiste Wicht](https://github.com/wichtounet) 的这篇[博客文章](http://baptiste-wicht.com/posts/2016/09/blazing-fast-unit-test-compilation-with-doctest-11.html)，他使用他的[表达式模板库](https://github.com/wichtounet/etl)测试了 1.1 版本中断言的编译时间！
+
+在阅读这篇文章时 - 请记住，如果流程的一部分花费了 50% 的时间并且速度提高了 10000 倍 - 整个流程仍然只会快大约 50%。

@@ -1,0 +1,33 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_gn_install
+
+安装 GN 项目。
+
+若要在不安装的情况下构建 GN 项目，请使用 [`kmpkg_build_ninja()`](kmpkg_build_ninja.mdx)。
+
+## 使用情况
+
+```cmake
+kmpkg_gn_install(
+     SOURCE_PATH <SOURCE_PATH>
+     [TARGETS <target>...]
+)
+```
+
+## 参数
+
+### SOURCE_PATH
+
+源目录的路径
+
+### TARGETS
+
+仅安装指定的目标。
+
+包含必须单独处理的文件。
+
+## Source
+
+[ports/kmpkg-gn/kmpkg\_gn\_install.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-gn/kmpkg_gn_install.cmake)

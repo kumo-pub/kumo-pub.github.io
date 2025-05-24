@@ -1,0 +1,29 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_install_qmake
+
+生成并安装 qmake 项目。
+
+## 使用情况
+
+```cmake
+kmpkg_install_qmake(...)
+```
+
+## 参数
+
+请参阅 [`kmpkg_build_qmake()`](kmpkg_build_qmake.mdx).
+
+## 说明
+
+此命令以透明方式转发到 [`kmpkg_build_qmake()`](kmpkg_build_qmake.mdx)。
+
+此外，此命令将生成的 `.libs/.dlls/.as/.dylibs/.sos` 复制到相应的暂存目录。
+## 示例
+
+- [libqglviewer](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/libqglviewer/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_install\_qmake.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_install_qmake.cmake)

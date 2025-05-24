@@ -1,0 +1,87 @@
+---
+date: 01/10/2024
+---
+# 资产缓存
+
+资产缓存特性配置和功能的参考文档。
+
+## 来源 {#sources}
+
+`<rw>` 参数是可选的，并且对于下面描述的大多数源来说都是通用的。它控制
+特定源的访问权限并接受值`read`、`write`或`readwrite`
+（默认为`读取`）。
+
+使用反引号 (\`) 转义源字符串中的字符。
+
+###  `clear` {#clear}
+
+**语法**: `clear`
+
+删除配置字符串中所有先前的源。与以下组合有用
+`--x-asset-sources` 参数禁用来自以下资源的所有资源缓存源
+`X_KMPKG_ASSET_SOURCES` 环境变量。
+
+### Azure Blob Storage (`x-azurl`) {#x-azurl}
+
+:::warning 重要
+Azure 功能国内不保证使用的正确性，请不要使用。
+:::
+**语法**:
+1. `x-azurl,<url>[,<sas>[,<rw>]]`
+1. `x-azurl,file://<network-location>[,,<rw>]`
+
+`<url>`：必填。 Azure Blob 存储连接 URL。它必须包含容器路径和尾随 `/`。
+
+`<sas>`：可选。对于使用共享访问签名验证的端点，请使用此参数提供生成的 SAS。
+
+非 Azure 端点可以使用此参数提供访问令牌。只要他们能够回应
+格式为`<url>/<sha512>?<sas>`的 GET 和 PUT 请求。
+
+例如，配置如下的源：`azurl,https://mydomain.com/kmpkg/,token=abc123,readwrite` , 会生成以下形式的请求： `https://mydomain.com/kmpkg/<sha512>?token=abc123` 。
+
+或者，您可以使用文件系统位置作为端点
+`x-azurl,file://<文件系统位置>[,,<rw>]` 模式。
+
+例如，`x-azurl,file:///Z:/kmpkg/assetcache/,,readwrite`在`Z:/`中配置缓存
+网络文件夹。
+
+该资产源的工作流程是：
+
+1.尝试从镜子中阅读
+2.（如果步骤1失败）从原始url读取
+3.（如果步骤2成功）写回镜像
+
+您可以通过 [`<rw>`](#sources) 说明符启用/禁用步骤 1 和 3，并且可以通过以下方式禁用步骤 2
+下面的`x-block-origin`。
+
+另请参阅[Azure Blob 的二进制缓存文档存储](../reference/binarycaching.mdx#azblob) 了解有关如何存储的更多信息
+设置`x-azurl`源。
+
+#### `x-block-origin` {#x-block-origin}
+
+语法: `x-block-origin`
+
+当在任何资源中都找不到资产时，禁止回退到原始下载 URL
+配置的源。
+
+#### `x-script`
+
+语法: `x-script,<template>`
+
+分派到外部工具以获取资产。
+
+`<模板>`：必需。 kmpkg 执行以获取资产的命令模板。例如：
+`x-script,curl -L {url} --output {dst}` 配置 kmpkg 执行 `curl` 并提供 `{url}`
+和`{dst}`参数。
+
+恢复和上传资产以及连接到缓存存储端点的逻辑是责任模板中提供的命令的名称。
+
+kmpkg 在执行命令时将替换这些参数：
+
+* `{url}`：资源的原始下载 URL。
+* `{sha512}`：下载资产的预期 SHA512。
+* `{dst}`：下载资源的预期位置。
+
+模板命令在 kmpkg 的构建环境中运行；这意味着某些环境
+像“PATH”这样的变量可以由三元组修改。
+

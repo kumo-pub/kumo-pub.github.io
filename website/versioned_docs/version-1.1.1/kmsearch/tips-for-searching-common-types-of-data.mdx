@@ -1,0 +1,343 @@
+# 搜索常见数据类型的技巧
+
+我们将讨论如何索引和搜索以下类型的数据：
+
+## Model Numbers / Part Numbers / SKUs
+
+假设您有一个文档，其中包含混合有字母数字字符和特殊字符的产品标识符（型号、部件号或 SKU）：
+
+```json
+{
+  "title": "Control Arm Bushing Kit",
+  "part_number": "K83913.39F29.59444AT"
+  //...
+}
+```
+
+现在，假设您希望该产品显示在以下任何搜索词的搜索结果中：
+
+- `K83913`
+- `83913`
+- `39F29`
+- `59444AT`
+- `59444`
+- `9444AT`
+- `K83913.39F29`
+- `39F29.59444`
+
+#### 默认行为
+
+默认情况下，kumosearch 在索引和搜索字段时会删除字段中的特殊字符。因此`K83913.39F29.59444AT`将被索引为`K8391339F2959444AT`。
+
+kumosearch 默认执行前缀搜索，这意味着它仅搜索那些搜索词位于字符串开头的记录。因此，搜索出现在`K83913.39F29.59444AT`中间的“39F29”或“F29”将不会提取该记录。然而，搜索“K83913”或“K83913.39”或“K83913.39F29.59444”将调出该记录。
+
+#### 微调
+
+第一个要做的更改是告诉 kumosearch 使用 `.` （句点）分隔产品标识符。这样，`K83913.39F29.59444AT` 将被索引为三个独立的标记（单词）“K83913”、“39F29”和“59444AT”。现在，当您搜索“39F29”或“5944”时，将返回产品 `K83913.39F29.59444AT`。
+
+[创建索引表](../api/kmsearch/collections.mdx#create-a-collection)时：
+
+```json{7}
+{
+  "name": "products",
+  "fields": [
+    {"name":  "title", "type":  "string"},
+    {"name":  "part_number", "type":  "string"}
+  ],
+  "token_separators": ["."]
+}
+```
+
+我们仍然有搜索出现在字符串中间的“83913”或“9444AT”的情况。
+
+为了解决这个问题，根据用户可能的搜索习惯预先分割产品标识符：
+
+   ```json
+   {
+     "title": "Control Arm Bushing Kit",
+     "part_number": [
+       "K83913.39F29.59444AT",
+       "83913.39F29.59444AT",
+       "3913.39F29.59444AT",
+       "913.39F29.59444AT",
+       "13.39F29.59444AT",
+       "3.39F29.59444AT",
+       "9F29.59444AT",
+       "F29.59444AT",
+       "29.59444AT",
+       "9.59444AT",
+       "9444AT",
+       "444AT",
+       "44AT",
+       "4AT",
+       "AT"
+     ]
+     //...
+   }
+   ```
+
+  结合 `token_separators` 使用，将能够搜索我们上面讨论的所有patterns。
+
+## 电话号码
+
+假设我们有以下格式的电话号码：“+1 (234) 567-8901”，希望用户能够使用以下任何patterns来提取此记录：
+
+- `8901`
+- `567-8901`
+- `567 8901`
+- `5678901`
+- `234-567-8901`
+- `(234) 567-8901`
+- `(234)567-8901`
+- `1-234-567-8901`
+- `+12345678901`
+- `12345678901`
+- `2345678901`
+- `+1(234)567-8901`
+
+#### 默认行为
+
+默认情况下，kumosearch 将删除所有特殊字符，并用空格分割标记（单词），因此 `+1 (234) 567-8901` 将被索引为 `1`、`234`、`5678901`。
+
+因此，搜索“234”或“5678901”或“234 567-8901”将返回结果，但其他patterns不会返回预期结果。
+
+#### 微调
+
+我们首先要告诉 kumosearch 在[创建索引表](../api/kmsearch/collections.mdx#create-a-collection)时使用 schema 中的
+[token_separators](../api/kmsearch/collections.mdx#schema-parameter) 设置按 `(`, `)` 和 `-` 进行分割：
+
+```json{7}
+{
+  "name": "users",
+  "fields": [
+    {"name":  "first_name", "type":  "string"},
+    {"name":  "phone_number", "type":  "string"}
+  ],
+  "token_separators": ["(", ")", "-"]
+}
+```
+
+这将使“+1 (234) 567-8901”被索引为“1”、“234”、“567”和“8901”，现在以下搜索将返回此文档：
+
+- `8901`
+- `567-8901`
+- `567 8901`
+- `234-567-8901`
+- `(234) 567-8901`
+- `(234)567-8901`
+- `1-234-567-8901`
+- `+1(234)567-8901`
+
+其余需要处理的情况是：
+
+- `5678901`
+- `+12345678901`
+- `12345678901`
+- `2345678901`
+
+为了解决这些问题，您需要将这些附加格式添加为文档中的 `string[]` 数组字段：
+
+```json{5}
+{
+  "name": "users",
+  "fields": [
+    {"name":  "first_name", "type":  "string"},
+    {"name":  "phone_number", "type":  "string[]"}
+  ],
+  "token_separators": ["(", ")", "-"]
+}
+```
+
+```json{5-7}
+{
+  "name": "Tom",
+  "phone_number": [
+    "+1 (234) 567-8901",
+    "12345678901", // Remove all spaces
+    "2345678901", // Remove all spaces and country code
+    "5678901" // Remove all space, country code and area code
+  ]
+}
+```
+
+现在，搜索上述任何patterns都将调出该记录。
+
+## 电子邮件地址
+
+假设我们有一个像 `contact+docs-example@kumo.info` 这样的电子邮件地址，我们希望用户能够使用以下任何patterns来提取此文档：
+
+- `contact+docs-example`
+- `contact+docs-example@`
+- `contact+docs-example@kumo`
+- `contact+docs`
+- `contact docs`
+- `docs example`
+- `contact kumo`
+- `contact`
+- `docs`
+- `example`
+- `kumo`
+- `kumo.info`
+
+#### 默认行为
+
+默认情况下，kumosearch 在索引过程中会删除所有特殊字符，并且仅进行前缀搜索（即搜索词必须位于单词的开头），因此 `contact+docs-example@kumo.info` 将被索引为 `contactdocsexamplekumo.info`。
+
+因此，带有 :white_check_mark: 的搜索词会返回此记录，而带有 :x: 的搜索词不会返回此记录：
+
+- :white_check_mark: `contact+docs-example`
+- :white_check_mark: `contact+docs-example@`
+- :white_check_mark: `contact+docs-example@kumo`
+- :white_check_mark: `contact+docs`
+- :x: `contact docs`
+- :x: `docs example`
+- :x: `contact kumo`
+- :white_check_mark: `contact`
+- :x: `docs`
+- :x: `example`
+- :x: `kumo`
+- :x: `kumo.info`
+
+#### 微调
+
+要解决上述情况，我们可以在[创建索引表](../api/kmsearch/collections.mdx#create-a-collection)时的schema中使用 [token_separators](../api/kmsearch/collections.mdx#schema-parameter)设置：
+
+```json{7}
+{
+  "name": "users",
+  "fields": [
+    {"name":  "first_name", "type":  "string"},
+    {"name":  "email", "type":  "string"}
+  ],
+  "token_separators": ["+", "-", "@", "."]
+}
+```
+
+这将使 `contact+docs-example@kumo.info` 被索引为“contact”、“docs”、“example”、“kumo”和“info”。
+
+现在所有的搜索词都会返回这个文档：
+
+- :white_check_mark: `contact+docs-example`
+- :white_check_mark: `contact+docs-example@`
+- :white_check_mark: `contact+docs-example@kumo`
+- :white_check_mark: `contact+docs`
+- :white_check_mark: `contact docs`
+- :white_check_mark: `docs example`
+- :white_check_mark: `contact kumo`
+- :white_check_mark: `contact`
+- :white_check_mark: `docs`
+- :white_check_mark: `example`
+- :white_check_mark: `kumo`
+- :white_check_mark: `kumo.info`
+
+## 日期/时间
+
+kumosearch 没有内置的日期/时间[数据类型](../api/kmsearch/collections.mdx#field-type)。
+
+因此，您必须按照[此处](../api/kmsearch/collections.mdx#index-date)所述将日期和时间转换为 Unix 时间戳。
+
+## 嵌套对象
+
+kumosearch 支持原生嵌套对象和对象数组。
+
+要启用嵌套字段，您需要在创建索引表时使用 `enable_nested_fields` 属性以及 `object` 或 `object[]`[数据类型](../api/kmsearch/collections.mdx#field-type)：
+
+```json{3}
+{
+  "name": "docs", 
+  "enable_nested_fields": true,
+  "fields": [
+    {"name": "person", "type": "object"},
+    {"name": "details", "type": "object[]"}
+  ]
+}
+```
+
+了解更多信息，请参考[索引嵌套字段](../api/kmsearch/collections.mdx#indexing-nested-fields)。
+
+
+## 地理坐标
+
+kumosearch 支持使用文档中的纬度/经度数据进行 GeoSearch 查询。您可以过滤出给定半径内的文档，或按与给定纬度/经度的接近程度对结果进行排序，或者返回边界框内的结果。
+
+关于地理查询的更多信息，请参阅[GeoSearch API 参考](../api/kmsearch/geosearch.mdx)。
+
+## 长文本
+
+如果您有长文本，例如长篇文章、网页内容、或采访稿，我们建议您将长文本分解为较小的段落，并将每个段落存储在 kumosearch 中的单独文档中。
+
+这样做可以提高搜索结果的细粒度和相关性，因为对于足够长的文本，文档之间的关键字可能会有较多的重叠，从而导致搜索通用关键字时大多数文章都会被匹配命中。
+
+## HTML 内容
+
+如果您正在搜索 HTML 内容，则需要在文档中创建一个字段，其中仅包含内容的纯文本版本，不带 HTML 标记，并在 `query_by` 搜索参数中使用该字段。
+
+您仍然可以将原始 HTML 字段作为未索引字段存储在文档中（只需将其从schema中保留），因此当搜索结果命中时，原始 HTML 将会返回。
+
+## 搜索 `null` 或空值
+
+kumosearch 本身没有直接过滤属性为 `null` 或空值的文档的方法。但您仍然可以使用以下方法来实现这一目标。
+
+假设您的文档中有一个名为 `tags` 的可选字段，可以为 `null`：
+
+```json
+{
+  "tags": null
+}
+```
+
+如果要获取 `tags` 设置为 `null` 的所有文档，则需要在索引每个文档时创建一个名为 `is_tags_null: true |` 的附加字段，以标识这些文档。
+
+```json
+[
+  {
+    "tags": null,
+    "is_tags_null": true
+  },
+  {
+    "tags": ["tag1", "tag3"],
+    "is_tags_null": false
+  }
+]
+```
+
+在索引时为所有文档设置此字段后，您可以使用以下方法查询这些文档：
+
+```json
+{
+  "filter_by": "is_tags_null:true"
+}
+```
+
+## URLs 或文件路径
+
+假设您有包含一组 URL 或文件路径的文档，希望实现当用户搜索 `url1` 或 `path1` 等时，kumosearch 返回相应的结果：
+
+```json lines
+{"url": "https://url1.com/path1"}
+{"url": "https://url2.com/path2"}
+{"url": "https://url3.com/path3"}
+```
+
+#### 默认行为
+
+默认情况下，kumosearch 将删除所有特殊字符并将第一个文档索引为 `httpsurl1compath1`。此外，kumosearch 还会进行前缀搜索（匹配必须位于单词的开头），因此 `url1` 或 `path1` 不会返回任何结果，因为它们出现在索引字符串的中间。
+
+#### 微调
+
+为了解决这个问题，需要将 `:`、`.` 和 `/` 添加到索引表schema中的 `token_separators` 设置中：
+
+```json{7}
+{
+  "name": "pages",
+  "fields": [
+    {"name":  "title", "type":  "string"},
+    {"name":  "url", "type":  "string"}
+  ],
+  "token_separators": [":", "/", "."]
+}
+```
+
+这将使 URL 作为单独的单词进行索引：`https`、`url1`、`com`、`path1`。
+
+现在，当搜索 `url1` 或 `path1` 时，它将匹配这些单独的单词并返回文档。

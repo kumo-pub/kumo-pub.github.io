@@ -1,0 +1,45 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_execute_build_process
+
+执行所需的构建过程
+
+## 使用情况
+
+```cmake
+kmpkg_execute_build_process(
+    COMMAND <cmd> [<args>...]
+    [NO_PARALLEL_COMMAND <cmd> [<args>...]]
+    WORKING_DIRECTORY </path/to/dir>
+    LOGNAME <log_name>
+)
+```
+
+## 参数
+
+### COMMAND
+
+要执行的命令及其参数。
+
+### NO_PARALLEL_COMMAND
+
+可选参数，该参数指定在检测到可能由于并行度而导致的故障时尝试的非并行命令。
+
+### WORKING_DIRECTORY
+
+要在其中执行命令的目录。
+
+### LOGNAME
+
+用于日志文件的前缀。
+
+此项应为不同三元组的唯一名称，这样一次构建多个三元组时日志就不会冲突。
+
+## 示例
+
+- [icu](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/icu/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_execute\_build\_process.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_execute_build_process.cmake)

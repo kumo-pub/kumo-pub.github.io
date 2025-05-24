@@ -1,0 +1,58 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_fixup_pkgconfig
+
+修复 `*.pc` 文件中的通用路径，并使所有内容相对于 `$(prefix)`。
+
+此外，在静态三元组上，专用条目与其非专用条目合并，从而允许不带 `--static` 标志调用 `pkg-config`。
+
+由于使用者无法知道依赖库是否已静态生成，因此 kmpkg 设计为永不使用 `--static` 标志调用 `pkg-config`。
+
+## 使用情况
+
+```cmake
+kmpkg_fixup_pkgconfig(
+    [RELEASE_FILES <PATHS>...]
+    [DEBUG_FILES <PATHS>...]
+    [SKIP_CHECK]
+)
+```
+
+## 参数
+
+### RELEASE_FILES
+
+指定要为发布路径应用修复的文件列表。 默认为文件夹 `${CURRENT_PACKAGES_DIR}`（不含 `${CURRENT_PACKAGES_DIR}/debug/`)中的每个 `*.pc` 文件
+
+### DEBUG_FILES
+
+指定要为调试路径应用修复的文件列表。 默认为文件夹 `${CURRENT_PACKAGES_DIR}/debug/` 中的每个 `*.pc` 文件
+
+### SKIP_CHECK
+
+跳过 `kmpkg_fixup_pkgconfig` 中的库检查。 仅当脚本本身有未处理的问题单时使用。
+
+### SYSTEM_PACKAGES (deprecated)
+
+此参数已弃用，没有作用。
+
+### SYSTEM_LIBRARIES (deprecated)
+
+此参数已弃用，没有作用。
+
+### IGNORE_FLAGS (deprecated)
+
+此参数已弃用，没有作用。
+
+## 说明
+
+仍有正在进行的工作。 如果有更多可在此处处理的问题单，可以随意添加它们。
+
+## 示例
+
+- [brotli](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/brotli/portfile.cmake)
+
+## Source
+
+[`scripts/cmake/kmpkg_fixup_pkgconfig.cmake`](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_fixup_pkgconfig.cmake)

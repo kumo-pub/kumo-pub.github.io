@@ -1,0 +1,211 @@
+
+# turbo hash 容器
+
+`Turbo` 提供了许多容器作为 STL 容器的替代品。这些容器通常遵循 STL 容器的属性，尽管有
+通常是一些相关的 API 差异和/或实现细节与标准库不同。
+
+`Turbo` 容器的设计在一般情况下效率更高；在然而，在某些情况下，STL 容器可能更高效。与其他一些不同
+Turbo 提供的抽象，不应考虑这些容器 STL 对应项的直接替代品，因为有 API 和/或两组集装箱之间的合同差异。例如，绳索下降
+容器通常不保证指针稳定性[^pointer-stability]插入或删除。
+
+`Turbo` 容器的设计在一般情况下效率更高；然而，在某些情况下，STL 容器可能更高效。
+与 Abseil 提供的其他一些抽象不同，这些容器不应被视为 STL 对应项的直接替代品，因为两组容器之间存在 API 和/或契约差异。例如，Abseil 容器通常不保证插入或删除后指针的稳定性[^pointer-stability]。
+
+Abseil `container` 库定义了以下容器集：
+* Swiss table 无序容器
+
+有关每种容器类型的更多信息，请参阅下文。
+
+## Hash Tables
+
+Turbo `container` 库通常包含许多有用的哈希表遵守STL容器API契约：
+
+*   `turbo::flat_hash_map`
+*   `turbo::flat_hash_set`
+*   `turbo::node_hash_map`
+*   `turbo::node_hash_set`
+
+这些哈希表统称为“瑞士表”，旨在
+成为替代品[`std::unordered_map`](https://en.cppreference.com/w/cpp/container/unordered_map) 和 [`std::unordered_set`](https://en.cppreference.com/w/cpp/container/unordered_set)
+与`std::unordered_*`容器相比，它们具有多个优点：
+
+Collectively, these hash tables are known as "Swiss tables" and are designed to
+be replacements for
+[`std::unordered_map`](https://en.cppreference.com/w/cpp/container/unordered_map)
+and [`std::unordered_set`](https://en.cppreference.com/w/cpp/container/unordered_set)
+They provide several advantages over the `std::unordered_*` containers:
+
+* 支持异构查找。
+* 允许优化 `emplace({key, value})` 以避免分配一对在大多数常见情况下。
+* 支持异构 `std::initializer_list` 以避免额外的副本构建和插入。
+* 通过返回 void 而不是迭代器来保证“O(1)”擦除方法。
+
+### 构建 {#construction}
+
+`Swiss table`容器组支持与`std::unordered_map` 用于构造和赋值：
+
+```c++
+// Examples using node_hash_set and node_hash_map are equivalent
+
+// Default constructor
+// No allocation for the table's elements is made.
+turbo::flat_hash_set<std::string> set1;
+
+turbo::flat_hash_map<int, std::string> map1;
+
+// Initializer List constructor
+turbo::flat_hash_set<std::string> set2 = {{"huey"}, {"dewey"}, {"louie"},};
+
+turbo::flat_hash_map<int, std::string> map2 =
+    {{1, "huey"}, {2, "dewey"}, {3, "louie"},};
+
+// Copy constructor
+turbo::flat_hash_set<std::string> set3(set2);
+
+turbo::flat_hash_map<int, std::string> map3(map2);
+
+// Copy assignment operator
+// Hash functor and Comparator are copied as well
+turbo::flat_hash_set<std::string> set4;
+set4 = set3;
+
+turbo::flat_hash_map<int, std::string> map4;
+map4 = map3;
+
+// Move constructor
+// Move is guaranteed efficient
+turbo::flat_hash_set<std::string> set5(std::move(set4));
+
+turbo::flat_hash_map<int, std::string> map5(std::move(map4));
+
+// Move assignment operator
+// May be efficient if allocators are compatible
+turbo::flat_hash_set<std::string> set6;
+set6 = std::move(set5);
+
+turbo::flat_hash_map<int, std::string> map6;
+map6 = std::move(map5);
+
+// Range constructor
+std::vector<std::string> v = {"a", "b"};
+turbo::flat_hash_set<std::string> set7(v.begin(), v.end());
+
+std::vector<std::pair<int, std::string>> v = {{1, "a"}, {2, "b"}};
+turbo::flat_hash_map<int, std::string> map7(v.begin(), v.end());
+```
+
+### `turbo::flat_hash_map` and `turbo::flat_hash_set`
+
+`turbo::flat_hash_map` 和 `turbo::flat_hash_set` 是推荐的无序形式一般用途的容器。这些是平面数据结构，存储它们的`value_type` 直接位于槽数组中。
+
+#### 承诺 {#guarantees}
+
+* 键和值内联存储。
+* 迭代器、引用和元素指针在重新哈希时失效。
+* 移动操作不会使迭代器或指针失效。
+
+
+#### 内存使用 {#memory-usage}
+
+import FlatHashMap from '@site/static/img/cppbse/flat-hash-map.svg';
+
+<FlatHashMap />
+
+容器使用 O(`(sizeof(std::pair<const K, V>) + 1) * bucket_count()`)字节。 *最大负载系数*为 87.5%，此后桌子的尺寸增加了一倍
+（使负载系数下降 2 倍）。因此 `size()` 通常介于`0.4375*bucket_count()` 和 `0.875*bucket_count()`。对于从未有过的表
+重新计算负载因子可以更低，但这些数字足以我们的估计。
+
+#### 使用建议
+
+大部分时间使用`turbo::flat_hash_map`。如果指针值稳定（但是不需要键），请使用 `turbo::flat_hash_map<Key, std::unique_ptr<Value>>`。
+
+### `turbo::node_hash_map` and `turbo::node_hash_set`
+
+这些几乎是 `std::unordered_map` 的直接替代品`std::unordered_set`。它们很有用：
+
+* 当key和value都需要指针稳定性时。
+* 用于从`std::unordered_map`、`std::unordered_set`自动迁移，`hash_map` 或 `hash_set` 很难弄清楚代码是否依赖于指针稳定性。
+
+这些是 STL 标准意义上的基于节点的数据结构：每个`value_type` 分配在一个单独的节点中，主表包含
+指向这些节点的指针。
+
+#### 承诺
+
+* 节点有稳定的地址。
+* 迭代器在重新哈希时失效。
+* 移动操作不会使迭代器失效。
+
+#### 内存使用
+
+import NodeHashMap from '@site/static/img/cppbse/node-hash-map.svg';
+
+<NodeHashMap />
+
+槽数组需要 `(sizeof(void*) + 1) * bucket_count()` 字节和
+节点本身需要“sizeof(value_type) * size()”字节。合在一起，这就是
+在大多数平台上，O(`9*bucket_count() + sizeof(std::pair<const K, V>)*size()`) 。
+
+#### 使用建议
+
+在大多数新代码中更喜欢 `turbo::flat_hash_map` 或 `turbo::flat_hash_set` (参见
+多于）。
+
+当指针稳定性达到以下值时使用 `turbo::node_hash_map` 或 `turbo::node_hash_set`
+键和值都是必需的（很少见），或者用于从其他地方迁移代码具有此属性的容器。 *注意：*不要使用流行度作为指导。你
+会看到`节点`容器被大量使用，但这只是因为它是安全的将代码从其他容器迁移到它们。
+
+### 使用
+
+```cpp
+turbo::flat_hash_map<int, string> numbers =
+    {{1, "one"}, {2, "two"}, {3, "three"}};
+numbers.try_emplace(4, "four");
+
+turbo::flat_hash_map<string, std::unique_ptr<string>> strings;
+strings.try_emplace("foo", turbo::make_unique<string>("bar"));
+```
+
+### 异构查找
+
+在关联容器中插入或查找元素需要一把钥匙。一般来说，容器要求键是特定类型的，这
+可能会导致需要在之间进行转换的调用站点效率低下接近等效的类型（例如“std::string”和“turbo::string_view”）。
+
+```cpp
+std::map&lt;std::string, int&gt; m = ...;
+turbo::string_view some_key = ...;
+// Construct a temporary `std::string` to do the query.
+// The allocation + copy + deallocation might dominate the find() call.
+auto it = m.find(std::string(some_key));
+```
+
+为了避免这种不必要的工作， `Swiss tables`提供异构查找
+用于转换为字符串类型（允许在查找中使用 `turbo::string_view`，例如
+例如），以及转换为智能指针类型（`std::unique_ptr`，
+`std::shared_ptr`)，通过 `turbo::Hash` 哈希框架。 （配套的
+比较器内置于 `turbo::Hash` 中。）
+
+```cpp
+turbo::flat_hash_map<std::string, int> m = ...;
+turbo::string_view some_key = ...;
+// We can use string_view directly as the key search.
+auto it = m.find(some_key);
+```
+
+### 迭代顺序不稳定
+
+虽然“std::unordered_map”不保证迭代顺序，但许多实现碰巧具有基于键及其的确定性顺序插入订单。这对于 `turbo::flat_hash_map` 来说不是这样，并且
+`turbo::node_hash_map`。因此，从 `std::unordered_map` 转换为`turbo::flat_hash_map` 可能会暴露代码错误依赖的潜在错误按迭代顺序。
+
+一个可能产生微妙错误的特殊情况是对“float”值求和无序的容器。虽然数学求和不依赖于顺序，但浮动
+点和确实如此，并且可能出现这样的情况：总和是确定性的`std::unordered_set` 但与 `turbo::flat_hash_set` 具有不确定性。
+
+## 说明
+
+[^pointer-stability]: “指针稳定性”意味着指向元素的指针
+    只要元素保持有效（不会失效）
+    存在，允许代码缓存指向元素的指针
+    即使底层容器发生了变化。这么说
+    容器具有指针稳定性就等于说
+    它不会移动内存中的元素；他们的地址
+    不要改变。指针稳定性/失效相同
+    作为参考稳定性/失效。

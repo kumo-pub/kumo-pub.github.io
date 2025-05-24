@@ -1,0 +1,1717 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 向量搜索
+
+kumosearch 能够对任何机器学习模型生成的 embedding 嵌入进行索引，并对这些数据进行最近邻(KNN)搜索和近似最近邻(ANN)搜索。
+
+[[toc]]
+
+## 使用场景
+
+以下是向量搜索的一些示例应用场景：
+
+1. [语义搜索](../../kmsearch/semantic-search.mdx)
+2. [推荐系统](../../kmsearch/recommendations.mdx)
+3. [混合搜索](#hybrid-search)（关键词搜索+语义搜索+过滤）
+4. [视觉图像搜索](./image-search.mdx)
+5. [与 LLM 集成](https://python.langchain.com/docs/integrations/vectorstores/kumosearch)，使用您自己的数据集进行RAG查询
+
+您还可以将上述功能与过滤、分面、排序、分组等功能相结合，以构建用户友好的搜索体验。
+
+## 什么是 embedding？ {#what-is-embedding}
+
+`embedding` 嵌入是 JSON 文档的数字表示形式，通常为浮点数数组（例如：`[0.4422, 0.49292, 0.1245, ...]`）。
+
+这些 embedding 由机器学习模型生成，用于表示文档的 **相似性**（根据模型的不同，相似性的定义也有所不同）。相似的文档会有彼此 **更接近** 的嵌入（余弦相似度）。
+
+以下是一些常见的生成文档 embedding 的模型：
+
+- Sentence-BERT
+- E-5
+- CLIP
+- OpenAI's Text Embeddings model
+- Google's PaLM API
+- Google's Vertex API
+
+您可以将这些模型生成的 embedding 导入到 kumosearch 中的专用向量字段中，然后进行最近邻搜索。输入另一组向量或文档 ID，kumosearch 会返回与输入最接近的文档。
+
+您可以使用 OpenAI、PaLM API 或[此处](https://huggingface.co/kumo-ai/models/tree/main)列出的内置 ML 模型之一为您生成这些 embedding 嵌入。
+
+#### 案例演示
+
+这是向量搜索的实际应用之一 - 电子商务中的 **查找相似** 功能：[ecommerce-store.kumosearch.org](https://ecommerce-store.kumosearch.org/)。
+
+#### Read More
+
+这里有两篇文章更详细地讨论了 ：
+
+- [什么是单词和句子 embedding？](https://txt.cohere.ai/sentence-word-embeddings/)
+- [embedding 入门](https://huggingface.co/blog/getting-started-with-embeddings)
+
+现在让我们看看如何在 kumosearch 中进行 embedding 的索引和搜索。
+
+## 索引向量
+
+### 选项 A：将外部生成的 embbding 嵌入导入到 kumosearch 中 {#option-a-embbding}
+
+如果您已经在 kumosearch 之外使用自己的模型生成了embbding，则可以将它们导入到 kumosearch 中。
+
+:::tip
+[这里](https://gitee.com/kumosearch/showcase-ecommerce-store/blob/7637d2c4e967419ac8a874c28d3f3e20d79040fa/scripts/vector-Generation/main.py) 有一个如何使用 Sentence-BERT 模型生成嵌入的快速示例。
+:::
+
+文档 embedding 准备就绪后，您需要创建一个包含 `float[]` 字段的索引表，并使用 `num_dim` 属性来索引它们。`num_dim` 属性指定了 embedding 的维度（浮点数组的长度）。
+
+让我们创建一个名为 `docs` 的索引表，其中包含一个名为 `embedding` 的向量字段，该字段包含 4 个维度的向量。
+
+:::tip
+我们在示例中创建了一个 4 维向量，以保持代码片段的可读性。
+
+根据您使用的模型，实际应用中可能需要至少 256 维的向量才能产生良好的效果。
+:::
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+```js
+let schema = {
+  'name': 'docs',
+  'fields': [
+    {
+      'name': 'title',
+      'type': 'string'
+    },
+    {
+      'name': 'points',
+      'type': 'int32'
+    },
+    {
+      'name': 'embedding',
+      'type': 'float[]',
+      'num_dim': 4
+    }
+  ],
+  'default_sorting_field': 'points'
+}
+
+client.collections().create(schema)
+```
+        </TabItem>
+        <TabItem value="Python" label="Python" default>
+
+```py
+schema = {
+  'name': 'docs',
+  'fields': [
+    {
+      'name'  :  'title',
+      'type'  :  'string'
+    },
+    {
+      'name'  :  'points',
+      'type'  :  'int32'
+    },
+    {
+      'name'     :  'embedding',
+      'type'     :  'float[]',
+      'num_dim'  :  4
+    }
+  ],
+  'default_sorting_field': 'points'
+}
+
+client.collections.create(schema)
+```
+
+        </TabItem>
+    <TabItem value="shell" label="shell" default>
+
+```bash
+curl "http://localhost:8868/collections" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+            "name": "docs",
+            "fields": [
+              {"name": "title", "type": "string" },
+              {"name": "points", "type": "int32" }, 
+              {"name": "embedding", "type": "float[]", "num_dim": 4}
+            ],
+            "default_sorting_field": "points"
+          }'
+```
+
+    </TabItem>
+</Tabs>
+
+现在让我们用向量索引文档。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+```js
+let document = {
+  'title': 'Louvre Museuem',
+  'points': 1,
+  'embedding': [0.04, 0.234, 0.113, 0.001]
+}
+
+client.collections('docs').documents().create(document)
+```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+document = {
+  'title': 'Louvre Museuem',
+  'points': 1,
+  'embedding': [0.04, 0.234, 0.113, 0.001]
+}
+
+client.collections['docs'].documents.create(document)
+```
+
+    </TabItem>
+    <TabItem value="shell" label="shell" default>
+
+```bash
+curl "http://localhost:8868/collections/docs/documents" -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        -d '{"points":1,"title":"Louvre Museuem", "embedding": [0.04, 0.234, 0.113, 0.001]}'
+```
+
+    </TabItem>
+</Tabs>
+
+### 选项 B：kumosearch 内部自动生成 embedding 嵌入 {#opion-b-embedding}
+
+为了简化 embedding 生成的过程，kumosearch 可以自动使用您的 JSON 数据以及 OpenAI API、PaLM API 或[此处](https://huggingface.co/kumo-ai/models/tree/main) 列出的任何内置 embedding 模型生成并存储 embedding。
+
+当您对此自动生成的向量字段进行搜索查询时，您的搜索查询将使用相同的模型进行向量化，从而支持语义搜索或混合搜索。
+
+### 自动创建 embedding 字段
+
+要创建自动生成的 embedding 字段，您需要设置该字段的 `embed` 属性。
+
+这是一个例子：
+
+<Tabs>
+
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "product_name",
+      "type": "string"
+    },
+    {
+      "name": "categories",
+      "type": "string[]"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": [
+          "product_name",
+          "categories"
+        ],
+        "model_config": {
+          "model_name": "ts/e5-small"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "product_name",
+      "type" : "string"
+    },
+    {
+      "name" : "categories",
+      "type" : "string[]"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": [
+          "product_name",
+          "categories"
+        ],
+        "model_config": {
+          "model_name": "ts/e5-small"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+```
+
+    </TabItem>
+    <TabItem value="shell" label="shell" default>
+     
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "categories",
+            "type": "string[]"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name",
+                "categories"
+              ],
+              "model_config": {
+                "model_name": "ts/e5-small"
+              }
+            }
+          }
+        ]
+      }'
+
+```
+    </TabItem>
+</Tabs>  
+
+在此示例中，使用 `product_name` 和 `categories` 字段（以空格分隔）的串联值自动生成 embedding 向量字段。
+
+### 使用内置模型
+
+这些模型得到 kumosearch 的官方支持，并存储在 kumosearch Hugging Face 存储库中[此处](https://huggingface.co/kumo-ai/models/tree/main)。
+
+您可以在模型名称前添加 `ts` 命名空间来指定模型。kumosearch 会自动下载这些模型，并在创建索引表后将这些模型用于文档索引。
+
+<Tabs>
+
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "brand",
+      "type": "string"
+    },
+    {
+      "name": "categories",
+      "type": "string[]"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": [
+          "brand",
+          "categories"
+        ],
+        "model_config": {
+          "model_name": "ts/all-MiniLM-L12-v2"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "brand",
+      "type" : "string"
+    },
+    {
+      "name" : "categories",
+      "type" : "string[]"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": [
+          "brand",
+          "categories"
+        ],
+        "model_config": {
+          "model_name": "ts/all-MiniLM-L12-v2"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+```
+
+    </TabItem>
+    <TabItem value="shell" label="shell" default>
+     
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "brand",
+            "type": "string"
+          },
+          {
+            "name": "categories",
+            "type": "string[]"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "brand",
+                "categories"
+              ],
+              "model_config": {
+                "model_name": "ts/all-MiniLM-L12-v2"
+              }
+            }
+          }
+        ]
+      }'
+
+```
+    </TabItem>
+</Tabs>  
+
+当使用如上 `schema` 创建索引表时，将下载 `all-MiniLM-L12-v2` 模型，您的文档将自动由此模型 embedding，并存储在 embedding 字段中。
+
+请参阅我们的 [Hugging Face 存储库](https://huggingface.co/kumo-ai/models/tree/main) 了解所有官方支持的模型。
+
+### 使用 GPU（可选）{#using-gpu-optional}
+
+embedding 模型的运行需要大量计算资源。因此，当使用[内置模型](#使用内置模型)时，您可能需要考虑在带有 GPU 的服务器上运行 kumosearch，以提高 embedding 生成的性能，尤其是对于大型数据集。
+
+#### 自托管时：
+<!-- TODO
+请遵循[安装指南](../../kmsearch/install-kumosearch.mdx#using-a-gpu-optional)。
+-->
+### 使用 OpenAI API {#using-openai-api}
+
+您还可以让 kumosearch 将 JSON 数据中的特定字段发送到 OpenAI 的 API 以生成文本 embedding。
+
+您可以使用[此处](https://platform.openai.com/docs/guides/embeddings/embedding-models)列出的任何 OpenAI 模型。
+
+<Tabs>
+    <TabItem value="JavaScript" label="Javascript" default>
+
+```js
+let schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "product_name",
+      "type": "string"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "openai/text-embedding-ada-002",
+          "api_key": "your_openai_api_key"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "product_name",
+      "type" : "string"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "openai/text-embedding-ada-002",
+          "api_key": "your_openai_api_key"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+     
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "openai/text-embedding-ada-002",
+                "api_key": "your_openai_api_key"
+              }
+            }
+          }
+        ]
+      }'
+
+```
+    </TabItem>
+</Tabs>
+
+当您创建上述索引表时，我们将调用 OpenAI API，从 `product_name` 字段生成嵌入，并在每次索引文档时将其存储在 `embedding` 字段中。
+
+您需要在 `model_config` 中提供有效的 OpenAI API 密钥才能使用此功能。
+
+### 使用 OpenAI 兼容的 API
+
+您还可以通过在 `model_config` 中自定义基本 URL 来使用与 OpenAI-API 兼容的 API 提供商（例如 Azure）：
+
+<Tabs>
+
+<TabItem value="JavaScript" label="JavaScript" default>
+```js
+let schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "product_name",
+      "type": "string"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "openai/text-embedding-ada-002",
+          "api_key": "your_api_key_as_required_by_the_custom_provider",
+          "url": "https://your-custom-openai-compatible-api.domain.com"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+  </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "product_name",
+      "type" : "string"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "openai/text-embedding-ada-002",
+          "api_key": "your_api_key_as_required_by_the_custom_provider",
+          "url": "https://your-custom-openai-compatible-api.domain.com"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "openai/text-embedding-ada-002",
+                "api_key": "your_api_key_as_required_by_the_custom_provider",
+                "url": "https://your-custom-openai-compatible-api.domain.com"
+              }
+            }
+          }
+        ]
+      }'
+
+```
+    </TabItem>
+</Tabs>
+
+当您创建上面的索引表时，kumosearch 将调用在 `https://your-custom-openai-company-api.domain.com` 后的 OpenAI-API 兼容服务器，从 `product_name` 字段生成 embedding，并在每次索引文档时将其存储在 `embedding` 字段中。
+
+指定 URL 后面的自定义 API 服务器应提供以下端点：
+
+**端点**：
+
+`POST /v1/embeddings`
+
+**请求体:**
+
+| 参数 | 类型               | 描述                  |
+|------------|--------------------|------------------------------|
+| model      | string             | 模型名称                  | 
+| input      | string or string[] | 输入字符串或字符串数组 |
+
+**响应体:**
+
+```json
+{
+    "data": [
+        {
+            "embedding": [
+                       ....
+            ]
+        }
+    ]
+}
+```
+
+响应体可能包含附加数据，但嵌入必须按照上述格式返回。
+
+**错误响应体:**
+
+```json
+{
+  "error": {
+    "message": "Error message",
+    "type": "error_type",
+    "param": null,
+    "code": "error_code"
+  }
+}
+```
+
+### 使用 Google PaLM API {#using-google-paLm_api}
+
+此 API 由[Google MakerSuite](https://developers.generativeai.google/products/makersuite) 提供，用于生成 embeddings.
+
+<Tabs>
+
+<TabItem value="JavaScript" label="JavaScript" default>
+```js
+let schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "product_name",
+      "type": "string"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "google/embedding-gecko-001",
+          "api_key": "your_google_api_key"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+
+  </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "product_name",
+      "type" : "string"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "google/embedding-gecko-001",
+          "api_key": "your_google_api_key"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+     
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "google/embedding-gecko-001",
+                "api_key": "your_google_api_key"
+              }
+            }
+          }
+        ]
+      }'
+
+```
+    </TabItem>
+
+</Tabs>
+
+### 使用 GCP Vertex AI API {#using-gcp-vertex-api}
+
+该 API 也是由 Google 在 Google Cloud Platform (GCP) 下提供的。
+
+您需要以下身份验证信息才能使用此方法：
+
+- GCP access token (在创建字段时必须有效)
+- GCP refresh token
+- GCP application client ID
+- GCP application client secret
+- GCP project ID
+
+有关如何获取这些值的更多信息，请参阅 Vertex AI 文档。
+  
+<Tabs>
+
+<TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "product_name",
+      "type": "string"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "gcp/embedding-gecko-001",
+          "access_token": "your_gcp_access_token",
+          "refresh_token": "your_gcp_refresh_token",
+          "client_id": "your_gcp_app_client_id", 
+          "client_secret": "your_gcp_client_secret",
+          "project_id": "your_gcp_project_id"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+  </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "product_name",
+      "type" : "string"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": [
+          "product_name"
+        ],
+        "model_config": {
+          "model_name": "gcp/embedding-gecko-001",
+          "access_token": "your_gcp_access_token",
+          "refresh_token": "your_gcp_refresh_token",
+          "client_id": "your_gcp_app_client_id", 
+          "client_secret": "your_gcp_client_secret",
+          "project_id": "your_gcp_project_id"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+```
+
+  </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+     
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": [
+                "product_name"
+              ],
+              "model_config": {
+                "model_name": "gcp/embedding-gecko-001",
+                "access_token": "your_gcp_access_token",
+                "refresh_token": "your_gcp_refresh_token",
+                "client_id": "your_gcp_app_client_id", 
+                "client_secret": "your_gcp_client_secret",
+                "project_id": "your_gcp_project_id"
+              }
+            }
+          }
+        ]
+      }'
+```
+    </TabItem>
+</Tabs>
+
+### 远程 embedding API 参数
+
+您可以使用以下参数来微调对远程嵌入服务的 API 调用：
+
+#### 搜索期间
+
+| 参数                            | 描述                                  | 默认值 |
+|-------------------------------|-------------------------------------|-----|
+| `remote_embedding_timeout_ms` | 搜索期间，远程嵌入服务的 API 调用等待多长时间被视为超时 | 30000 |
+| `remote_embedding_num_tries`  | 搜索期间，失败时重新对远程嵌入服务 API 调用的次数       | 2   |
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding',
+  'prefix'                     : false,
+  'remote_embedding_timeout_ms': 5000,
+  'remote_embedding_num_tries'   : 3
+}
+
+client.collections('products').documents().search(search_parameters)
+```
+
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+  
+  ```py
+search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding',
+  'prefix'                     : false,
+  'remote_embedding_timeout_ms': 5000,
+  'remote_embedding_num_try'   : 3
+}
+
+client.collections['products'].documents.search(search_parameters)
+```
+
+  </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+    
+  ```bash
+curl 'http://localhost:8868/multi_search' \
+      -X POST \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+            "searches": [
+              {
+                "collection": "products",
+                "q": "chair",
+                "query_by": "embedding",
+                "prefix": false,
+                "remote_embedding_timeout_ms": 5000,
+                "remote_embedding_num_try": 3
+              }
+            ]
+          }'
+```
+
+    </TabItem>
+</Tabs>
+
+
+#### 索引期间
+
+| 参数                     | 描述                                                                                                                                                                           | 默认值|
+|-------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `remote_embedding_batch_size` | 导入多个文档时，发送到远程 API 的每个批次的最大数值。使用较小的批次可以降低超时风险，但会增加请求数量。 | 200     |  
+| `remote_embedding_timeout_ms` | 索引期间，远程嵌入服务的 API 调用等待多长时间被视为超时。                                                                            | 60000     |  
+| `remote_embedding_num_tries` | 索引期间，失败时重新对远程嵌入服务 API 调用的次数。                                                                                   | 2       |  
+
+<Tabs>
+<TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let import_parameters = {
+  'remote_embedding_batch_size': 200
+}
+
+client.collections('products').documents().import(documents, import_parameters)
+```
+</TabItem>
+    <TabItem value="Python" label="Python" default>
+
+  ```py
+import_parameters = {
+  'remote_embedding_batch_size': 200
+}
+
+client.collections['products'].documents.import(documents, import_parameters)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl 'http://localhost:8868/collections/products/documents/import?remote_embedding_batch_size=200' \
+  -X POST \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{"product_name": "chair"}
+      {"product_name": "table"}'
+```
+
+    </TabItem>
+
+</Tabs>
+
+### 使用您自己的模型
+
+您还可以使用自己的模型从 kumosearch 中生成嵌入。这些模型必须采用 ONNX 文件格式。
+
+在 `<data_dir>/models` 目录下创建一个文件夹，并在其中存储 ONNX 模型文件、词汇文件和模型配置的 JSON 文件。
+
+***注意：*** 模型文件必须命名为 `model.onnx`，配置文件必须命名为 `config.json`。
+
+#### 模型配置文件
+
+该文件包含有关您要使用的模型的信息。
+
+JSON 文件必须包含 `model_type`（模型的类型；目前支持 `bert` 和 `xlm_roberta`）和 `vocab_file_name` 键。
+
+**目录结构：**
+
+```
+<data_dir>/models/test_model/model.onnx
+<data_dir>/models/test_model/vocab.txt
+<data_dir>/models/test_model/config.json
+```
+
+**`config.json`的内容：**
+```
+{
+    "model_type": "bert",
+    "vocab_file_name": "vocab.txt"
+}
+```
+
+使用目录名称作为 `model_config` 中的 `model_name` 创建嵌入字段。
+   
+<Tabs>
+
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "product_name",
+      "type": "string"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": ["product_name"],
+        "model_config": {
+          "model_name": "test_model"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+
+  </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "product_name",
+      "type" : "string"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": ["product_name"],
+        "model_config": {
+          "model_name": "test_model"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+     
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": ["product_name"],
+              "model_config": {
+                "model_name": "test_model"
+              }
+            }
+          }
+        ]
+      }'
+
+```
+    </TabItem>
+</Tabs>
+
+#### 可选模型参数
+
+这些是可选的模型参数，可与您的自定义模型一起使用。
+
+##### 索引前缀和查询前缀
+
+某些模型可能需要通过前缀来区分文本是查询本身还是需要查询的实际内容（例如，您可以参考 `intfloat/e5-small`）。
+
+如果在 `model_config` 中设置了该属性，指定的索引前缀将在为文档生成嵌入时添加到文本前，而 `query_prefix` 则会在生成查询文本的嵌入前添加到查询内容中。例如：
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name": "product_name",
+      "type": "string"
+    },
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": ["product_name"],
+        "model_config": {
+          "model_name": "e5-base",
+          "indexing_prefix": "passage:",
+          "query_prefix": "query:"
+        }
+      }
+    }
+  ]
+};
+
+client.collections('products').create(schema);
+
+```
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+schema = {
+  "name": "products",
+  "fields": [
+    {
+      "name" : "product_name",
+      "type" : "string"
+    },
+    {
+      "name" : "embedding",
+      "type" : "float[]",
+      "embed": {
+        "from": ["product_name"],
+        "model_config": {
+          "model_name": "e5-base",
+          "indexing_prefix": "passage:",
+          "query_prefix": "query:"
+        }
+      }
+    }
+  ]
+}
+
+client.collections.create(schema)
+
+  </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+     
+```bash
+curl 'http://localhost:8868/collections' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "name": "products",
+        "fields": [
+          {
+            "name": "product_name",
+            "type": "string"
+          },
+          {
+            "name": "embedding",
+            "type": "float[]",
+            "embed": {
+              "from": ["product_name"],
+              "model_config": {
+                "model_name": "e5-base",
+                "indexing_prefix": "passage:",
+                "query_prefix": "query:"
+              }
+            }
+          }
+        ]
+      }'
+
+```
+    </TabItem>
+</Tabs>
+
+对于此示例，当您索引文档时：
+```
+{
+   "product_name": "ABCD"
+}
+
+```
+用于为 `embedding` 字段生成嵌入的文本将为 `passage: ABCD`，而不是 `ABCD`。当您查询时，如果您的查询是 `EFGH`，它将嵌入为 `query: EFGH` 而不是 `EFGH`。
+
+## 最近邻向量搜索
+
+在向量字段中对嵌入进行索引后，您可以搜索与给定查询向量最接近的文档。
+
+要控制返回的文档数量，可以在向量查询中使用 `per_page` 分页参数或 `k` 参数。
+
+<Tabs >
+    <TabItem value="JavsScript" label="JavaScript" default>
+
+```js
+let searchRequests = {
+  'searches': [
+    {
+      'collection': 'docs',
+      'q': '*',
+      'vector_query' : 'embedding:([0.96826, 0.94, 0.39557, 0.306488], k:100)', // <=== Be sure to replace `embedding` with the name of the field that stores your embeddings.
+      'exclude_fields': 'embedding', // <=== Don't return the raw floating point numbers in the vector field in the search API response, to save on network bandwidth. 
+    }
+  ]
+}
+let commonSearchParams = {}
+client.multiSearch.perform(searchRequests, commonSearchParams)
+```
+
+
+</TabItem>
+    <TabItem value="Python" label="Python" default>
+
+```py
+search_requests = {
+  'searches': [
+    {
+      'collection': 'docs',
+      'q' : '*',
+      'vector_query': 'embedding:([0.96826, 0.94, 0.39557, 0.306488], k:100)', # <=== Be sure to replace `embedding` with the name of the field that stores your embeddings.
+      'exclude_fields': 'embedding' # <=== Don't return the raw floating point numbers in the vector field in the search API response, to save on network bandwidth.
+    }
+  ]
+}
+
+# Search parameters that are common to all searches go here
+common_search_params =  {}
+client.multi_search.perform(search_requests, common_search_params)
+```
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl 'http://localhost:8868/multi_search' \
+      -X POST \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+            "searches": [
+              {
+                "collection": "docs",
+                "q": "*",
+                "vector_query": "embedding:([0.96826,0.94,0.39557,0.306488], k:100)",
+                "exclude_fields": "embedding"
+              }
+            ]
+          }'
+
+# Be sure to replace `embedding` with the name of the field that stores your embeddings.
+# We use `exclude_fields` so kumosearch doesn't return the raw floating point numbers in the vector field in the search API response, to save on network bandwidth.
+```
+
+    </TabItem>
+</Tabs>
+
+注意：如果同时提供了 `per_page` 和 `k` 参数，则使用较大的值。
+
+响应中的每个匹配命中都将包含一个 `vector_distance` 字段，指示文档向量与查询向量的**接近**程度。 kumosearch 使用余弦相似度，因此距离将介于 `0` 和 `2` 之间。
+
+- 如果文档的向量与查询向量完全匹配，则距离为 `0`。
+- 如果文档的向量与查询向量极其不同，则距离为 `2`。
+
+命中结果会自动按`vector_distance` 的升序排序，即最匹配的文档首先出现。
+
+:::tip
+由于向量搜索查询通常包含大量数据（因为查询向量的维度很大），我们建议使用 `multi_search` 端点将搜索参数作为 POST 请求正文发送,，从而优化网络带宽。
+:::
+
+:::warning 网络带宽优化
+默认情况下，kumosearch 返回文档中的所有字段作为搜索 API 响应的一部分。
+
+因此，如果您的文档包含向量字段，这可能会导致 kumosearch 为每个搜索查询返回大量浮点向量数据，这会不必要地占用网络带宽，并可能导致 CPU 资源的浪费。
+
+为了优化网络带宽，您可以在搜索参数中添加 `exclude_fields: "your_embedding_field_name"` ，以排除嵌入字段的数据。
+:::
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+```json
+{
+  "facet_counts": [],
+  "found": 1,
+  "hits": [
+    {
+      "document": {
+        "id": "0",
+        "embedding": [
+          0.04, 0.234, 0.113, 0.001
+        ]
+      },
+      "highlight": {
+        "full": {},
+        "snippet": {}
+      },
+      "highlights": [],
+      "vector_distance": 0.19744956493377686
+    }
+  ],
+  "out_of": 1,
+  "page": 1,
+  "request_params": {
+    "collection_name": "docs",
+    "per_page": 10,
+    "q": "*"
+  },
+  "search_cutoff": false,
+  "search_time_ms": 0
+}
+```
+    </TabItem>
+</Tabs>
+
+## 查询相似文档
+
+如果您有一个特定的文档 `id` 并且想要查找与该文档相似的文档，可以直接使用该 `id` 进行向量查询。
+
+```shell
+curl 'http://localhost:8868/multi_search' \
+  -X POST \
+  -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+  -d '{
+        "searches": [
+          {
+            "collection": "docs",
+            "q": "*",
+            "vector_query": "embedding:([], id: foobar)"
+          }
+        ]
+      }'
+      
+# Be sure to replace `embedding` with the name of the field that stores your embeddings.
+```
+
+通过指定一个空查询向量 `[]` 并传递 `id` 参数，系统将返回 embedding 值最接近上述 `foobar` 文档的的所有文档。
+
+:::tip
+结果中不会包含指定的文档本身。
+:::
+
+## 语义搜索
+
+使用自动生成的嵌入时，可以直接将 `query_by` 设置为自动嵌入字段，以对该字段进行语义搜索。
+
+kumosearch 将使用与生成自动嵌入字段相同的嵌入模型来生成 `q` 参数的向量，然后在内部进行最近邻搜索。
+
+<Tabs>
+
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding',
+}
+
+client.collections('products').documents().search(search_parameters)
+```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+  ```py
+search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding',
+}
+
+client.collections['products'].documents.search(search_parameters)
+```
+
+</TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+  ```bash
+curl 'http://localhost:8868/multi_search' \
+      -X POST \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+            "searches": [
+              {
+                "collection": "products",
+                "q": "chair",
+                "query_by": "embedding"
+              }
+            ]
+          }'      
+```
+
+    </TabItem>
+</Tabs>
+
+这将自动对 `embedding` 字段使用相同模型生成上述 `chair` 查询的嵌入，并执行最近邻向量搜索。
+
+## 混合搜索 {#hybrid-search}
+
+使用自动生成的嵌入时，可以将 `query_by` 设置为常规字段和自动嵌入字段的组合，以实现对多个字段进行混合搜索。
+
+kumosearch 将对常规字段进行关键字搜索，对自动嵌入字段进行语义搜索，并通过 Rank Fusion 将结果合并成一组排序结果：
+
+```
+K = rank of document in keyword search
+S = rank of document in semantic search
+
+rank_fusion_score = 0.7 * K + 0.3 * S
+```
+
+可以使用 [alpha 参数](#weightage-for-semantic-vs-keyword-matches) 调整 `0.7` 和 `0.3` 的权重值。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding,product_name',
+}
+
+client.collections('products').documents().search(search_parameters)
+```
+
+</TabItem>
+    <TabItem value="Python" label="Python" default>
+
+  ```py
+search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding,product_name',
+}
+
+client.collections['products'].documents.search(search_parameters)
+```
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl 'http://localhost:8868/multi_search' \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -X POST \
+    -d '{
+          "searches": [
+            {
+              "collection": "products",
+              "query_by": "embedding,product_name",
+              "q": "chair",
+              "exclude_fields": "embedding"
+            }
+          ]
+        }'
+```
+
+    </TabItem>
+</Tabs>
+
+在混合搜索期间，`sort_by` 中的 `_text_match` 子句将参考组合的融合分数。
+
+使用自定义嵌入字段时，您可以通过将 `q` 参数与 `vector_query` 参数组合来进行混合搜索。
+
+kumosearch 将使用 `q` 参数进行关键字搜索，使用 `vector_query` 进行最近邻搜索，并使用 Rank Fusion 将结果合并成一组排序结果（参见上文）。
+
+### 语义与关键字匹配的权重 {#weightage-for-semantic-vs-keyword-matches}
+
+默认情况下，kumosearch 为向量搜索排名分配权重 `0.3`，为关键字搜索排名分配权重 `0.7`。您可以通过 `vector_query` 参数的 `alpha` 选项调整分配给向量搜索排名的权重。
+
+例如，要将向量搜索排名的权重设置为 `0.8`，请将 `alpha` 设置为 `0.8`：
+
+```bash
+curl 'http://localhost:8868/multi_search' \
+    -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    -X POST \
+    -d '{
+          "searches": [
+            {
+              "collection": "products",
+              "query_by": "embedding,product_name",
+              "q": "chair",
+              "vector_query": "embedding:([], alpha: 0.8)",        
+              "exclude_fields": "embedding"
+            }
+          ]
+        }'
+```
+
+:::tip
+在嵌入字段和常规搜索字段上进行查询时，一些参数如 `query_by_weights` 不会对 `query_by` 中提到的嵌入字段产生影响。但是，由于 `query_by_weights` 的长度必须与 `query_by` 的长度匹配，您可以使用 `0` 等占位符值。
+:::
+
+### 距离阈值 {#max-distance}
+
+您可以为语义搜索和混合搜索的结果设置最大向量距离阈值。为此，您需要在 `vector_query` 参数中设置 `distance_threshold`。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+```js
+let search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding,product_name',
+  'vector_query'               : 'embedding:([], distance_threshold:0.30)'
+}
+
+client.collections('products').documents().search(search_parameters)
+```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+  ```py
+search_parameters = {
+  'q'                          : 'chair',
+  'query_by'                   : 'embedding,product_name',
+  'vector_query'               : 'embedding:([], distance_threshold:0.30)'
+}
+
+client.collections['products'].documents.search(search_parameters)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+curl 'http://localhost:8868/multi_search' \
+      -X POST \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+            "searches": [
+              {
+                "collection": "products",
+                "q": "chair",
+                "query_by": "embedding,product_name",
+                "vector_query": "embedding:([], distance_threshold:0.30)"
+              }
+            ]
+          }'
+```
+
+    </TabItem>
+</Tabs>
+
+### 混合排序
+
+在进行混合搜索时（特别是使用 `q` 参数和显式 `vector_query` 参数时），您可以使用 `sort_by` 中的特殊排序关键字 `_vector_distance` 来按向量距离和其他数字参数的组合进行排序。
+
+这是一个例子：
+
+```json
+{
+  ...
+  "sort_by": "popularity_score:desc,_vector_distance:asc"
+  ...
+}
+```
+## 使用历史查询进行搜索
+
+您可以通过 `queries` 参数发送搜索查询列表，以使向量搜索计算加权查询嵌入，从而根据历史搜索查询个性化搜索结果。
+
+在下面的示例中，向量搜索是基于 `smart phone` 和 `apple ipad` 的查询嵌入计算的。
+
+您还可以使用可选的 `query_weights` 参数为每个查询分配适当的权重。如果不传递 `query_weights` 参数，则所有查询将具有相同的权重。
+
+```json
+{
+  "vector_query": "embedding:([], queries:[smart phone, apple ipad], query_weights:[0.9, 0.1])"
+}
+```
+
+## 重新排序 {#re-rank}
+
+您还可以使用向量搜索对关键字搜索结果进行重新排序。将向量距离作为参数，而不是将关键字和向量搜索的分数相结合，用于重新排序关键词搜索的命中。
+
+在下面的示例中，我们使用向量距离作为文本匹配分数的辅助排序条件。
+
+```json
+{
+  "q": "shoes",
+  "query_by": "title,brand",
+  "sort_by": "_text_match:desc,_vector_query(embedding:([0.43, 0.13, 0.21])):asc"
+}
+```
+
+## 暴力搜索
+
+默认情况下，kumosearch 使用内置的 HNSW 索引进行近似最近邻向量搜索。这对于大型数据集效果很好。但是，如果您希望绕过 HNSW 索引并进行 flat/暴力排名的向量搜索，可以通过 `flat_search_cutoff` 参数来实现。
+
+例如，如果您希望在给定查询匹配的文档少于 20 个时使用暴力搜索，可以设置 `flat_search_cutoff=20`。
+
+这是一个示例，我们在 `category` 字段上进行过滤，并要求如果过滤操作产生的结果数量少于 20 个，则进行暴力搜索。
+
+```shell
+curl 'http://localhost:8868/multi_search' \
+      -X POST \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+      -d '{
+            "searches": [
+              {
+                "collection": "docs",
+                "q": "*",
+                "filter_by": "category:shoes",
+                "vector_query": "embedding:([0.96826, 0.94, 0.39557, 0.306488], k:100, flat_search_cutoff: 20)" 
+              }
+            ]
+          }'
+          
+# Be sure to replace `embedding` with the name of the field that stores your embeddings.
+```
+
+## 配置 HNSW 参数
+
+#### 索引参数
+
+您可以在创建向量和嵌入字段时设置 `ef_construction`（默认值：`200`）和 `M`（默认值：`16`）参数。
+
+```json
+{
+  "name": "docs",
+  "fields": [
+    {
+      "name": "vec",
+      "type": "float[]",
+      "num_dim": 768,
+      "hnsw_params": {
+        "ef_construction": 100,
+        "M": 8
+      }
+    }
+  ]
+}
+```
+#### 搜索参数
+
+您可以通过 `vector_query` 参数设置自定义的 `ef`（默认值：`10`）。
+
+```json
+{
+  "vector_query" : "vec:([], ef:100)"
+}
+```
+
+## 用户界面示例
+
+- [这里](https://hn-comments-search.kumosearch.org) 展示了如何使用 kumosearch 的内置嵌入生成机制实现混合搜索（语义搜索 + 关键字搜索 + 过滤 + 分面）。
+
+- [此处](https://ecommerce-store.kumosearch.org/) 展示了如何在电子商务场景中使用向量搜索实现**查找相似**功能。
+
+- [此处](https://github.com/kumosearch/kumosearch-instantsearch-semantic-search-demo) 展示了如何使用外部嵌入 API 和向量搜索来实现语义搜索。

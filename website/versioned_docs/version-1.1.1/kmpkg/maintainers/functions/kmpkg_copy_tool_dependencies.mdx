@@ -1,0 +1,29 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_copy_tool_dependencies
+
+将内置工具的所有 DLL 依赖项都复制到工具文件夹中。
+
+## 使用情况
+
+```cmake
+kmpkg_copy_tool_dependencies(<${CURRENT_PACKAGES_DIR}/tools/${PORT}>)
+```
+
+## 参数
+
+包含工具的目录的路径。
+
+## 说明
+
+端口文件（如果有任何工具）在完成重新排列二进制输出后应始终调用此命令。
+
+## 示例
+
+- [glib](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/glib/portfile.cmake)
+- [fltk](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/fltk/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_copy\_tool\_dependencies.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_copy_tool_dependencies.cmake)

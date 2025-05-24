@@ -1,0 +1,612 @@
+# ktest FAQ
+
+## 为什么测试套件名称和测试名称不应该包含下划线？ {#why-should-test-suite-names-and-test-names-not-contain-underscore}
+
+:::info
+注意：KumoTest 为特殊用途的关键字保留下划线（`_`），例如
+[`DISABLED_` 前缀](advanced.mdx#temporarily-disabling-tests)，另外
+出于以下理由。
+:::
+
+下划线 (`_`) 是特殊的，因为 C++ 保留以下内容供
+编译器和标准库：
+
+1. 任何以“_”开头，后跟大写字母的标识符，以及
+2. 任何包含两个连续下划线的标识符（即`__`）*名称中的*任何地方。
+
+*禁止*用户代码使用此类标识符。
+
+现在让我们看看这对于“TEST”和“TEST_F”意味着什么。
+
+
+当前 `TEST(TestSuiteName, TestName)` 生成一个名为的类
+`TestSuiteName_TestName_Test`。如果 `TestSuiteName` 或 `TestName` 会发生什么
+包含`_`？
+
+
+1. 如果 `TestSuiteName` 以 `_` 开头，后跟一个大写字母（例如，
+`_Foo`)，我们最终得到 `_Foo_TestName_Test`，它是保留的，因此
+无效的。
+2. 如果 `TestSuiteName` 以 `_` 结尾（例如，`Foo_`），我们得到
+`Foo__TestName_Test`，这是无效的。
+3. 如果 `TestName` 以 `_` 开头（例如，`_Bar`），我们得到
+`TestSuiteName__Bar_Test`，这是无效的。
+4. 如果 `TestName` 以 `_` 结尾（例如，`Bar_`），我们得到
+`TestSuiteName_Bar__Test`，这是无效的。
+
+显然 `TestSuiteName` 和 `TestName` 不能以 `_` 开头或结尾
+（实际上，“TestSuiteName”可以以“_”开头——只要“_”不是
+后跟一个大写字母。但这变得越来越复杂。所以对于
+简单起见，我们只是说它不能以“_”开头。）。
+
+`TestSuiteName` 和 `TestName` 在中包含 `_` 似乎没问题。
+中间。但是，请考虑一下：
+
+```c++
+TEST(Time, Flies_Like_An_Arrow) { ... }
+TEST(Time_Flies, Like_An_Arrow) { ... }
+```
+
+现在，两个“TEST”将生成相同的类(`Time_Flies_Like_An_Arrow_Test`)。那不好。
+
+因此，为了简单起见，我们只要求用户避免在`TestSuiteName`中使用`_`，`测试名称`。该规则比必要的限制更多，但它很简单并且
+容易记住。它还为 KumoTest 提供了一些回旋余地，以防万一未来的实施需要改变。
+
+如果你违反了规则，可能不会立即产生后果，但你的测试可能（只是可能）会破坏新的编译器（或您所使用的编译器的新版本）
+正在使用）或使用新版本的 KumoTest。因此最好遵循规则。
+
+## 为什么 KumoTest 支持`EXPECT_EQ(NULL, ptr)`和`ASSERT_EQ(NULL, ptr)`，但不支持`EXPECT_NE(NULL, ptr)`和`ASSERT_NE(NULL, ptr)`？
+
+首先，您可以将`nullptr`与每个宏一起使用，例如`EXPECT_EQ(ptr, nullptr)`, `EXPECT_NE(ptr, nullptr)`, `ASSERT_EQ(ptr, nullptr)`,
+`ASSERT_NE(ptr, nullptr)`。这是样式指南中的首选语法因为`nullptr`不存在`NULL`所存在的类型问题。
+
+由于 C++ 的一些特殊性，它需要一些重要的模板元支持使用`NULL`作为`EXPECT_XX()`参数的编程技巧
+和`ASSERT_XX()`宏。因此我们只在最需要的地方做（否则我们会使 KumoTest 的实现更难维护并且更多
+比必要的更容易出错）。
+
+从历史上看，`EXPECT_XX()`宏将*预期*值作为其第一个值参数和*实际*值作为第二个，尽管这个参数顺序现在是
+灰心。有人想要是合理的写`EXPECT_EQ(NULL, some_expression)`，这确实是被要求的
+几次。因此我们实施了它。
+
+对`EXPECT_NE(NULL, ptr)`的需求并不那么强烈。当断言失败，你已经知道`ptr`必须是`NULL`，所以它不会添加任何
+在这种情况下打印`ptr`的信息。这意味着`EXPECT_TRUE(ptr != NULL)`同样有效。
+
+如果我们要支持`EXPECT_NE(NULL, ptr)`，为了保持一致性，我们必须
+也支持`EXPECT_NE(ptr, NULL)`。这意味着使用模板元
+编程在实现过程中出现了两次技巧，使得更难
+理解并维护。我们相信收益并不能证明成本是合理的。
+
+最后，随着 kmock 匹配器库的增长，我们鼓励人们在测试中更频繁地使用统一的`EXPECT_THAT(value, matcher)`语法。一
+匹配器方法的显着优点是匹配器可以轻松地组合形成新的匹配器，而`EXPECT_NE`等宏不能
+轻松组合。因此，我们希望在匹配器上投入更多，而不是在
+`EXPECT_XX()` 宏。
+
+## 我需要测试接口的不同实现是否满足一些常见要求。我应该使用类型测试还是值参数化测试？
+
+用于测试同一接口的各种实现，可以是类型化测试，也可以是值参数化测试可以完成它。这实际上取决于您（用户）
+根据您的具体情况，决定哪个对您更方便。一些粗略指导方针：
+
+* 如果不同实例的类型测试可以更容易编写可以以相同的方式创建实现，对类型进行取模。例如，
+  如果所有这些实现都有一个公共默认构造函数（例如你可以写`new TypeParam`），或者如果它们的工厂函数具有相同的
+  形式（例如`CreateInstance<TypeParam>()`）。
+* 如果您需要不同的代码，值参数化测试可以更容易编写模式来创建不同的实现实例，例如`new Foo` vs
+ `new Bar(5)`。为了适应差异，您可以编写工厂函数包装器并将这些函数指针传递给测试作为它们的参数。
+* 当类型化测试失败时，默认输出包括类型的名称，这可以帮助您快速识别哪个实施是错误的。
+  值参数化测试仅显示失败的迭代次数默认。您需要定义一个返回迭代名称的函数
+  并将其作为第三个参数传递给 `INSTANTIATE_TEST_SUITE_P` 以获取更多有用的输出。
+* 使用类型化测试时，您需要确保您正在针对接口类型，而不是具体类型（换句话说，你想要使
+  确保 `implicit_cast<MyInterface*>(my_concrete_impl)` 有效，不仅如此`my_concrete_impl` 有效）。在这方面犯错误的可能性较小
+  当使用值参数化测试时。
+
+我希望我没有让你更加困惑。 :-) 如果你不介意的话，我建议你给两种方法都可以尝试一下。练习是掌握微妙之处的更好方法
+两种工具之间的差异。一旦你有了一些具体的经验，你可以更轻松地决定下次使用哪一个。
+
+## 使用“ProtocolMessageEquals”时，我遇到了一些关于无效原始描述符的运行时错误。帮助！
+
+:::info
+`ProtocolMessageEquals` 和 `ProtocolMessageEquiv` 已*弃用*现在。请使用 `EqualsProto` 等代替。
+:::
+
+最近重新定义了`ProtocolMessageEquals`和`ProtocolMessageEquiv`现在对无效协议缓冲区定义的容忍度较低。特别是，如果
+你有一个`foo.proto`，它不完全限定协议消息的类型它引用（例如 `message<Bar>` 应该是 `message<blah.Bar>`），你
+现在会出现运行时错误，例如：
+
+```
+... descriptor.cc:...] Invalid proto descriptor for file "path/to/foo.proto":
+... descriptor.cc:...]  blah.MyMessage.my_field: ".Bar" is not defined.
+```
+
+如果您看到此内容，则您的`.proto`文件已损坏，需要通过以下方式修复
+类型完全合格。 `ProtocolMessageEquals` 的新定义和
+`ProtocolMessageEquiv` 恰好揭示了你的错误。
+
+## 我的死亡测试修改了某些状态，但死亡测试完成后更改似乎丢失了。为什么？
+
+死亡测试（`EXPECT_DEATH`等）在子进程中执行。这预期的崩溃不会杀死测试程序（即父进程）。作为一个结果，它们产生的任何内
+存副作用都可以在各自的内存中观察到子进程，但不在父进程中。你可以把它们想象成跑步
+在平行宇宙中，或多或少。
+
+特别是，如果您使用模拟并且死亡测试语句调用一些模拟方法时，父进程会认为调用从未发生过。所以，
+您可能想将`EXPECT_CALL`语句移至`EXPECT_DEATH`内宏。
+
+## EXPECT_EQ(htonl(blah), blah_blah) 在 opt 模式下会生成奇怪的编译器错误。这是 KumoTest 的错误吗？
+
+实际上，错误出在`htonl()`中。
+
+根据`man htonl`，`htonl()`是一个*函数*，这意味着它对使用 htonl 作为函数指针。然而，在 opt 模式下 `htonl()` 被定义为
+一个*宏*，它打破了这种用法。
+
+更糟糕的是，`htonl()`的宏定义使用“gcc”扩展，并且*不是*标准C++。这种黑客实现有一些特殊的限制。在
+特别是，它会阻止您编写 `Foo<sizeof(htonl(x))>()`，其中 `Foo`是一个具有完整参数的模板。
+
+`EXPECT_EQ(a, b)` 的实现在 a 中使用 `sizeof(... a ...)`模板参数，因此当“a”包含调用时不会在 opt 模式下编译
+到`htonl()`。很难让“EXPECT_EQ”绕过`htonl()`错误，因为该解决方案必须适用于各种平台上的不同编译器。
+
+## 编译器抱怨某些静态 const 成员变量的“未定义引用”，但我确实在类主体中定义了它们。怎么了？
+
+如果您的类有静态数据成员：
+
+```c++
+// foo.h
+class Foo {
+  ...
+  static const int kBar = 100;
+};
+```
+
+您还需要在`foo.cc`中的类主体*外部*定义它：
+
+```c++
+const int Foo::kBar;  // No initializer here.
+```
+
+否则你的代码是**无效的C++**，并且可能会以意想不到的方式中断。在特别是，在 KumoTest 比较断言（`EXPECT_EQ`等）中使用它将会
+生成“未定义的引用”链接器错误。事实上`它曾经有效`并不意味着它是有效的。这只是意味着你很幸运。 :-)
+
+如果静态数据成员的声明是 `constexpr` 那么它是隐式的“内联”定义，而“foo.cc”中的单独定义不是
+需要：
+
+```c++
+// foo.h
+class Foo {
+  ...
+  static constexpr int kBar = 100;  // Defines kBar, no need to do it in foo.cc.
+};
+```
+
+## 我可以从另一个`test fixture`中派生出一个`test fixture`吗？
+
+是的。
+
+每个测试装置都有一个相应且相同名称的测试套件。这意味着仅一个测试套件可以使用特定的fixture。但有时需要进行多次测试
+情况可能需要使用相同或略有不同的固定装置。例如，你可能想确保 GUI 库的所有测试套件都不会泄漏
+重要的系统资源，例如字体和画笔。
+
+在 KumoTest 中，您可以通过放置共享逻辑来在测试套件之间共享固定装置在基础测试fixture中，然后从该基础为每个测试设备派生一个单独的fixture
+想要使用这个通用逻辑的测试套件。然后你使用`TEST_F()`来编写使用每个派生的fixture进行测试。
+
+通常，您的代码如下所示：
+
+```c++
+// Defines a base test fixture.
+class BaseTest : public ::testing::Test {
+ protected:
+  ...
+};
+
+// Derives a fixture FooTest from BaseTest.
+class FooTest : public BaseTest {
+ protected:
+  void SetUp() override {
+    BaseTest::SetUp();  // Sets up the base fixture first.
+    ... additional set-up work ...
+  }
+
+  void TearDown() override {
+    ... clean-up work for FooTest ...
+    BaseTest::TearDown();  // Remember to tear down the base fixture
+                           // after cleaning up FooTest!
+  }
+
+  ... functions and variables for FooTest ...
+};
+
+// Tests that use the fixture FooTest.
+TEST_F(FooTest, Bar) { ... }
+TEST_F(FooTest, Baz) { ... }
+
+... additional fixtures derived from BaseTest ...
+```
+
+如有必要，您可以继续从派生fixture派生测试fixture。KumoTest 对于层次结构的深度没有限制。
+
+有关使用派生测试装置的完整示例，请参阅
+[sample5_unittest.cc](https://gitee.com/kumo-pub/ktest/blob/master/kumotest/samples/sample5_unittest.cc).
+
+## 编译器报错`"void value not ignored as it ought to be."`是什么意思?
+
+您可能在不返回`void`的函数中使用`ASSERT_*()`。`ASSERT_*()` 只能在 `void` 函数中使用，因为异常被
+被我们的构建系统禁用。请查看更多详情
+[此处](advanced.mdx#assertion-placement)。
+
+## 我的死亡测试挂起（或段错误）。我该如何修复它？
+
+在 KumoTest 中，死亡测试在子进程中运行，它们的工作方式是精美的。要编写死亡测试，您确实需要了解它们是如何工作的 - 请参阅
+详细信息请参见 [Death Assertions](reference/assertions.mdx#death)
+断言参考。
+
+特别是，死亡测试不喜欢在父级中有多个线程过程。所以你可以尝试的第一件事就是消除在外部创建线程
+`EXPECT_DEATH()`的。例如，您可能想使用模拟或假对象
+而不是测试中真实的。
+
+有时这是不可能的，因为您必须使用的某些库可能正在创建甚至在到达 `main()` 之前的线程。在这种情况下，您可以尝试最小化
+通过将尽可能多的活动转移到内部来减少冲突的可能性`EXPECT_DEATH()` （在极端情况下，你想移动里面的所有东西），或者
+在里面留下尽可能少的东西。另外，你可以尝试设置死亡测试样式为`threadsafe`，这更安全但速度更慢，看看是否有帮助。
+
+如果您使用线程安全死亡测试，请记住它们会重新运行测试从子进程的开头开始编程。因此请确保您的
+程序可以与自身并行运行并且是确定性的。
+
+最后，这归结为良好的并发编程。你必须做确保您的程序中不存在竞争条件或死锁。没有银子
+子弹-抱歉！
+
+## 我应该使用测试装置的构造函数/析构函数还是SetUp()/TearDown()？ {#CtorVsSetUp}
+
+首先要记住的是 KumoTest 不会重复使用相同的测试
+跨多个测试的固定对象。对于每个“TEST_F”，KumoTest 将创建
+一个**新鲜的**测试fixture对象，立即调用 `SetUp()`，运行测试主体，
+调用`TearDown()`，然后删除测试fixture对象。
+
+当您需要编写每个测试的设置和拆卸逻辑时，您可以选择
+使用测试装置构造函数/析构函数或`SetUp()/TearDown()`之间。
+前者通常是首选，因为它具有以下优点：
+
+* 通过在构造函数中初始化成员变量，我们可以选择将其设置为`const`，这有助于防止其值被意外更改，并且使测试更加明显正确。
+* 如果我们需要子类化测试fixture类，则子类'构造函数保证*首先*调用基类的构造函数，并且子类的析构函数保证调用基类的析构函数
+  *之后*。使用 SetUp()/TearDown() 时，子类可能会犯以下错误忘记调用基类'SetUp()/TearDown()`或在错误的时间。
+
+在以下情况下您可能仍想使用`SetUp()/TearDown()`：
+
+* C++ 不允许在构造函数和析构函数中调用虚函数。您可以调用声明为虚拟的方法，但它不会使用动态
+  派遣。它将使用其构造函数的类的定义目前正在执行中。这是因为在调用之前调用了虚方法
+  派生类的构造函数有机会运行是非常危险的——虚拟方法可能对未初始化的数据进行操作。因此，如果您需要
+  要调用将在派生类中重写的方法，您必须使用`SetUp()/TearDown()`。
+* 在构造函数（或析构函数）的主体中，不可能使用`ASSERT_xx` 宏。因此，如果设置操作可能导致致命的
+  测试失败会阻止测试运行，因此有必要使用 `abort` 并中止整个测试
+  可执行文件，或者使用 `SetUp()` 而不是构造函数。
+* 如果拆卸操作可能抛出异常，则必须使用`TearDown()` 与析构函数相反，因为抛出析构函数会导致
+  未定义的行为，通常会立即终止你的程序。笔记
+  许多标准库（如 STL）在异常发生时可能会抛出
+  在编译器中启用。因此，如果您
+  想要编写可以在有异常或无异常的情况下运行的可移植测试。
+
+* KumoTest 团队正在考虑添加断言宏
+  启用例外的平台（例如 Windows、Mac OS 和 Linux 客户端），这将消除用户传播的需要
+  从子例程到其调用者的失败。因此，你不应该使用
+  如果您的代码可以在这样的系统上运行，则析构函数中的 KumoTest 断言平台。
+
+## 当我使用 `ASSERT_PRED*` 时，编译器抱怨“没有匹配的函数可调用”。我该如何修复它？
+
+请参阅 [`EXPECT_PRED*`](reference/assertions.mdx#EXPECT_PRED) 中的详细信息断言参考。
+
+## 当我调用 `RUN_ALL_TESTS()` 时，我的编译器抱怨"ignoring return value"。为什么？
+
+有些人一直忽略了`RUN_ALL_TESTS()`的返回值。那是，
+而不是
+
+```c++
+  return RUN_ALL_TESTS();
+```
+
+他们这样写：
+
+```c++
+  RUN_ALL_TESTS();
+```
+
+这是**错误且危险的**。测试服务需要看到回报
+`RUN_ALL_TESTS()` 的值以确定测试是否通过。如果你的
+`main()` 函数会忽略它，即使它发生了，你的测试也会被认为是成功的
+KumoTest 断言失败。非常糟糕。
+
+我们决定解决这个问题（感谢 Michael Chastain 的想法）。现在，你的
+使用以下命令编译时，代码将不再能够忽略“RUN_ALL_TESTS()”
+`gcc`。如果这样做，您将收到编译器错误。
+
+如果您看到编译器抱怨您忽略了返回值
+`RUN_ALL_TESTS()`，修复很简单：只需确保其值用作
+`main()` 的返回值。
+
+但我们如何才能引入一个破坏现有测试的更改呢？嗯，在这个
+在这种情况下，代码一开始就已经被破坏了，所以我们没有破坏它。 :-)
+
+## 我的编译器抱怨构造函数（或析构函数）无法返回值。这是怎么回事？
+
+由于C++的特殊性，为了支持流式传输的语法
+发送至`ASSERT_*`的消息，例如
+
+```c++
+  ASSERT_EQ(1, Foo()) << "blah blah" << foo;
+```
+
+我们不得不放弃使用`ASSERT*`和`FAIL*`（但不是`EXPECT*`和构造函数和析构函数中的`ADD_FAILURE*`）。解决方法是移动
+将构造函数/析构函数的内容传递给 private void 成员函数，或者如果可行的话，切换到`EXPECT_*()`。这
+用户指南中的[部分](advanced.mdx#assertion-placement)对此进行了解释。
+
+## 我的 SetUp() 函数未被调用。为什么？
+
+C++ 区分大小写。您是否将其拼写为“Setup()”？
+
+同样，有时人们将 `SetUpTestSuite()` 拼写为 `SetupTestSuite()` 并且
+想知道为什么它从未被调用。
+
+## 我有几个共享相同测试fixture逻辑的测试套件，我是否必须为每个测试套件定义一个新的测试fixture类？这看起来相当乏味。
+
+你不必这样做。而不是
+
+```c++
+class FooTest : public BaseTest {};
+
+TEST_F(FooTest, Abc) { ... }
+TEST_F(FooTest, Def) { ... }
+
+class BarTest : public BaseTest {};
+
+TEST_F(BarTest, Abc) { ... }
+TEST_F(BarTest, Def) { ... }
+```
+
+你可以简单地`typedef`测试装置：
+
+```c++
+typedef BaseTest FooTest;
+
+TEST_F(FooTest, Abc) { ... }
+TEST_F(FooTest, Def) { ... }
+
+typedef BaseTest BarTest;
+
+TEST_F(BarTest, Abc) { ... }
+TEST_F(BarTest, Def) { ... }
+```
+
+## KumoTest 输出隐藏在一大堆日志消息中。我该怎么办？
+
+KumoTest 输出旨在成为一份简洁且人性化的报告。如果您的测试本身会生成文本输出，它将与 KumoTest 混合
+输出，使其难以阅读。然而，有一个简单的解决方案问题。
+
+由于`LOG`消息会发送到 stderr，我们决定让 KumoTest 输出发送到
+标准输出。这样，您可以使用重定向轻松地将两者分开。为了例子：
+
+```shell
+$ ./my_test > ktest_output.txt
+```
+
+## 为什么我应该更喜欢测试fixture而不是全局变量？
+
+有几个很好的理由：
+
+1. 您的测试可能需要更改其全局变量的状态。这使得很难避免副作用逃脱一项测试，并且
+   污染其他人，使调试变得困难。通过使用固定装置，每个测试有一组不同的新变量（但具有相同的名称）。因此，测试保持彼此独立。
+2. 全局变量污染全局命名空间。
+3. 测试fixture可以通过子类化来重用，但这并不容易做到与全局变量。如果许多测试套件都有一些东西，这很有用常见的。
+
+
+## ASSERT_DEATH() 中的语句参数可以是什么？
+
+可以使用`ASSERT_DEATH(statement, matcher)`（或任何死亡断言宏）
+只要*`声明`*有效。所以基本上 *`statement`* 可以是任何 C++
+在当前上下文中有意义的陈述。特别是，它可以
+引用全局和/或局部变量，可以是：
+
+* 一个简单的函数调用（通常是这种情况），
+* 一个复杂的表达式，或者
+* 复合语句。
+
+这里显示了一些示例：
+
+```c++
+// A death test can be a simple function call.
+TEST(MyDeathTest, FunctionCall) {
+  ASSERT_DEATH(Xyz(5), "Xyz failed");
+}
+
+// Or a complex expression that references variables and functions.
+TEST(MyDeathTest, ComplexExpression) {
+  const bool c = Condition();
+  ASSERT_DEATH((c ? Func1(0) : object2.Method("test")),
+               "(Func1|Method) failed");
+}
+
+// Death assertions can be used anywhere in a function.  In
+// particular, they can be inside a loop.
+TEST(MyDeathTest, InsideLoop) {
+  // Verifies that Foo(0), Foo(1), ..., and Foo(4) all die.
+  for (int i = 0; i < 5; i++) {
+    EXPECT_DEATH_M(Foo(i), "Foo has \\d+ errors",
+                   ::testing::Message() << "where i is " << i);
+  }
+}
+
+// A death assertion can contain a compound statement.
+TEST(MyDeathTest, CompoundStatement) {
+  // Verifies that at lease one of Bar(0), Bar(1), ..., and
+  // Bar(4) dies.
+  ASSERT_DEATH({
+    for (int i = 0; i < 5; i++) {
+      Bar(i);
+    }
+  },
+  "Bar has \\d+ errors");
+}
+```
+
+## 我有一个固定类 `FooTest`，但是 `TEST_F(FooTest, Bar)` 给我错误“没有匹配的函数来调用 `FooTest::FooTest()'””。为什么？
+
+KumoTest 需要能够创建测试fixture类的对象，因此它
+必须有一个默认构造函数。通常编译器会为你定义一个。
+但是，在某些情况下您必须定义自己的：
+
+* 如果你显式声明类 `FooTest` 的非默认构造函数
+（`DISALLOW_EVIL_CONSTRUCTORS()` 就是这样做的），那么你需要定义一个
+默认构造函数，即使它是空的。
+* 如果 `FooTest` 有一个 const 非静态数据成员，那么你必须定义
+默认构造函数*和*在初始化程序中初始化 const 成员
+构造函数列表。 （‘gcc’的早期版本并不强迫你
+初始化 const 成员。这是一个已在“gcc 4”中修复的错误。）
+
+## 为什么 ASSERT_DEATH 会抱怨之前已经加入的线程？
+
+有了 Linux pthread 库，一旦越界就没有回头路了
+从单线程到多线程。第一次创建线程时，
+另外还会创建管理器线程，因此您将获得 3 个而不是 2 个线程。后来当
+你创建的线程加入主线程，线程计数减1，
+但管理器线程永远不会被杀死，所以你仍然有 2 个线程，
+意味着您无法安全地进行死亡测试。
+
+新的 NPTL 线程库不会遇到这个问题，因为它不会
+创建一个管理器线程。但是，如果您不控制测试哪台机器
+继续运行，你不应该依赖于此。
+
+## 为什么 KumoTest 在使用 ASSERT_DEATH 时要求将整个测试套件（而不是单个测试）命名为 *DeathTest？
+
+KumoTest 不会交错来自不同测试套件的测试。也就是说，它
+首先运行一个测试套件中的所有测试，然后运行下一个测试中的所有测试
+套房等。 KumoTest 这样做是因为它需要设置一个测试套件
+在运行第一个测试之前，然后将其拆除。分手
+测试用例需要多个设置和拆卸过程，即
+效率低下并且使得语义不干净。
+
+如果我们要根据测试名称而不是测试来确定测试顺序
+case name，那么我们就会遇到以下情况的问题：
+
+```c++
+TEST_F(FooTest, AbcDeathTest) { ... }
+TEST_F(FooTest, Uvw) { ... }
+
+TEST_F(BarTest, DefDeathTest) { ... }
+TEST_F(BarTest, Xyz) { ... }
+```
+
+由于 `FooTest.AbcDeathTest` 需要在 `BarTest.Xyz` 之前运行，而我们不需要
+来自不同测试套件的交错测试，我们需要在
+在`BarTest`案例中运行任何测试之前，先执行`FooTest`案例。这矛盾了
+要求在`FooTest.Uvw`之前运行`BarTest.DefDeathTest`。
+
+## 但当我的整个测试套件同时包含死亡测试和非死亡测试时，我不喜欢将其称为 \*DeathTest。我该怎么办？
+
+您不必这样做，但如果您愿意，您可以将测试套件分成
+`FooTest` 和 `FooDeathTest`，这些名称清楚地表明它们是
+有关的：
+
+```c++
+class FooTest : public ::testing::Test { ... };
+
+TEST_F(FooTest, Abc) { ... }
+TEST_F(FooTest, Def) { ... }
+
+using FooDeathTest = FooTest;
+
+TEST_F(FooDeathTest, Uvw) { ... EXPECT_DEATH(...) ... }
+TEST_F(FooDeathTest, Xyz) { ... ASSERT_DEATH(...) ... }
+```
+
+## 仅当测试失败时，KumoTest 才会在死亡测试的子进程中打印 LOG 消息。死亡测试成功后如何查看LOG消息？
+
+打印 EXPECT_DEATH() 内的语句生成的 LOG 消息
+使得在父级日志中搜索真正的问题变得更加困难。所以，
+KumoTest 仅在死亡测试失败时打印它们。
+
+如果您确实需要查看此类 LOG 消息，解决方法是暂时
+打破死亡测试（例如，通过改变正则表达式模式，预计
+匹配）。不可否认，这是一个黑客行为。我们将考虑更永久的解决方案
+在执行 fork-and-exec 式的死亡测试之后。
+
+## 当我使用断言时，编译器报错`不匹配operator<<`。什么给？
+
+如果您在断言中使用用户定义类型`FooType`，则必须确保
+有一个 `std::ostream& operator<<(std::ostream&, const FooType&)` 函数
+定义为我们可以打印 `FooType` 的值。
+
+此外，如果在名称空间中声明了`FooType`，则`<<`运算符也会
+需要在*相同*命名空间中定义。看
+[本周提示 #49](http://abseil.io/tips/49) 了解详细信息。
+
+## 如何抑制 Windows 上的内存泄漏消息？
+
+由于静态初始化的 KumoTest 单例需要分配
+堆中，Visual C++ 内存泄漏检测器将报告内存泄漏
+程序运行结束。避免这种情况的最简单方法是使用
+`_CrtMemCheckpoint` 和 `_CrtMemDumpAllObjectsSince` 调用不报告任何
+静态初始化的堆对象。有关更多详细信息和附加信息，请参阅 MSDN
+堆检查/调试例程。
+
+## 我的代码如何检测它是否正在测试中运行？
+
+如果您编写的代码可以嗅探它是否在测试中运行并执行不同的操作
+相应地，您将仅测试逻辑泄漏到生产代码中，并且
+没有简单的方法可以确保仅测试代码路径不被运行
+生产中的错误。这种聪明也导致
+[Heisenbugs](https://en.wikipedia.org/wiki/Heisenbug)。因此我们强烈
+建议不要这样做，并且 KumoTest 没有提供这样做的方法。
+
+一般来说，推荐的方法是使代码在以下情况下表现不同
+测试是[依赖注入](http://en.wikipedia.org/wiki/Dependency_injection)。你可以注射
+与测试和生产代码不同的功能。自从你的
+生产代码根本不链接到测试逻辑（
+BUILD 目标的 [`testonly`](http://docs.bazel.build/versions/master/be/common-definitions.html#common.testonly) 属性有助于确保
+那），意外运行它没有危险。
+
+然而，如果你*真的*，*真的*，*真的*别无选择，并且如果你遵循
+测试程序名称以 `_test` 结尾的规则，您可以使用
+*可怕的*黑客嗅探你的可执行文件名称（`main()`中的`argv[0]`）来了解
+代码是否正在测试。
+
+## 如何暂时禁用测试？
+
+如果您有无法立即修复的损坏测试，您可以添加
+其名称的前缀为“DISABLED_”。这会将其排除在执行之外。这是
+比注释掉代码或使用“#if 0”更好，因为禁用的测试
+仍然编译（因此不会执行）。
+
+要在测试执行中包含禁用的测试，只需使用以下命令调用测试程序
+`--ktest_also_run_disabled_tests` 标志。
+
+## 如果我在不同的命名空间中定义了两个单独的“TEST(Foo, Bar)”测试方法，可以吗？
+
+是的。
+
+规则是**同一测试套件中的所有测试方法必须使用相同的fixtureclass.** 这意味着**允许**以下内容，因为两个测试都使用
+相同的固定装置类（`::testing::Test`）。
+
+```c++
+namespace foo {
+TEST(CoolTest, DoSomething) {
+  SUCCEED();
+}
+}  // namespace foo
+
+namespace bar {
+TEST(CoolTest, DoSomething) {
+  SUCCEED();
+}
+}  // namespace bar
+```
+
+但是，以下代码是**不允许的**并且会产生运行时错误来自 KumoTest，因为测试方法使用不同的测试fixture
+具有相同测试套件名称的类。
+
+```c++
+namespace foo {
+class CoolTest : public ::testing::Test {};  // Fixture foo::CoolTest
+TEST_F(CoolTest, DoSomething) {
+  SUCCEED();
+}
+}  // namespace foo
+
+namespace bar {
+class CoolTest : public ::testing::Test {};  // Fixture: bar::CoolTest
+TEST_F(CoolTest, DoSomething) {
+  SUCCEED();
+}
+}  // namespace bar
+```

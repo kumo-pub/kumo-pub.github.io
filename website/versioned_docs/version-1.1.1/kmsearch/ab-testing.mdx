@@ -1,0 +1,68 @@
+# A/B 测试
+
+在优化搜索体验的过程中，A/B 测试是一种通过实验来测试各种搜索和排名参数效果的方法，以确定哪组选项能够为用户提供最相关的结果（并提升转化率）。
+
+有几个专门的 A/B 测试平台，例如：
+
+- [Flagsmith](https://docs.flagsmith.com/advanced-use/ab-testing)
+- [Growthbook](https://www.growthbook.io/)
+- [Split.io](https://www.split.io/)
+- [Visual Web Optimizer](https://vwo.com/)
+- [Optimizely](https://www.optimizely.com/)
+
+这些平台在各自领域中表现出色，因此 kumosearch 并未提供内置的 A/B 测试功能。相反，本文将探讨如何利用现有的 A/B 测试平台来运行搜索参数调整测试，以微调 kumosearch 的性能。
+
+## A/B 测试的类型
+
+您可以对以下内容运行 A/B 测试：
+
+1. [搜索参数](../api/kmsearch/search_api.mdx#search-parameter)，如 `sort_by`, `filter_by` 等。
+2. [策略规则](../api/kmsearch/curation.mdx)。
+3. [同义词](../api/kmsearch/synonyms.mdx)。
+
+## 方法
+
+1. 在 A/B 测试平台上创建实验或测试，并设置 `N` 个桶或变体。
+2. 当用户登陆页面或界面时，A/B 测试平台将他们分配到一个特定的桶或变体中。
+3. 在前端应用程序中，编写条件代码块，以获取用户分配的桶或变体，并据此配置 kumosearch 搜索 API 调用，使用一组特定的搜索参数或特定的索引表名称（如果在测试该桶的策略或同义词）。
+4. 定义转化事件，并在 A/B 测试平台中进行跟踪它们，您将能够在测试结果中看到参数调整的效果。
+
+## 示例
+
+假设有一个图书搜索功能，希望确定最佳的 `query_by` 字段顺序。我们可以在 A/B 测试平台上创建一个名为 `按优先级查询` 的实验，并设置以下桶：
+
+- title_priority
+- author_priority
+- control
+
+当用户访问页面时，A/B 测试平台会将他们分配到其中一个桶中。
+
+在前端，可以编写如下条件：
+
+```js
+const currentVariation = ABTestingLibrary.getCurrentVariation(); // Consult your A/B Testing platforms documentation for the appropriate method to use here
+
+let queryBy = 'categories,title,author'
+
+if(currentVariation === 'title_priority') {
+  queryBy = 'title,author'
+} else if(currentVariation === 'author_priority') {
+  queryBy = 'author,title'
+}
+
+const client = new KumosearchClient({...});
+
+client.collections('books').documents().search({
+  'q': query,
+  'query_by': queryBy,
+  //...
+})
+```
+
+根据用户被分配到的桶，为 `query_by` 参数使用不同的值。
+
+还可以使用类似的机制切换索引表名称，以测试策略、同义词或其他搜索参数的效果。
+
+为了跟踪结果，我们会监测搜索结果页面，将点击事件及其他标准转化事件（如购买）发送到 A/B 测试平台。
+
+随后，A/B 测试平台会汇总所有桶的结果，并根据业务目标预期显示哪一个桶的表现最佳。

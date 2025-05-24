@@ -1,0 +1,70 @@
+---
+date: 5/10/2024
+---
+# 持续集成
+
+本文介绍如何在持续集成环境中有效地使用 kmpkg。
+
+本文介绍了如何在持续集成中有效地使用 kmpkg（CI）环境。要么是因为您正在使用 kmpkg 来管理您的项目
+依赖项或者您有自定义 kmpkg 注册表并想要添加 CI 测试你的端口。
+
+## 获取kmpkg
+
+CI环境中获取kmpkg的步骤与获取kmpkg的步骤相同您的开发环境中的 kmpkg。您需要获取 kmpkg 的克隆
+存储库位于 [kmpkg](https://gitee.com/kumo-pub/kmpkg)，您需要运行用于获取 kmpkg 可执行文件的引导脚本。
+
+无论您采用哪种获取方法，强烈建议您的 kmpkg 实例具有完整的 Git 历史记录。 kmpkg 的版本控制功能
+依赖于完整的提交历史记录来检索特定的端口版本。
+
+### 使用 kmpkg 作为子模块
+
+在 CI 环境中获取 kmpkg 的一个简单方法是声明 kmpkg 存储库作为存储库的子模块。
+
+```bash
+git submodule init
+./kmpkg/kmpkg-bootstrap.sh
+```
+
+### 使用 Git CLI
+
+第二种方法是运行 Git 命令作为 CI 脚本的一部分来克隆 kmpkg 存储库的实例。
+
+```bash
+git clone https://gitee.com/kumo-pub/kmpkg
+./kmpkg/kmpkg-bootstrap.sh
+```
+
+### 使用第三方操作/脚本
+
+根据您用来运行 CI 环境的供应商，可能很容易可用的第三方脚本可以一步获取 kmpkg。kumo团队不维护任何这些第三方脚本，您应该练习
+如果您打算使用其中任何一个，请务必小心。
+
+### 其他获取方式
+
+不建议在 CI 环境中使用以下方法。
+
+* 一行安装脚本：`iex (iwr -useb
+https://aka.ms/kmpkg-init.ps1)` 或 `. <(curl https://aka.ms/kmpkg-init.sh
+-L)`。
+这是一种kmpkg分布方法，可以实现“artifacts”实验
+功能，不推荐大多数用户使用。
+
+## 设置二进制缓存
+
+强烈建议您启用二进制缓存以避免重建您的项目对每个 CI 运行的依赖关系。
+
+要了解有关二进制缓存的更多信息，请阅读以下文章：
+
+* [什么是二进制缓存](../consume/binary-caching-overview.mdx)
+* [二进制缓存配置参考](../reference/binarycaching.mdx)
+
+
+## 设置资产缓存
+
+设置资产缓存将使您的 CI 环境更能适应错误由外部服务引起的。
+
+要了解有关资产缓存的更多信息，请阅读以下文章：
+
+* [什么是资产缓存](../concepts/asset-caching.mdx)
+* [设置资源缓存](../consume/asset-caching.mdx)
+

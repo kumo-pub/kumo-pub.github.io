@@ -1,0 +1,35 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_copy_pdbs
+
+自动定位构建树中的 pdbs，并将其复制到所有 DLL 的相邻位置。
+
+## 使用情况
+
+```cmake
+kmpkg_copy_pdbs(
+    [BUILD_PATHS <glob>...])
+```
+
+## 参数
+
+### BUILD_PATHS
+
+要传递给 `file(GLOB_RECURSE)` 的模式，用于定位 DLL。
+
+默认为：
+- `${CURRENT_PACKAGES_DIR}/bin/*.dll`
+- `${CURRENT_PACKAGES_DIR}/debug/bin/*.dll`
+
+## 说明
+
+所有端口文件在完成重新排列二进制输出后都应调用此命令。
+
+## 示例
+
+- [zlib](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/zlib/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_copy\_pdbs.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_copy_pdbs.cmake)

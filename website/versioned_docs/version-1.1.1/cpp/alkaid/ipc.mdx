@@ -1,0 +1,42 @@
+
+
+# IPC format
+
+Reading and writing the Alkaid IPC format
+
+:::info
+`Alkaid IPC format specification <format-ipc>`.
+
+`API reference for IPC readers and writers <api/ipc>`.
+:::
+
+Alkaid C++ 为 Alkaid IPC 格式提供了读取器和写入器，它们包装了
+较低级别的输入/输出，通过 `IO 接口 <io>` 进行处理。
+对于读取，还有一个事件驱动的 API，可以异步将
+任意数据输入到 IPC 解码层。
+
+## 读取 IPC 流和文件
+
+### 同步读取
+
+大多数情况下，使用 :class:`RecordBatchStreamReader`
+或 :class:`RecordBatchFileReader` 类最为方便，具体取决于您要读取的 IPC 格式的变体。前者需要 :class:`~alkaid::io::InputStream`
+源，而后者需要 :class:`~alkaid::io::RandomAccessFile`。
+
+如果源允许，则读取 Alkaid IPC 数据本质上是零拷贝。
+例如，:class:`~alkaid::io::BufferReader` 或 :class:`~alkaid::io::MemoryMappedFile`
+通常可以是零拷贝。例外情况是必须动态转换数据，例如当 IPC 流或文件上启用了缓冲区压缩时。
+
+### 事件驱动阅读
+
+当需要以非阻塞方式处理 IPC 格式时（例如将 Alkaid 与事件循环集成），或者数据来自不寻常的来源时，请使用事件驱动
+的 :class:`StreamDecoder`。您需要定义 :class:`Listener` 的子类，并为所需事件实现虚拟方法（例如，实现
+:func:`Listener::OnRecordBatchDecoded`，以便在收到每个传入的 :class:`RecordBatch` 时收到通知）。
+
+## 写入 IPC 流和文件
+
+使用工厂函数之一 :func:`MakeStreamWriter` 或 :func:`MakeFileWriter` 来获取给定 IPC 格式变体的 :class:`RecordBatchWriter` 实例。
+
+## 配置
+
+可以分别使用 :class:`IpcReadOptions` 和 :class:`IpcWriteOptions` 类来配置读取和写入 IPC 格式的各个方面。

@@ -1,0 +1,588 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 搜索
+
+在 kumosearch 中，搜索由对一个或多个文本字段的查询以及对数字或分面字段的过滤器列表组成。还可以对结果进行排序和分面。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript">
+```js
+let searchParameters = {
+  'q'         : 'stark',
+  'query_by'  : 'company_name',
+  'filter_by' : 'num_employees:>100',
+  'sort_by'   : 'num_employees:desc'
+}
+
+client.collections('companies').documents().search(searchParameters)
+```
+
+    </TabItem>
+
+      <TabItem value="Python" label="Python">
+
+```py
+search_parameters = {
+  'q'         : 'stark',
+  'query_by'  : 'company_name',
+  'filter_by' : 'num_employees:>100',
+  'sort_by'   : 'num_employees:desc'
+}
+
+client.collections['companies'].documents.search(search_parameters)
+```
+
+      </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+"http://localhost:8868/collections/companies/documents/search\
+?q=stark&query_by=company_name&filter_by=num_employees:>100\
+&sort_by=num_employees:desc"
+```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+  <TabItem value="json" label="json">
+
+```json
+{
+  "facet_counts": [],
+  "found": 1,
+  "out_of": 1,
+  "page": 1,
+  "request_params": {
+    "collection_name": "companies",
+    "per_page": 10,
+    "q": "stark"
+  },
+  "search_time_ms": 1,
+  "hits": [
+    {
+      "highlights": [
+        {
+          "field": "company_name",
+          "snippet": "<mark>Stark</mark> Industries",
+          "matched_tokens": ["Stark"]
+        }
+      ],
+      "document": {
+        "id": "124",
+        "company_name": "Stark Industries",
+        "num_employees": 5215,
+        "country": "USA"
+      },
+      "text_match": 130916
+    }
+  ]
+}
+```
+
+      </TabItem>
+</Tabs>
+
+当查询 `string[]` 字段时，`highlights` 结构将包括相应匹配片段的数组索引。例如：
+
+<Tabs>
+  <TabItem value="json" label="json">
+
+```json
+{
+      ...
+      "highlights": [
+        {
+          "field": "addresses",
+          "indices": [0,2],
+          "snippets": [
+            "10880 <mark>Malibu</mark> Point, <mark>Malibu,</mark> CA 90265",
+            "10000 <mark>Malibu</mark> Point, <mark>Malibu,</mark> CA 90265"
+          ],
+          "matched_tokens": [
+            ["Malibu", "Malibu"],
+            ["Malibu", "Malibu"]
+          ]
+        }
+      ],
+      ...
+}
+```
+
+  </TabItem>
+</Tabs>
+
+## 搜索参数 {#search-parameter}
+
+### 查询参数
+
+
+| 参数                  | 必选  | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+|:--------------------|:----|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| q                   | 是| 要在索引表中搜索的查询文本。<br/><br/>使用`*`作为搜索字符串可返回所有文档。可以与`filter_by`结合使用。<br/><br/>例如，要返回与过滤器匹配的所有文档，请使用：`q=*&filter_by=num_employees:10`。<br/><br/>要显式排除查询中的单词，请在单词前添加`-`运算符，例如：`q：'electric car -tesla'`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| query_by            | 是 | 要查询的一个或多个字段名称。用逗号分隔多个字段：`company_name, Country`<br/><br/>字段的顺序很重要：与列表中较前位置的字段匹配的记录更相关。因此，在上面的示例中，与`company_name` 字段匹配的文档排名高于与 `country` 字段匹配的文档。<br/><br/>只有数据类型为`string`或`string[]`的字段才能在`query_by`中指定。此外，支持通过查询其子项来搜索`object`和`object[]`字段。关于嵌套对象字段，可以点击[此处](./collections.mdx#indexing-nested-fields)阅读更多内容。                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| prefix              | 否  | 表示查询中的最后一个单词应被视为前缀，而不是整个单词。这对于构建自动完成和即时搜索界面是必要的。<br/><br/> 将其设置为`false`将禁用所有查询字段的前缀搜索。 <br/><br/>您还可以控制每个字段的前缀搜索行为。例如，如果您正在查询 3 个字段并希望仅在第一个字段上启用前缀搜索，请使用 `?prefix=true,false,false`，该顺序应与`query_by`中字段的顺序匹配。如果为`prefix`指定了单个值，则相同的值将用于`query_by`中指定的所有字段。<br/><br/>默认值：`true`（对所有字段启用前缀搜索）。                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| infix               | 否  | 中缀搜索可用于查找包含出现在单词中间的一段文本的文档。例如，我们可以使用中缀搜索来定位单词`AK1243XYZ6789`中的字符串`XYZ`。 <br/><br/> **注意：** 中缀搜索适用于搜索电子邮件地址、电话号码、标识符等小字段。中缀搜索仅使用查询中的第一个单词进行搜索。 <br/><br/> 由于中缀搜索需要额外的数据结构，因此您必须在每个字段的基础上启用它，如下所示：<br/><br/> ```{"name": "part_number", "type" : "string", "infix": true }```<br/><br/>如果为此字段启用了中缀索引，则可以通过将名为 infix 的逗号分隔字符串参数发送到每个字段来完成中缀搜索搜索查询。此参数可以有 3 个值：<br/> <ul><li>`off`：禁用中缀搜索，这是默认值。</li><li>`always`：中缀搜索与常规搜索一起执行。</li ><li>`fallback`：如果常规搜索没有结果，则执行中缀搜索。</li></ul>例如，如果您通过`?query_by=title,part_number`查询两个字段，则可以通过发送`?infix=off,always`（与`query_by`中的字段顺序相同）仅启用`part_number`字段中的中缀搜索。<br/><br/>还有 2 个参数可让您控制中缀搜索的范围：<br/><br/>`max_extra_prefix` 和 `max_extra_suffix` 指定在查询词之前或之后可以存在的最大数量额外符号数。例如：查询词`K2100`在`6PK2100`中有 2 个额外符号。默认情况下，匹配中可以包含任意数量的前缀或后缀符号。 |
+| pre_segmented_query | 否  | 如果您希望将搜索查询拆分为空格分隔的单词，请将此参数设置为`true`。当设置为`true`时，将仅按空格分割搜索查询，而不使用本地化的内置分词器。<br/><br/>默认值：`false`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| preset              | 否  | 用于此搜索的 [预设](#预设) 名称。 <br/><br/>预设允许保存一组搜索参数并在搜索时使用它们，只需一个`preset`参数。 [此处](#预设) 了解有关预设的更多信息。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| vector_query        | 否 | 执行最近邻向量查询。详细了解[向量搜索](./vector-search.mdx)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| voice_query         | 否  | 转录 Base64 编码的语音录音，并使用转录的查询进行搜索。详细了解[语音搜索](./voice-search-query.mdx)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+
+### 过滤器参数 {#search-parameter}
+
+| 参数                 | 必选 | 描述 |
+|:-------------------|:---|:---------------------------|
+| filter_by          | 否 | 用于优化搜索结果的过滤条件。<br/><br/>一个字段可以与一个或多个值进行匹配。<br/><br/>示例：<br/>- `国家/地区：美国`<br/>- `国家/地区：[ USA, UK]` 返回`country`为`USA`或`UK`的文档。<br/><br/>**精确与非精确过滤：**<br/>要逐字匹配字符串字段的完整值，可以使用`:=`（精准匹配）运算符。例如：`category := Shoe`将匹配`category`设置为`Shoe`的文档，而不是`category`字段设置为`Shoe Rack`的文档。 <br/><br/>使用`:`（非精确）运算符将在字段上进行词级别的部分匹配，而不考虑词汇的位置（因此通常更快）。例如：`category:Shoe`将与 `category` 为 `Shoe` 或 `Shoe Rack` 或 `Outdoor Shoe`的文档匹配。 <br/><br/>提示：如果某个字段在所有文档中的值都没有空格，并且想要对其进行过滤，建议使用 `:` 运算符来提高性能，因为它将避免进行 `token` 位置检查。<br/><br/>**转义逗号：**<br/>您还可以使用多个值进行过滤，并使用反引号字符来表示字符串文字：<code>category:= [\`Running Shoes, Men\`, Sneaker]</code>。<br/><br/>**否定：**<br/>通过 `:!=` 运算符表示不等于/否定，例如`作者:!=JK Rowling` 或 `id:!=[id1, id2]`。您还可以否定多个值：`author:!=[JK Rowling, Gilbert Patten]`。<br/><br/> 要在过滤过程中排除包含特定字符串的结果，您可以执行`artist:! Jackson` 将排除`artist`字段值包含`jackson`的所有文档。  <br/><br/>**数字过滤：**<br/>使用范围运算符`[min..max]`或使用简单的比较运算符`>`, `>=`, `<`、`<=`、`=`过滤在最小值和最大值之间的文档。 <br/><br/>可以在数字字段schema上启用 `range_index：true`以进行快速范围查询（但会产生索引的额外内存使用量）。 <br/><br/>示例：<br/>-`num_employees:[10..100]`<br/>-`num_employees:<40`<br/>-`num_employees:[10..100,40]`（过滤器文档，其中值介于 10 到 100 或正好 40 之间）。<br/><br/>**多个条件：**<br/>可以使用 `&&` 运算符分隔多个条件。<br/><br/>示例：<br/>- `num_employees:>100 && country: [USA, UK]`<br/>- `categories:=Shoes && categories:=Outdoor`<br/><br/>跨不同字段进行 OR 运算（例如：颜色为蓝色 OR 类别是Shoe），可以使用 `||` 运算符。 <br/><br/> 示例：<br/>- `color: blue || category: shoe` <br/>-`(color: blue || category: shoe) && in_stock：true`<br/><br/>**数组过滤：**<br/> `filter_by`也可以与数组字段一起使用。 <br/><br/>例如：如果`genres`是`string[]`字段：<br/><br/>-`genres:=[Rock, Pop]`将返回`genres`数组字段中包含`摇滚 或 流行`的文档。 <br/>- `genres:=Rock && generics:=Acoustic` 将返回 `genres` 数组字段中同时包含 `Rock 和 Acoustic` 的文档。 <br/><br/>**前缀过滤：**<br/>过滤以给定前缀字符串开头的记录，如下所示：<br/><br/> `company_name: Acm*` <br/><br/> 这将返回名称以`acm`开头的文档，例如`Acme Corp.`。 <br/><br/>**地理过滤：**<br/> 在此专门部分中了解有关 [地理搜索和过滤](./geosearch.mdx) 的更多信息。 |
+| enable_lazy_filter | 否 | 增量过滤。适用于需要过滤的记录很多，但查询中的token预计只会匹配很少的文档的情况，请将其设置为 `true` 以启用增量过滤。默认： `false`。  |
+
+### 排名和排序参数 {#ranking-and-sorting-parameters}
+
+| 参数                             | 必选 | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|:-------------------------------|:---|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| query_by_weights               | 否 | 对结果进行排名时赋予每个`query_by`字段的相对权重。值可以在`0`和`127`之间。在查找匹配项时，这可用于提高字段的优先级。<br/><br/>使用逗号`,`分隔每个权重，顺序与`query_by`字段相同。例如：`query_by_weights: 1,1,2`和`query_by: field_a,field_b,field_c`将为`field_a`和`field_b`赋予相同的权重，并为`field_c`赋予两倍的权重。<br/> <br/>默认：如果未提供明确的权重，则`query_by`列表中较前的字段将被视为具有更大的权重。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| text_match_type                | 否 | 在多字段匹配上下文中，该参数决定如何计算记录的代表性文本匹配分数。 <br/><br/>可能的值：`max_score`（默认）或`max_weight`。 <br/><br/>在默认的 `max_score` 模式下，所有字段中的最好的文本匹配分数将作为该记录的代表分数。当 2 条记录的文本匹配分数相同时，字段权重将作为决定优先级的辅助标准。<br/><br/> 在`max_weight`模式下，最高权重字段的文本匹配分数将用作该记录的代表文本相关性分数。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| sort_by                        | 否 | 用于对结果进行排序的字段列表及其相应的排序顺序。用`,`分隔多个字段。 <br/><br/>在单个搜索查询中最多可以指定 3 个排序字段，这些字段将用于解决排序冲突。如果搜索结果中有多个文档的第一个排序字段值相同，系统将使用第二个排序字段的值来打破排序冲突。如果第二个字段的值也相同，则使用第三个排序字段的值来继续解决冲突。如果所有 3 个字段都相同，则使用文档插入顺序来决定最终排序。<br/><br/>例如`num_employees:desc,year_started:asc`<br/><br/>文档将按 `num_employees` 降序排序，如果两条记录具有相同的 `num_employees`，则使用 `year_started` 字段来解决冲突。<br/><br/>文本相似度得分可以作为特殊的`_text_match`字段使用，可以在排序字段列表中使用该字段。<br/><br/>如果已指定了一个或两个排序字段，则`_text_match`用于解决相同排名冲突，作为最后一个排序字段。<br/><br/>默认：<br/><br/>如果未指定 `sort_by` 参数，则结果按以下方式排序：`_text_match:desc,default_sorting_field:desc`。 <br/><br/>**对字符串值进行排序**：阅读更多内容[此处](#对字符串进行排序)。 <br/><br/>**对缺失值进行排序**：阅读更多内容[此处](#对空值空字符串或缺失值进行排序)。 <br/><br/>**按条件排序**（可选过滤）：阅读更多信息[此处](#按条件排序)。<br/><br/>**地理排序**：使用[GeoSearch](./geosearch.mdx)时，可以使用`location_field_name(48.853, 2.344):asc`围绕给定的纬度/经度对文档进行排序。您还可以按半径内的其他字段进行排序。点击 [此处](./geosearch.mdx#按半径内的附加属性排序) 阅读更多内容。 |
+| prioritize_exact_match         | 否 | 默认情况下，优先考虑字段值与查询完全匹配的文档。将此参数设置为`false`以禁用此行为。 <br/><br/>默认值：`true`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| prioritize_token_position      | 否 | 优先考虑查询词出现在文本中较早的文档。<br/><br/>默认值：`false` 。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| prioritize_num_matching_fields | 否 | 优先考虑查询词出现在更多字段中的文档。<br/><br/>默认值：`true`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| pinned_hits                    | 否 | 无条件包含在搜索结果中特定位置的记录列表。<br/><br/>例如用于在搜索结果顶部展示或推广某些项目。<br/><br/>使用逗号`,`分隔列表`record_id:hit_position`。例如：要在位置 1 包含 ID 为 123 的记录，在位置 5 包含 ID 为 456 的另一条记录，您需要指定`123:1,456:5`。<br/><br/>您还可以使用覆盖策略功能来根据特定规则调整搜索结果。首先应用覆盖规则，然后是 `pinned_hits`，最后是 `hidden_​​hits`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| hidden_hits                    | 否 | 从搜索结果中无条件隐藏的记录列表。<br/><br/>使用逗号`,`分隔要隐藏的`record_ids`列表。例如：要隐藏 ID 为 123 和 456 的记录，您需要指定`123,456`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| enable_overrides               | 否 | 如果您定义了一些覆盖规则，但想要针对特定搜索查询禁用所有覆盖规则，请将`enable_overrides`设置为`false`。 <br/><br/>默认值：`true`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| override_tags                  | 否 | 可以触发在搜索参数中使用标签名称标记的特定覆盖规则。点击 [此处](./curation.mdx#为规则添加标签) 阅读更多内容。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| max_candidates                 | 否 | 控制前缀搜索和拼写错误搜索的相似词数量。<br/><br/>默认值：`4`（如果启用`exhaustive_search`，则为`10000`）。 <br/><br/>例如搜索`ap`，将匹配包含`apple`、`apply`、`apart`、`apron`或数据集中以`ap`开头的其他记录。此外，搜索`jofn`将匹配包含`john`、`joan`以及数据集中存在 1 个拼写错误的类似变体记录。 <br/><br/>但出于性能原因，kumosearch 默认情况下仅考虑前 4 个前缀和拼写错误变体。`4`可使用`max_candidates`参数进行配置。 <br/><br/> 如果搜索`a`这样的短词，并且并未返回所期望的所有记录，则需要将 `max_candidates` 增加到更高的值或更改索引表`schema`中的 [default_sorting_field](./collections.mdx#schema-parameter) ，以使用记录中的受欢迎度分数来决定最前排序。                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+### 分页参数
+
+| 参数       | 必选 | 描述                   |
+|:---------|:---|:---------------------|
+| page     | 否 | 指定要获取的特定页码。<br/><br/>第一页的页码从`1`开始。<br/><br/>默认值：`1`。                      |
+| per_page | 否 | 每页要获取的命中数。<br/><br/>当使用`group_by`时，`per_page`指的是每页要获取的_groups_数量，以便正确保留分页。 <br/><br/>默认： `10`。 <br/><br/> 注意：每页最多只能获取 250 个命中（或使用 `group_by` 时的组数）。 |
+| offset   | 否 | 标识从结果集中返回命中的起点。可以用作`page`参数的替代。                 |
+| limit    | 否 | 要获取的命中数。可以用作`per_page`参数的替代。默认值：`10`。            |
+
+
+### 分面参数
+
+| 参数                     | 必选 | 描述          |
+|:-----------------------|:---|:----------------|
+| facet_by               | 否 | 对结果进行分面的字段列表。用逗号分隔多个字段。<br/><br/> 排序：Facet 值可以按字母顺序排序，通过关联`sort_by`参数进行显示，例如`phone(sort_by:_alpha：asc)`。也可以对同级字段的值进行分面排序，如：`recipe.name(sort_by:recipe.calories:asc)`。<br/><br/>要对数字范围进行分面，您可以为这些范围指定标签，例如`"facet_by": "rating(Average:[0, 3], Good:[3, 4], Great:[4, 5])"`，点击 [此处](#分面区间) 阅读更多。         |
+| max_facet_values       | 否 | 要返回的分面值的最大数量。 <br/><br/>默认值：`10`。       |
+| facet_query            | 否 | 通过此参数过滤返回的分面值。匹配的分面文本也会突出显示。例如，当按`category`进行分面时，可以设置`facet_query=category:shoe`以仅返回包含前缀`shoe`的分面值。<br/><br/>对于分面查询，如果未指定`per_page`参数，它将默认为`0`，从而仅返回分面而不返回命中。如果您也需要命中，请务必将`per_page`设置为非零值。<br/><br/>使用`facet_query_num_typos`参数来控制此分面值过滤器的模糊性。        |
+| facet_query_num_typos  | 否 | 控制分面查询过滤器的模糊性。默认值：`2`。      |
+| facet_return_parent    | 否 | 传递一个逗号分隔的嵌套分面字段字符串，其父对象应在分面响应中返回。例如，当设置为`color.name`时，将返回父`color`对象作为分面响应中的父属性。     |
+| facet_sample_percent   | 否 | 用于估计分面计数的命中百分比。 <br/><br/>分面采样有助于提高大型数据集的分面计算速度，在不需要精确计数时使用。<br/><br/>默认值：`100`（默认情况下禁用采样）。         |
+| facet_sample_threshold | 否 | 最小命中数，高于该数则对分面计数进行采样。 <br/><br/>默认值：`0`。     |
+
+
+### 分组参数
+
+| 参数                   | 必选 | 描述        |
+|:---------------------|:---|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| group_by             | 否 | 通过指定一个或多个`group_by`字段将搜索结果聚合到组或存储桶中。用逗号分隔多个字段。<br/><br/>注意：要对特定字段进行分组，它必须是分面字段。<br/><br/>例如，`group_by=国家、公司名称`。                                           |
+| group_limit          | 否 | 每个组返回的最大命中数。如果`group_limit`设置为`K`，则响应中仅返回每组中的前 K 个命中。<br/><br/>默认值：`3`。       |
+| group_missing_values | 否| 将此参数设置为`true`会将`group_by`字段中具有`null`值的所有文档放入一个组中。将此参数设置为`false`，会使`group_by`字段中具有`null`值的每个文档不与其他文档分组。 <br/><br/>默认值：`true`。 |
+
+### 结果参数 {#result-parameter}
+
+| 参数                         | 必选 | 描述                                                                                                                                                                                                              |
+|:---------------------------|:---|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| include_fields             | 否 | 指定要包含在搜索结果中的字段列表，并使用逗号分隔这些字段。                                                                                                                                                                                   |
+| exclude_fields             | 否 | 在搜索结果中要排除的字段列表，并使用逗号分隔这些字段。 <br/><br/>可以在作用域 API 密钥中使用此参数来从搜索 API 响应中排除/隐藏潜在的敏感字段，例如`out_of`和`search_time_ms`。 <br/><br/> 提示：如果文档包含[向量字段](./vector-search.mdx)，通常最好将该字段名称添加到 `exclude_fields` 以节省网络带宽并防止浪费 CPU 周期。 |
+| highlight_fields           | 否 | 片段高亮的字段列表，并使用逗号分隔这些字段。也可以使用此参数突出显示不在查询中的字段。 <br/><br/>默认：对所有查询的字段进行片段高亮显示。 <br/><br/> 设置为`none`以禁用片段突出显示。                                                                                                           |
+| highlight_full_fields      | 否 | 完全高亮而不进行片段摘录的字段列表，并使用逗号分隔这些字段。<br/><br/>默认：所有字段都会生成片段高亮显示。  <br/><br/> 设置为`none`以禁用突出显示。                                                                                                                            |
+| highlight_affix_num_tokens | 否 | 每侧突出显示文本周围应包含的`token`数量。这控制了片段的长度。 <br/><br/>默认值：`4`。                                                                                                                                                             |
+| highlight_start_tag        | 否 | 突出显示的片段的开始标记。<br/><br/>默认值：`<mark>`。                                                                                                                                                                              |
+| highlight_end_tag          | 否 | 突出显示的片段的结束标记。<br/><br/>默认：`</mark>`。                                                                                                                                                                              |
+| enable_highlight_v1        | 否 | 禁用已弃用的旧突出显示结构。<br/><br/>默认值：`true`。                                                                                                                                                                               |
+| snippet_threshold          | 否 | 低于此长度的字段值将完全突出显示，而不是显示相关部分的片段。<br/><br/>默认值：`30`。                                                                                                                                                                 |
+| limit_hits                 | 否 | 可以从索引表中获取的最大命中数。例如：`200`<br/><br/>`page * per_page` 应小于此数字，搜索请求才能返回结果。<br/><br/>默认：无限制。<br/><br/>可以生成一个包含此参数的限定范围 API 密钥，并使用该密钥进行搜索，这样参数会自动应用，且在搜索时无法更改。                                                              |
+| search_cutoff_ms           | 否 | 如果截止时间已过，kumosearch 将尝试提前返回结果。这不是严格的保证，分面计算不受此参数的约束。<br/><br/>默认：不发生搜索截止。                                                                                                                                               |
+| exhaustive_search          | 否 | 将其设置为`true`将使 kumosearch 彻底检查查询中所有前缀变体和拼写纠正，而不会在找到足够结果之前提前停止（此时将忽略`drop_tokens_threshold`和`typo_tokens_threshold`配置）。 <br/><br/>默认值：`false`。                                                                            |
+
+### 拼写错误容忍参数 {#typo-tolerance-parameters}
+
+| 参数                                | 必选 | 描述                                                                                                                                                                                                                                                                                                                         |
+|:----------------------------------|:---|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| num_typos                         | 否 | 可容忍的最大拼写错误数（0、1 或 2）。<br/><br/>[Damerau–Levenshtein 距离](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance)用于计算错误数量。<br/><br/>您还可以在每个字段的基础上控制`num_typos`。例如，如果您正在查询 3 个字段并希望禁用第一个字段的拼写错误容错功能，请使用`?num_typos=0,1,1`。该顺序应与`query_by`中字段的顺序匹配。如果为`num_typos`指定了单个值，则相同的值将用于 `query_by` 中指定的所有字段。 <br/><br/>默认值：`2`。 |
+| min_len_1typo                     | 否 | 要应用 1 个拼写错误纠正的最小字长。 `num_typos` 的值仍然被视为允许的最大拼写错误。 <br/><br/>默认值：`4`。                                                                                                                                                                                                                                                         |
+| min_len_2typo                     | 否 | 要应用的 2 个拼写错误纠正的最小字长。 `num_typos` 的值仍然被视为允许的最大拼写错误。 <br/><br/>默认值：`7`。                                                                                                                                                                                                                                                        |
+| split_join_tokens                 | 否 | 将空格视为拼写错误。例如，如果未找到`q=basketball`，则搜索`q=basket ball`，反之亦然。仅当原始查询未产生结果时才会尝试拆分/连接token。要始终触发此行为，请将值设置为`always`。要禁用，请将值设置为`off`。 <br/><br/> 要按其他特殊字符进行分割，您可以在创建索引表时使用 [token_separators](./collections.mdx#schema-parameter) 。  <br/><br/>默认值：`fallback`。                                                                          |
+| typo_tokens_threshold             | 否 | 如果`typo_tokens_threshold`设置为数字`N`，当某个搜索词没能找到`N`个结果时，kumosearch 将开始查询拼写错误更正的变体，直到找到至少`N`个结果，最多可进行`num_typo`次拼写更正。<br/><br/>将 `typo_tokens_threshold` 设置为 `0` 将禁用拼写错误容忍。<br/><br/>默认值：`1`。                                                                                                                                             |
+| drop_tokens_threshold             | 否 | 如果`drop_tokens_threshold`设置为数字`N`并且搜索查询包含多个单词（例如：`wordA wordB`），当一个文档中没有找到`N`个`wordA`和`wordB`时，kumosearch 将删除`wordB`并搜索仅包含`wordA`的文档。kumosearch 将从左到右或从右到左删除这样的关键字，直到找到至少`N`个文档。单独搜索结果最少的搜索词首先被丢弃。<br/><br/>将`drop_tokens_threshold`设置为`0`将禁止删除搜索词。<br/><br/>默认值：`1`。                                                                      |
+| drop_tokens_mode                  | 否 | 指定当原始查询未命中任何文档时要删除的查询词的方向。 <br/><br/>可选值：`right_to_left`（默认）、`left_to_right`、`both_sides:3`<br/><br/> 关于 `both_sides:3`：用于长度最多为 3 个token的查询，此模式将两侧删除token并对所有匹配结果进行详尽排名。如果查询长度大于 3，kumosearch 将回退到`right_to_left`的默认行为。                                                                                                              |
+| enable_typos_for_numerical_tokens | 否 | 将此参数设置为`false`将禁用数字查询token上的拼写错误容忍。<br/><br/>默认值：`true`。                                                                                                                                                                                                                                                                     |
+
+### 缓存参数
+
+| 参数        | 必选 | 描述                                                        |
+|:----------|:---|:-------------|
+| use_cache | 否 | 启用搜索查询结果的服务器端缓存。默认情况下，缓存处于禁用状态。<br/><br/>默认值：`false`。  |
+| cache_ttl | 否 | 确定搜索查询缓存的持续时间（以秒为单位）。该值只能设置为[范围 API 密钥](./api-keys.mdx#generate-scope-api-key)的一部分。<br/><br/>默认值：`60`。 |
+
+## 筛选结果
+
+您可以使用`filter_by`搜索参数按特定值或逻辑表达式过滤结果。
+
+例如：如果您有电影数据集，可以应用过滤器以仅返回特定类型的电影或在特定日期后发布的电影等。
+
+🔗 您可以在上面的 [过滤器参数](#search-parameter) 表中找到`filter_by`的详细文档。
+
+## 结果分面
+
+您可以使用`facet_by`搜索参数，让 kumosearch 返回一个或多个字段的值的聚合计数。对于整数字段，除了计数之外，kumosearch 还将返回最小值、最大值、总和和平均值。
+
+🔗 您可以在上面的 [Facet 参数](#分面参数) 表中找到`facet_by`的详细文档。
+
+**示例**：如果您有一个[食谱数据集](http://recipe.kumo-ai.tech/)，如下面的屏幕截图所示，左侧每个 `ingredients` 旁边的计数是通过对 `ingredients` 字段进行分面而获得的。
+
+`![分面用例示例](~@images/faqs/faceting_usecase_example.png)`
+
+这很适合用于向用户显示结果摘要，以便用户进一步细化结果以有效地获得正在寻找的内容。
+
+请注意，在 `facet_by` 中使用它之前，您需要为 [索引表 schema](./collections.mdx#create-a-collection) 中的字段启用分面，如下所示：
+
+```json{4}
+{
+  fields: [
+    {
+      facet: true, 
+      name: "<field>", 
+      type: "<datatype>"
+    }
+  ]
+}
+```
+
+### 对分面值进行排序
+
+分面值可以通过关联`sort_by`参数按字母顺序排序以便显示，例如`phone(sort_by:_alpha：asc)`。
+
+您还可以对同级字段的值进行分面排序，如下所示：`recipe.name(sort_by:recipe.calories:asc)`。
+
+### 映射分面字符串
+
+将逗号分隔的嵌套分面字段字符串传递到`facet_return_parent`参数中，其父对象应在分面响应中返回。
+
+例如，当您将其设置为`facet_return_parent：color.name`时，这将返回父`color`对象作为分面响应中的父属性。
+
+### 分面区间
+
+对于数字字段，您可以提供范围列表和相应标签进行分面化。
+
+例如，如果文档包含`rating`字段，并且您希望将评级分面为`average`、`good` 和 `great`，可以这样做：
+
+```json
+{
+  "facet_by": "rating(Average:[0, 3], Good:[3, 4], Great:[4, 5])"
+}
+```
+
+这会将`rating`值归入请求的范围，并对每个范围中的文档进行分面计数。
+
+注意：范围包含起始值，但不包含结束值。
+
+您可以将开始/结束范围值留空以分别覆盖最小值/最大值。例如在下面的例子中，省略最大范围值，以便`others`分面标签将覆盖所有大于或等于 100 的值。
+
+```json
+{
+  "facet_by": "price(economy:[0, 100], others:[100, ])"
+}
+```
+
+按范围分面需要字段启用 `sort` 属性。默认情况下对所有数字字段启用此功能，除非您明确进行了其他配置。
+
+🔗 您可以在上面的 [Facet 参数](#分面参数) 表中找到 `facet_by` 的详细文档。
+
+## 结果排序
+
+您可以使用 `sort_by` 搜索参数解决相同排序冲突，最多可以指定 3 个排序字段。如果搜索结果中有多个文档的第一个排序字段值相同，系统将使用第二个排序字段的值来打破排序冲突。如果第二个字段的值也相同，则使用第三个排序字段的值来继续解决冲突。
+
+文本相似度分数作为特殊的 `_text_match` 字段使用，您可以在排序字段列表中使用该字段。
+
+🔗 您可以在上面的 [排名参数](#ranking-and-sorting-parameters) 表中找到 `sort_by` 的详细文档。
+
+### 按数值排序
+
+默认情况下，对所有数字和布尔值启用排序。您可以直接在 `sort_by` 参数中使用这些字段。
+
+### 对字符串进行排序
+
+仅当该字段在索引表 `schema` 中启用了 `sort` 属性时，才允许对该字符串字段进行排序。
+
+例如这是一个索引表 `schema` ，其中允许对 `email` 字符串字段进行排序。
+
+```json{8}
+{
+  "name": "users",
+  "fields": [
+    {"name": "name", "type": "string" },
+    {
+      "name": "email", 
+      "type": "string", 
+      "sort": true 
+    }
+  ]
+}
+```
+
+在上面定义的 `users` 索引表中，`email` 字段可以排序，但 `name` 字段不可排序。
+
+:::tip
+对字符串字段进行排序需要构建单独的索引，这会消耗大量内存。对于长字符串字段（如 `description` ）或大型数据集，须注意仅启用排序相关字符串字段。
+:::
+
+### 按条件排序
+
+可以使用特殊的 `_eval()` 操作作为 `sort_by` 参数，根据计算结果为 `true` 或 `false` 的任何表达式对文档进行排序。
+
+`_eval()` 内部表达式的语法与 [filter_by 参数](#search-parameter) 相同，此功能也称为 `可选过滤`。
+
+例如：
+
+```json
+{
+  "sort_by": "_eval(in_stock:true):desc,popularity:desc"
+}
+```
+
+这将使 `in_stock` 设置为 `true` 的文档排名第一，其次是 `in_stock` 设置为 `false` 的文档。
+
+### 按过滤分数排序
+
+我们还可以为与过滤子句匹配的记录提供自定义分数，而不是像上面那样仅对 `真/假` 值进行排序。
+
+例如我们有一个 `鞋子` 索引表，并且希望将所有 `耐克` 鞋子排在 `阿迪达斯` 鞋子之前，可以这样做：
+
+```json
+{
+  "sort_by": "_eval([ (brand:Nike):3, (brand:Adidas):2 ]):desc"
+}
+```
+
+`_eval()` 中可以有任意数量的表达式，并且每个表达式都可以像标准 `filter_by` 表达式一样使用。
+
+### 对空值空字符串或缺失值进行排序
+
+对于可选数字字段，无论排序顺序如何，缺失值或空值始终排序到末尾。
+
+对于可选字符串字段，空 (`""`)、缺失值或 `null` 字符串值被视为具有最大值，因此在升序排序时，这些值被放置在结果的末尾。同样地，在降序排序时，这些值放置在结果的顶部。
+
+对于数字字段和字符串字段，您可以使用 `missing_values` 参数来更改此行为。例如，以下是如何使 null/空/缺失值 标题出现在结果的顶部（升序排列）：
+
+```shell
+sort_by=title(missing_values: first):asc
+```
+
+同样，为了使 null/空/缺失值 按降序排列出现在结果的末尾：
+
+```shell
+sort_by=title(missing_values: last):desc
+```
+
+`missing_values` 的可能值为：`first` 或 `last`。
+
+## 结果分组 {#group-result}
+
+您可以通过指定一个或多个 `group_by` 字段将搜索结果聚合到组或桶中。这样进行分组的好处有：
+
+* **去重**：通过使用一个或多个 `group_by` 字段，您可以合并项目并删除搜索结果中的重复项。例如，如果有多个相同尺寸的鞋子，通过执行 `group_by=size&group_limit=1`，可以确保在搜索结果中只返回每个尺码的一双鞋。
+* **校正偏差**：当您的搜索结果中某种类型的文档过多时，可以使用 `group_by` 和 `group_limit` 来校正这种偏差。例如，如果您的搜索结果包含过多同一品牌的文档，您可以执行 `group_by=brand&group_limit=3` 以确保搜索结果中每个品牌只返回最多 3 项。
+
+:::tip
+  要对特定字段进行分组，它必须是多面字段。
+:::
+
+分组以嵌套结构返回命中，这与我们之前看到的纯 JSON 响应格式不同。让我们使用 `group_by` 参数重复之前进行的查询：
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let searchParameters = {
+  'q'            : 'stark',
+  'query_by'     : 'company_name',
+  'filter_by'    : 'num_employees:>100',
+  'sort_by'      : 'num_employees:desc',
+  'group_by'     : 'country',
+  'group_limit'  : '1'
+}
+
+client.collections('companies').documents().search(searchParameters)
+```
+
+  </TabItem>
+
+    <TabItem value="Python" label="Python">
+
+```py
+search_parameters = {
+  'q'           : 'stark',
+  'query_by'    : 'company_name',
+  'filter_by'   : 'num_employees:>100',
+  'sort_by'     : 'num_employees:desc',
+  'group_by'    : 'country',
+  'group_limit' : '1'
+}
+
+client.collections['companies'].documents.search(search_parameters)
+```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+search_parameters = {
+  'q'           => 'stark',
+  'query_by'    => 'company_name',
+  'filter_by'   => 'num_employees:>100',
+  'sort_by'     => 'num_employees:desc',
+  'group_by'    => 'country',
+  'group_limit' => '1'
+}
+
+client.collections['companies'].documents.search(search_parameters)
+```
+
+    </TabItem>
+</Tabs>
+
+<Tabs>
+  <TabItem value="json" label="json">
+
+```json
+{
+  "facet_counts": [],
+  "found": 1,
+  "out_of": 1,
+  "page": 1,
+  "request_params": {
+    "collection_name": "companies",
+    "per_page": 10,
+    "q": "stark"
+  },
+  "search_time_ms": 1,
+  "grouped_hits": [
+    {
+      "found": 3,
+      "group_key": ["USA"],
+      "hits": [
+        {
+          "highlights": [
+            {
+              "field": "company_name",
+              "matched_tokens": ["Stark"],
+              "snippet": "<mark>Stark</mark> Industries"
+            }
+          ],
+          "document": {
+            "id": "124",
+            "company_name": "Stark Industries",
+            "num_employees": 5215,
+            "country": "USA"
+          },
+          "text_match": 130916
+        }
+      ]
+    }
+  ]
+}
+```
+
+  </TabItem>
+</Tabs>
+
+**定义**
+
+`GET ${KUMOSEARCH_HOST}/collections/:collection/documents/search`
+
+### 按组大小排序
+
+您还可以使用 `sort_by` 子句中的 `_group_found` 按组的大小对结果进行排序。
+
+```json{2}
+{
+  "sort_by": "_group_found:desc" 
+}
+```
+
+您可以在上面的 [分组参数](#分组参数) 表中找到这些分组参数的详细文档。
+
+## 分页
+
+您可以使用 `page` 和 `per_page` 搜索参数来控制结果的分页。
+
+默认情况下，kumosearch 返回前 10 个结果（`page: 1`、`per_page: 10`）。
+
+您可以在上面的 [分页参数](#分页参数) 表中找到这些分页参数的详细文档。
+
+## 排序
+
+默认情况下，kumosearch 根据其计算的 `text_match` 相关性分数对结果进行排名。
+
+您可以使用各种搜索参数来影响文本匹配分数、按其他参数对结果进行排序以及有条件地提升或隐藏结果。
+
+请参阅 [排序和相关性指南](../../kmsearch/ranking-and-relevance.mdx) 了解更多信息。
+
+## 预设
+
+搜索预设允许您将一组搜索参数存储在一起，并通过名称引用它们。这样，在进行搜索请求时，您可以直接使用该预设名称，而无需在每次搜索请求中逐个传递所有搜索参数。
+
+之后，您可以在 kumosearch 端更改预设配置，以调整搜索参数，而无需重新部署您的应用程序。
+
+例如，您可以创建一个名为 `listing_view` 的预设配置，执行通配符搜索，并根据受欢迎度得分对结果进行排序。
+
+让我们创建一个名为 `listing_view` 的预设。
+
+<Tabs>
+      <TabItem value="Shell" label="Shell">
+
+```shell
+curl "http://localhost:8868/presets/listing_view" -X PUT \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+-d '{"value": {"searches":[{"collection":"products","q":"*", "sort_by": "popularity"}]}}'
+```
+      </TabItem>
+</Tabs>
+
+您可以在搜索操作中引用此预设配置。
+
+<Tabs>
+    <TabItem value="Shell" label="Shell">
+
+```shell
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"  -X POST \
+'http://localhost:8868/multi_search?preset=listing_view'
+```
+    </TabItem>
+</Tabs>
+
+您也可以在 `GET .../search` 端点中使用该预设配置。
+
+唯一的要求是对于 `GET .../search`，存储的预设值应该是一个简单的搜索配置字典，例如这样。
+
+<Tabs>
+      <TabItem value="Shell" label="Shell">
+```shell
+curl "http://localhost:8868/presets/listing_view" -X PUT \
+-H "Content-Type: application/json" \
+-H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '
+{"value": {"collection":"products","q":"*", "sort_by": "popularity"}}'
+```
+      </TabItem>
+</Tabs>
+
+:::tip
+传递给搜索端点的显式查询参数将会覆盖预设值中存储的参数。
+:::

@@ -1,0 +1,239 @@
+# 变量 Variable
+
+## 介绍 {#Introduction}
+
+tally varaible分为多个具体的类，常用的有：
+
+| 类型 | 说明 |
+|-----------------|-----------------------------------------------------------------------------------------|
+| `tally::Counter<T>`| 计数器，默认0，`varname << N相当于varname += N` |
+| `tally::MaxerGauge<T>` | 求最大值，默认`std::numeric_limits<T>::min()`，`varname << N相当于varname = max(varname, N)` |
+| `tally::MinerGauge<T>`| 求最小值，默认`std::numeric_limits<T>::max()`，`varname << N相当于varname = min(varname, N)` |
+| `tally::IntRecorder`| 求自使用以来的平均值。注意这里的定语不是“一段时间内”。一般要通过Window衍生出时间窗口内的平均值      |
+| `tally::Window<VAR>`| 获得某个`tally`在一段时间内的累加值。Window衍生于已存在的`tally`，会自动更新 |
+| `tally::PerSecond<VAR>`| 获得某个`tally`在一段时间内平均每秒的累加值。PerSecond也是会自动更新的衍生变量 |
+| `tally::WindowEx<T>` | 获得某个`tally`在一段时间内的累加值。不依赖其他的`tally`，需要给它发送数据 |
+| `tally::PerSecondEx<T>`|  获得某个`tally`在一段时间内平均每秒的累加值。不依赖其他的`tally`，需要给它发送数据 |
+| `tally::LatencyRecorder`| 专用于记录延时和qps的变量。输入延时，平均延时/最大延时/qps/总次数 都有了 |
+| `tally::Status<T>` | 记录和显示一个值，拥有额外的set_value函数 |
+| `tally::FuncGauge` | 按需显示值。在一些场合中，我们无法set_value或不知道以何种频率set_value，更适合的方式也许是当需要显示时才打印。用户传入打印回调函数实现这个目的 |
+| `tally::Flag` | 将重要的turbo::Flags公开为`tally`，以便监控它们 |
+
+例子：
+```c++
+#include <tally/tally.h>
+
+namespace foo {
+namespace bar {
+
+// tally::Counter<T>用于累加，下面定义了一个统计read error总数的Counter。
+tally::Counter<int> g_read_error;
+// 把tally::Window套在其他tally上就可以获得时间窗口内的值。
+tally::Window<tally::Counter<int> > g_read_error_minute("foo_bar", "read_error_minute", &g_read_error, 60);
+//                                                     ^          ^                         ^
+//                                                    监控项名称    监控描述                    60秒,忽略则为10秒
+
+// tally::LatencyRecorder是一个复合变量，可以统计：总量、qps、平均延时，延时分位值，最大延时。
+tally::LatencyRecorder g_write_latency("foo_bar_write", "write latency");
+//                                      ^               ^ 监控描述
+//                                     监控项，别加latency！LatencyRecorder包含多个tally，它们会加上各自的后缀，比如write_qps, write_latency等等。
+
+// 定义一个统计“已推入task”个数的变量。
+tally::Counter<int> g_task_pushed("foo_bar", "task_pushed");
+// 把tally::PerSecond套在其他tally上可以获得时间窗口内*平均每秒*的值，这里是每秒内推入task的个数。
+tally::PerSecond<tally::Counter<int> > g_task_pushed_second("foo_bar", "task pushed second", &g_task_pushed);
+//       ^                                                                                             ^
+//    和Window不同，PerSecond会除以时间窗口的大小.                                   时间窗口是最后一个参数，这里没填，就是默认10秒。
+
+}  // bar
+}  // foo
+```
+
+在应用的地方：
+
+```c++
+// 碰到read error
+foo::bar::g_read_error << 1;
+
+// write_latency是23ms
+foo::bar::g_write_latency << 23;
+
+// 推入了1个task
+foo::bar::g_task_pushed << 1;
+```
+:::info
+注意`Window<>`和`PerSecond<>`都是衍生变量，会自动更新，你不用给它们推值。你当然也可以把`tally`作为成员变量或局部变量。
+
+**确认变量名是全局唯一的！** 否则会曝光失败，如果-tally_abort_on_same_name为true，程序会直接abort。
+
+程序中有来自各种模块不同的`tally`，为避免重名，建议如此命名：**模块_类名_指标**
+
+- **模块**一般是程序名，可以加上产品线的缩写，比如inf_ds，ecom_retrbs等等。
+- **类名**一般是类名或函数名，比如storage_manager, file_transfer, rank_stage1等等。
+- **指标**一般是count，qps，latency这类。
+:::
+
+一些正确的命名如下：
+
+```
+iobuf_block_count : 29                          # 模块=iobuf   类名=block  指标=count
+iobuf_block_memory : 237568                     # 模块=iobuf   类名=block  指标=memory
+process_memory_resident : 34709504              # 模块=process 类名=memory 指标=resident
+process_memory_shared : 6844416                 # 模块=process 类名=memory 指标=shared
+rpc_channel_connection_count : 0                # 模块=rpc     类名=channel_connection  指标=count
+rpc_controller_count : 1                        # 模块=rpc     类名=controller 指标=count
+rpc_socket_count : 6                            # 模块=rpc     类名=socket     指标=count
+```
+
+目前`tally`会做名字归一化，不管你打入的是foo::BarNum, foo.bar.num, foo bar num , foo-bar-num，最后都是foo_bar_num。
+
+关于指标：
+
+- 个数以_count为后缀，比如request_count, error_count。
+- 每秒的个数以_second为后缀，比如request_second, process_inblocks_second，已经足够明确，不用写成_count_second或_per_second。
+- 每分钟的个数以_minute为后缀，比如request_minute, process_inblocks_minute
+
+如果需要使用定义在另一个文件中的计数器，需要在头文件中声明对应的变量。
+
+```c++
+namespace foo {
+namespace bar {
+// 注意g_read_error_minute和g_task_pushed_second都是衍生的tally，会自动更新，不要声明。
+extern tally::Counter<int> g_read_error;
+extern tally::LatencyRecorder g_write_latency;
+extern tally::Counter<int> g_task_pushed;
+}  // bar
+}  // foo
+```
+
+**不要跨文件定义全局Window或PerSecond**。不同编译单元中全局变量的初始化顺序是[未定义的](https://isocpp.org/wiki/faq/ctors#static-init-order)。
+在foo.cpp中定义`Counter<int> foo_count`，在foo_qps.cpp中定义`PerSecond<Counter<int> > foo_qps(&foo_count);`是**错误**的做法。
+
+About thread-safety:
+
+- `tally`是线程兼容的。你可以在不同的线程里操作不同的`tally`。比如你可以在多个线程中同时expose或hide**不同的**`tally`，它们会合理地操作需要共享的全局数据，是安全的。
+- **除了读写接口**，`tally`的其他函数都是线程不安全的：比如说你不能在多个线程中同时expose或hide**同一个**`tally`，这很可能会导致程序crash。一般来说，读写之外的其他接口也没有必要在多个线程中同时操作。
+
+计时可以使用turbo::TimeCost，接口如下：
+
+```c++
+#include <kutil/time.h>
+namespace turbo {
+class TimeCost {
+public:
+
+    TimeCost();
+
+    explicit TimeCost();
+
+    // Start this timer
+    void reset();
+
+    // Stop this timer
+    void stop();
+
+    // Get the elapse from start() to stop().
+    int64_t n_elapsed() const;  // in nanoseconds
+    int64_t u_elapsed() const;  // in microseconds
+    int64_t m_elapsed() const;  // in milliseconds
+    int64_t s_elapsed() const;  // in seconds
+};
+}  // namespace kutil
+```
+
+## 变量
+
+### 变量约束 tally::Scope {#scope}
+
+tally::Scope是所有`tally::Variable`的范围约束，约束`tally::Variable`的`prefix`和`tag`。
+
+每一个`tally::Variable`都属于唯一的的`Scope`,默认情况使用`ScopeInstance::get_sys_scope`的默认scope;
+
+
+### 变量 tally::Variable
+
+Variable是所有`tally`的基类，主要提供全局注册，列举，查询等功能。
+
+用户以默认参数建立一个`tally`时，这个`tally`并未注册到任何全局结构中，在这种情况下，`tally`纯粹是一个更快的计数器。我们称把一个`tally`注册到全局表中的行为为“曝光”，可通过`expose`函数曝光：
+```c++
+// Expose this variable globally so that it's counted in following functions:
+//   list_exposed
+//   count_exposed
+//   describe_exposed
+//   find_exposed
+// Return 0 on success, -1 otherwise.
+ turbo::Status expose(std::string_view name, std::string_view help, Scope *scope = nullptr);
+```
+全局曝光后的`tally`名字便为name或 scope_id + name，可通过以_exposed为后缀的static函数查询。比如Variable::describe_exposed(name)会返回名为name的`tally`的描述。
+
+当相同名字的`tally`已存在时，expose会打印FATAL日志并返回-1。如果选项 **-tally_abort_on_same_name**设为true (默认是false)，程序会直接abort。
+
+下面是一些曝光`tally`的例子：
+```c++
+    tally::Counter<int> count1;
+    // values add up to 60.
+    count1 << 10 << 20 << 30;
+     // expose the variable globally
+    count1.expose("count1","help");
+    auto f_name = count1.full_name();
+    CHECK_EQ("60", tally::Variable::describe_exposed(f_name));
+    // expose the variable with another name
+    count1.expose("another_name_for_count1","help");
+    auto new_f_name = count1.full_name();
+    CHECK_EQ("", tally::Variable::describe_exposed(f_name));
+    CHECK_EQ("60", tally::Variable::describe_exposed(new_f_name));
+    // exposed in constructor directly
+    tally::Counter<int> count2("count2");
+    f_name = count2.full_name();
+    // default value of Counter<int> is 0
+    CHECK_EQ("0", tally::Variable::describe_exposed(f_name));
+
+    // the name conflicts. if -tally_abort_on_same_name is true,
+     // program aborts, otherwise a fatal log is printed.
+    tally::Status<std::string> status1("count2", "hello");
+
+```
+
+## 导出变量
+
+变量的导出接口基类是`tally::StatsReporter`，导出的方法需要继承`tally::StatsReporter`。`tally`默认提供`prometeus`和`json`序列化。
+
+### prometheus
+
+注意`PrometheusStatsReporter`只能导出监控指标，非指标类变量不能导出。
+
+```cpp
+    std::stringstream ss;
+    tally::PrometheusStatsReporter reporter(ss);
+    tally::Variable::report(&reporter, now);
+    reporter.flush();
+```
+
+### json
+
+注意`JsonStatsReporter`可以导出所有变量。
+
+```cpp
+    nlohmann::ordered_json result;
+    auto json_reporter = tally::JsonStatsReporter(result);
+    tally::Variable::report(&json_reporter, now);
+    json_reporter.flush();
+```
+
+## tally::Reducer
+
+Reducer用二元运算符把多个值合并为一个值，运算符需满足结合律，交换律，没有副作用。只有满足这三点，我们才能确保合
+并的结果不受线程私有数据如何分布的影响。像减法就不满足结合律和交换律，它无法作为此处的运算符。
+```c++
+// Reduce multiple values into one with `Op': e1 Op e2 Op e3 ...
+// `Op' shall satisfy:
+//   - associative:     a Op (b Op c) == (a Op b) Op c
+//   - commutative:     a Op b == b Op a;
+//   - no side effects: a Op b never changes if a and b are fixed.
+// otherwise the result is undefined.
+template <typename T, typename Op>
+class Reducer : public Variable;
+```
+`reducer << e1 << e2 << e3`的作用等价于`reducer = e1 op e2 op e3`。
+
+常见的`Redcuer`指标子类有 `tally::Counter`, `tally::MaxerGauge`, `tally::MinerGauge`等。

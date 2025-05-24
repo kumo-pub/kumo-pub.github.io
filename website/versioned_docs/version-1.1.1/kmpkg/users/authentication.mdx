@@ -1,0 +1,83 @@
+---
+date: 01/10/2024
+---
+# 对专用 Git 存储库进行身份验证
+
+了解如何配置使用 kmpkg 访问远程资源时使用的凭据。
+
+[注册表](../maintainers/registries.mdx) 和 [`kmpkg_from_git()`](../maintainers/functions/kmpkg_from_git.mdx) 直接使用 Git 命令行工具来获取远程资源。其中一些资源可能受到保护以防止匿名访问，并且需要身份验证或凭证。
+
+以下策略都旨在实现相同的基本目标：“git clone https://....”应该在没有交互的情况下成功。这使得 kmpkg 能够与您的身份验证方案的细节分开，确保与未来任何其他安全改进的前向兼容性。
+
+## 预置 git 凭证
+
+您可以通过“git credential grant”预置 git 凭证：
+
+Bash:
+
+```sh
+echo "url=https://github.com"$'\n'"path=kumo-pub/kmpkg"$'\n'"username=unused"$'\n'"password=$MY_PAT"$'\n' | git credential approve
+```
+
+## 不记名授权
+
+对于需要不记名身份验证的系统，您可以使用`git config`：
+
+:::warning 重要
+您必须使用“--global”进行这些配置更改
+:::
+```console
+git config --global --unset-all http.<uri>.extraheader
+git config --global http.<uri>.extraheader "AUTHORIZATION: bearer <System_AccessToken>"
+```
+
+`<uri>` 可以填写各种选项，例如 `https://dev.azure.com/MYORG/`。有关更多详细信息，请参阅 [`git config`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-httplturlgt) 文档。
+
+（原始来源：[在构建过程中对 git 存储库进行身份验证的最佳方法](https://github.com/Microsoft/azure-pipelines-agent/issues/1601#issuecomment-394511048))。
+
+## 在环境变量中传递凭据（不推荐）
+
+使用“KMPKG_KEEP_ENV_VARS”或“KMPKG_ENV_PASSTHROUGH_UNTRACKED”，您可以通过环境传递凭据。
+
+```sh
+export KMPKG_KEEP_ENV_VARS=MY_TOKEN_VAR
+export MY_TOKEN_VAR=abc123
+```
+
+然后可以在您的私有端口中使用 p[`kmpkg_from_git()`](../maintainers/functions/kmpkg_from_git.mdx) 或 [`kmpkg_from_github()`](../maintainers/functions/kmpkg_from_github.mdx) ）的帮手。
+
+```cmake
+# kmpkg-from-git-example/portfile.cmake
+set(MY_TOKEN_VAR "")
+if(DEFINED ENV{MY_TOKEN_VAR})
+    set(MY_TOKEN_VAR "$ENV{MY_TOKEN_VAR}@")
+endif()
+kmpkg_from_git(
+    URLS "https://${MY_TOKEN_VAR}host.com/normal/url/path"
+    ...
+)
+```
+
+```cmake
+# kmpkg-from-github-example/portfile.cmake
+kmpkg_from_github(
+    AUTHORIZATION_TOKEN "$ENV{MY_TOKEN_VAR}"
+)
+```
+
+对于私有端口，我们建议使用 `kmpkg_from_git()` 而不是 `kmpkg_from_github()` 以及上面的预播种方法。
+
+## 传递 Jenkins gitUsernamePassword 凭证
+
+从 Jenkins 对 GitHub 进行 Git 身份验证的最简单、最安全的选项是使用 [GitHub 应用程序](https://github.com/jenkinsci/github-branch-source-plugin/blob/master/docs/github-app.adoc)以及以下内容：
+
+```groovy
+withCredentials([gitUsernamePassword(credentialsId: 'jenkins-github-app')]) {
+  withEnv(['KMPKG_KEEP_ENV_VARS=GIT_ASKPASS']) {
+    bat 'cmake'
+  }
+}
+```
+
+这会使用帮助程序脚本的路径设置“GIT_ASKPASS”，该脚本响应 git 凭证查询并指示“kmpkg”保留此环境变量。
+密码是具有 1 小时生命周期的 [GitHub 应用令牌](https://github.blog/2021-04-05-behind-githubs-new-authentication-token-formats/)。

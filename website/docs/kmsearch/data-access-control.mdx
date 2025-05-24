@@ -1,0 +1,130 @@
+# 管理数据访问
+
+kumosearch 主要通过[REST-ful HTTP API](../api/kmsearch/collections.mdx)读取和写入数据，对此 API 的访问受 API 密钥的控制。
+
+除了[`GET /health`](../api/kmsearch/cluster-operations.mdx#healthy-check)节点外，所有 API 端点都需要提供 API 密钥，作为 `X-KUMOSEARCH-API-KEY` HTTP 标头或作为查询参数 `?x-kumosearch-api-key`。
+
+接下来，我们将讨论如何创建 API 密钥以及如何限制对特定 API 端点和数据的访问。
+
+## 引导 API 密钥
+
+启动 kumosearch 集群时，可以使用 `api-key`[服务器配置参数](api/kmsearch/server-configuration.mdx)提供一个引导密钥。
+
+此引导密钥对所有端点和数据具有管理员权限，不应在正常操作过程中使用。相反，建议使用此密钥通过
+[`/keys` API 端点](../api/kmsearch/api-keys.mdx#create-api-key)创建另一个管理 API 密钥，然后使用该密钥进行日常操作。
+
+这样，您就可以根据需要[轮换/撤销](#密钥轮换) 管理密钥。
+
+## 限制对 API 端点的访问
+
+当[创建 API 密钥](/api/kmsearch/api-keys.mdx#create-api-key)时，可以使用`actions` 参数控制该密钥可以访问哪些 API 端点。
+
+以这个密钥配置为例：
+
+```json
+{
+  "actions": ["documents:search"],
+  "collections": ["*"],
+  ...
+}
+```
+
+此操作可以配置一个 API 密钥仅用于搜索 API 端点。
+
+详细了解可用的[操作](../api/kmsearch/api-keys.mdx#operator-sample-actions)。
+
+## 限制索引表的访问
+
+当您[创建API密钥](../api/kmsearch/api-keys.mdx#create-api-key)时，可以使用`collections` 参数控制密钥可以访问哪些特定索引表。
+
+我们以这个密钥配置为例：
+
+```json
+{
+  "actions": ["*"],
+  "collections": ["contacts_.*"],
+  ...
+}
+```
+
+此操作可以配置一个 API 密钥仅访问以 `contacts_` 开头的索引表。
+
+您可以使用任何正则表达式或索引表名称列表来指示该密钥可以访问哪些索引表。
+
+## 限制对索引表内文档的访问
+
+假设您正在构建一个书签服务，每个用户可以创建自己的书签。可以将所有用户的书签放在一个索引表中，并使用[范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key)仅允许用户通过自己的书签进行搜索。
+
+范围搜索 API 密钥能以加密方式嵌入[filter_by](../api/kmsearch/search_api.mdx#search-parameter)子句（如 `filter_by:belongs_to_user_id:=CurrentUserId`），当使用该 API 密钥进行搜索时，kumosearch 会自动应用此过滤器，用户无法绕过嵌入在范围搜索 API 密钥内的过滤器。
+
+这样，API 密钥只能访问具有 `belongs_to_user_id: CurrentUserId` 属性的文档。
+
+详细了解 [范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key)。
+
+## 限制对文档中字段的访问
+
+假设您正在构建一个客户查找应用，客户服务代理可以在其中查找客户信息，并且希望帐单地址等信息仅对代理管理组可见。
+
+可以将[include_fields 或 exclude_fields](../api/kmsearch/search_api.mdx#result-parameter)参数嵌入到[范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key) 中，如 `exclude_fields: billing_address `。
+
+当客户服务代理登录时，可以对后端进行 API 调用，创建/获取[仅搜索 API 密钥](../api/kmsearch/api-keys.mdx#search-only-api-key)，并根据代理在身份验证系统中的
+角色，生成一个带有嵌入 `include_fields` 或 `exclude_fields` 参数的范围搜索 API 密钥，将此 Scoped API Key 发送到前端，然后让前端对 kumosearch 进行 API 调用。
+
+详细了解[范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key)。
+
+## 向前端公开 API 密钥
+
+kumosearch 允许搜索直接从用户的浏览器/移动应用程序发送到 kumosearch 集群，而无需通过后端代理搜索调用。
+
+因此，可以在前端公开[仅搜索 API 密钥](../api/kmsearch/api-keys.mdx#search-only-api-key)，因为该 API 密钥使用户可以访问通过搜索 UI 访问的相同数据。
+
+唯一不应向前端公开`仅搜索 API 密钥`的情况是当使用 [范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key)时,
+通过嵌入的过滤器或其他搜索参数来 [限制对文档的访问](#限制对索引表内文档的访问) 或 [限制对文档内的字段的访问](#限制对文档中字段的访问)。这是因为公开生成[范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key)的父仅搜索 API 密钥将允许用户进行无范围搜索，这是要避免的。
+
+:::warning 重要
+切勿将您的 **Admin 管理 API 密钥** 或 **Bootstrap 引导 API 密钥** 暴露给前端应用程序，因为任何获得这些密钥的人都可以写入数据到您的索引表。
+:::
+
+## 密钥轮换
+
+当您通过[`/keys` 创建 API 密钥](../api/kmsearch/api-keys.mdx#create-api-key)时，可以设置 `expires_at` 值来指示密钥的 Unix 时间戳有效期。
+
+良好的安全实践是定期创建具有较短有效期的新 API 密钥，以降低密钥泄露的风险。
+
+例如，可以让前端对后端进行 API 调用以获取最新的 API 密钥，而不是在应用程序中硬编码 API 密钥，或者如果它已过期，则创建另一个具有较短有效期的密钥并返回供前端使用。
+
+有用户登录的应用程序，可以在每个用户登录时在后端分别创建一个搜索 API 密钥，并在需要时生成一个[范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key)，发送到前端使用。
+
+:::tip
+
+不要在本机移动应用程序中硬编码 API 密钥或 kumosearch 主机名，这样会使动态轮换密钥变得困难。
+
+建议在后端提供一个 API 端点，当应用程序加载或用户登录时，可以从那里获取 kumosearch 集群主机名和 API 密钥。
+
+这样，可以避免可能较长的应用程序商店审核周期，并且支持仍使用旧 API 密钥的旧版应用程序。
+:::
+
+## 防爬保护
+
+如果您的搜索栏是公开的，并且希望保护数据不被机器人抓取，可以限制搜索查询可获取的结果总数。这有效地阻止了机器人访问完整的数据集。
+
+可以生成[范围搜索 API 密钥](../api/kmsearch/api-keys.mdx#generate-scope-api-key)，在其中嵌入 `limit_hits` 参数，然后在前端应用程序中使用该范围搜索密钥。
+
+如果使用[multi_search](..//api/kmsearch/federated-multi-search.mdx#multi-search)，还需要将 `limit_multi_searches` 参数嵌入范围搜索 API 密钥中，以限制单个 `multi_search` 请求中的搜索数量。
+
+## DDoS防护
+
+如果没有大量资源，DDoS 攻击很难阻止。因此，要防范 DDoS，建议将每个 kumosearch 节点主机名放在云提供商 DNS 端点后面（代理设置打开），然后在 kumosearch 客户端配置中使用云提供商主机名。
+
+例如，对于 3 节点集群，可以设置以下代理连接：
+
+```
+kumosearch-ha.yourdomain.com -> xxx.a1.kumosearch.net
+kumosearch1.yourdomain.com -> xxx-1.a1.kumosearch.net
+kumosearch2.yourdomain.com -> xxx-2.a1.kumosearch.net
+kumosearch3.yourdomain.com -> xxx-3.a1.kumosearch.net
+```
+
+其中 `xxx*.a1.kumosearch.net` 是 kumosearch 集群的各个节点的主机名。
+
+然后，在实例化客户端库或进行 API 调用时，使用 `kumosearch*.yourdomain.com` 主机名，使请求通过云提供商进行路由，任何 DDoS 攻击都可以在到达原始 kumosearch 节点之前由 Cloudflare 进行处理。

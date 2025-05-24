@@ -1,0 +1,65 @@
+---
+date: 01/10/2024
+---
+
+# 端口覆盖
+
+他的文章描述了 kmpkg 中的覆盖端口。覆盖端口用于强制 kmpkg 在软件包安装过程中使用特定的端口定义。
+
+通常，kmpkg 端口是从 [registries](../concepts/registries.mdx) 获取的。您安装的大多数 ports 很可能来自 [kmpkg](https://gitee.com/kumo-pub/kmpkg)
+上的官方 kmpkg 注册表。 kmpkg 允许您通过文件系统安装可用的端口，我们将这些端口称为覆盖端口。
+
+覆盖端口可以充当现有端口的直接替代品，也可以充当 [registry](../maintainers/registries.mdx) 中不可用的新端口。在[解析包名称](../concepts/package-name-resolution.mdx)时，覆盖端口优先。
+
+覆盖端口按以下顺序进行评估：
+
+* 通过 [`--overlay-ports`](../commands/common-options.mdx#overlay-ports) 在命令行中指定的覆盖位置。
+* 通过 [`overlay-ports`](../reference/kmpkg-configuration-json.mdx) 在 `kmpkg-configuration.json` 文件中指定的叠加位置。
+* 由 [`KMPKG_OVERLAY_PORTS`](../users/config-environment.mdx#kmpkg_overlay_ports) 环境变量指定的覆盖位置。
+
+解析端口名称时，将选择包含匹配覆盖端口的第一个位置。
+
+## 使用覆盖端口
+
+目录可以代表一组覆盖端口，并且可以通过以下两种方式之一指定：
+
+* 单个覆盖端口：`<directory>/sqlite3`指的是单个端口
+* 覆盖端口目录：`<directory>` 指端口目录
+有效的端口必须同时包含“kmpkg.json”和“portfile.cmake”。
+
+您可以通过多种方式添加覆盖端口：
+
+* 命令行：向 kmpkg 命令添加一个或多个 `--overlay-ports=<directory>` 选项
+* [Manifest](../reference/kmpkg-configuration-json.mdx#overlay-ports): 填充 `kmpkg-configuration.json` 中的 `"overlay-ports"` 数组
+* [环境变量](../users/config-environment.mdx#kmpkg_overlay_ports): 将 `KMPKG_OVERLAY_PORTS` 设置为目录路径列表
+
+### 示例：覆盖端口示例
+
+运行：
+
+```bash
+kmpkg install sqlite3 --overlay-ports=my-ports --overlay-ports=team-ports
+```
+
+安装：
+
+* `sqlite3` from `my-ports`
+
+运行：
+
+```
+kmpkg install sqlite3 rapidjson curl
+    --overlay-ports=my-ports/rapidjson
+    --overlay-ports=kmpkg/ports/curl
+    --overlay-ports=team-ports
+```
+
+安装：
+
+* `sqlite3` from `team-ports`
+* `rapidjson` from `my-ports`
+* `curl` from `kmpkg/ports
+
+### 示例：使用覆盖端口来使用系统包管理器依赖项
+
+要使用系统包管理器依赖项而不是 kmpkg 依赖项，请参阅我们的[博客文章](https://devblogs.microsoft.com/cppblog/using-system-package-manager-dependency-with-kmpkg/)。

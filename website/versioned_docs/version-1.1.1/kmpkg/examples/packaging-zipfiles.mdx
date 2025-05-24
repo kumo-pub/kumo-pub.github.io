@@ -1,0 +1,89 @@
+---
+date: 01/10/2024
+---
+
+# 用例： 从源码打包项目
+
+了解如何将上游源版本中的 zlib 打包到 kmpkg 中。
+
+## 使用`create`引导
+
+首先，找到图书馆资源的全球可访问档案。 Zip、gzip 和 bzip 均受支持。与非官方镜像相比，更喜欢官方来源或镜像。
+
+*查看 zlib 的网站，URL `http://zlib.net/zlib-1.2.13.tar.gz` 看起来很合适。*
+
+其次，确定合适的包名称。这应该是 ASCII、小写，并且对于知道库的“人名”的人来说是可以识别的。如果该库已打包在另一个包管理器中，请首选该名称。
+
+*由于 zlib 已打包为 zlib，因此我们将在本示例中使用名称 zlib2。*
+
+最后，如果存档的服务器名称不是很具有描述性（例如从 GitHub 下载压缩的提交或分支），请选择一个格式为`<packagename>-<version>.zip`的好存档名称。
+
+*`zlib-1.2.13.zip` 是一个很好的名称，所以不需要更改。*
+
+然后，所有这些信息都可以传递到“create”命令中，该命令将下载源代码并在`ports/<packagename>`内引导打包过程。
+
+```shell
+PS D:\src\kmpkg> .\kmpkg create zlib2 http://zlib.net/zlib-1.2.13.tar.gz zlib-1.2.13.tar.gz
+-- Downloading http://zlib.net/zlib-1.2.13.tar.gz -> zlib-1.2.13.tar.gz...
+-- Generated portfile: D:\src\kmpkg\ports\zlib2\portfile.cmake
+-- Generated manifest: D:\src\kmpkg\ports\zlib2\kmpkg.json
+-- To launch an editor for these new files, run
+--     .\kmpkg edit zlib2
+```
+
+## 创建清单文件
+
+除了生成的 `ports/<package>/portfile.cmake` 之外，我们还需要一个 `ports/<package>/kmpkg.json` 文件。该文件是一组简单的字段，描述包的元数据。
+
+*对于 zlib2，我们将创建包含以下内容的文件 `ports/zlib2/kmpkg.json`：*
+
+```json
+{
+  "name": "zlib2",
+  "version": "1.2.13",
+  "description": "A Massively Spiffy Yet Delicately Unobtrusive Compression Library"
+}
+```
+
+## 调整生成的端口文件
+
+生成的“portfile.cmake”将需要一些编辑才能正确打包大多数库，但是我们可以从尝试构建开始。
+
+```shell
+PS D:\src\kmpkg> .\kmpkg install zlib2
+Computing installation plan...
+The following packages will be built and installed:
+    zlib2[core]:x64-uwp
+Starting package 1/1: zlib2:x64-uwp
+Building package zlib2[core]:x64-uwp...
+-- Using cached C:/src/kmpkg/downloads/zlib-1.2.13.tar.gz
+-- Cleaning sources at C:/src/kmpkg/buildtrees/zlib2/src/1.2.13-deec42f53b.clean. Pass --editable to kmpkg to reuse sources.
+-- Extracting source C:/src/kmpkg/downloads/zlib-1.2.13.tar.gz
+-- Applying patch cmake_dont_build_more_than_needed.patch
+-- Using source at C:/src/kmpkg/buildtrees/zlib2/src/1.2.13-deec42f53b.clean
+-- Configuring x64-uwp
+-- Building x64-uwp-dbg
+-- Building x64-uwp-rel
+-- Installing: C:/src/kmpkg/packages/zlib2_x64-uwp/share/zlib2/copyright
+-- Performing post-build validation
+Include files should not be duplicated into the /debug/include directory. If this cannot be disabled in the project cmake, use
+    file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
+/debug/share should not exist. Please reorganize any important files, then use
+    file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/share)
+The software license must be available at ${CURRENT_PACKAGES_DIR}/share/zlib2/copyright
+Found 3 error(s). Please correct the portfile:
+    D:\src\kmpkg\ports\zlib2\portfile.cmake
+```
+
+此时，需要阅读错误消息和日志文件，同时稳步提高端口文件的质量。 Zlib 需要提供许可证的离散副本以复制到包中，抑制可执行文件和标头的构建和安装，并在安装后删除静态库。
+
+## 建议的端口文件示例
+
+在 [`ports/`](https://gitee.com/kumo-pub/kmpkg/tree/master/ports) 目录中有许多可以用作示例的库，包括许多不基于 CMake 的库。
+
+- 仅标头库
+  - rapidjson
+  - range-v3
+- 非 CMake，自定义构建系统
+  - openssl
+  - ffmpeg

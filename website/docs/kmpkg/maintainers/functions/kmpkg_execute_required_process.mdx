@@ -1,0 +1,79 @@
+---
+date: 06/27/2024
+---
+# 函数： kmpkg_execute_required_process
+
+执行包含日志记录的进程；如果命令失败，则构建失败。
+
+## 使用情况
+
+```cmake
+kmpkg_execute_required_process(
+    COMMAND <${PERL}> [<arguments>...]
+    WORKING_DIRECTORY <${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg>
+    LOGNAME <build-${TARGET_TRIPLET}-dbg>
+    [TIMEOUT <seconds>]
+    [OUTPUT_VARIABLE <var>]
+    [ERROR_VARIABLE <var>]
+    [SAVE_LOG_FILES [<relative-path> [ALIAS <unique-alias>]]...]
+)
+```
+
+## 参数
+
+### ALLOW_IN_DOWNLOAD_MODE
+
+允许命令在下载模式下执行。
+
+### COMMAND {#command}
+
+要执行的命令及其参数。
+
+### WORKING_DIRECTORY
+
+要在其中执行命令的目录。
+
+### LOGNAME
+
+用于日志文件的前缀。 此项应为不同三元组的唯一名称，这样一次构建多个三元组时日志就不会冲突。
+
+### TIMEOUT
+
+可选超时，经过该时间后终止该命令。
+
+### OUTPUT_VARIABLE
+
+用于接收命令 `stdout` 的可选变量。
+
+### OUTPUT_STRIP_TRAILING_WHITESPACE
+
+在设置 OUTPUT_VARIABLE 前删除尾随空格。
+
+### ERROR_VARIABLE
+
+用于接收命令 `stderr` 的可选变量。
+
+### ERROR_STRIP_TRAILING_WHITESPACE
+
+在设置 ERROR_VARIABLE 前删除尾随空格。
+
+### SAVE_LOG_FILES
+
+要从工作目录移动到 `${CURRENT_BUILDTREES_DIR}` 的可选文件。
+
+这有助于在 CI 设置时收集相关的日志文件。 即使进程失败，也会复制文件。 目标文件名由 `LOGNAME` 参数和源文件名构造。 如果目标文件名并非以 `.log` 结尾，则会附加此后缀。
+
+已在 kmpkg 版本 2024.01.10 中添加
+
+相对路径名后面的` ALIAS` 参数将目标文件名生成替换为 `<unique-alias>` 的值。
+
+## 示例
+
+- [boost-build](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/boost-build/portfile.cmake)
+- [ffmpeg](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/ffmpeg/portfile.cmake)
+- [qt5-base](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/qt5-base/portfile.cmake)
+- [kmpkg-cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-cmake/kmpkg_cmake_configure.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_execute\_required\_process.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_execute_required_process.cmake)

@@ -1,0 +1,177 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程：CMake 工程集成
+
+本教程向您展示如何通过 CMake 和 kmpkg 创建使用“fmt”库的 C++“Hello World”程序。您将安装依赖项、配置、构建和运行一个简单的应用程序。
+
+## 先决条件
+
+- 一个终端
+- C++ 编译器
+- [CMake](https://cmake.org/download/)
+- [Git](https://git-scm.com/downloads)
+- [安装 kmpkg](setup-kmpkg.mdx)
+
+:::warning 重要
+
+对于Windows用户来说，Visual Studio的MSVC（Microsoft Visual C++编译器）是C++开发所需的编译器。
+
+:::
+
+## 1 - 添加依赖项和项目文件
+
+1. 创建项目目录。
+
+ ```console
+ mkdir helloworld && cd helloworld
+```
+
+2. 创建清单文件并添加“fmt”依赖项。
+
+    首先，通过在 `helloworld` 目录中运行 [`kmpkg new`](../commands/new.mdx) 命令，在项目目录中创建一个清单文件 (`kmpkg.json`)：
+
+    ```console
+    kmpkg new --application
+    ```
+
+    接下来，添加 `fmt` 依赖项
+
+    ```console
+    kmpkg add port fmt
+    ```
+
+    您的“kmpkg.json”应如下所示：
+
+    ```json
+    {
+        "dependencies": [
+            "fmt"
+        ]
+    }
+    ```
+
+    这是您的清单文件。 kmpkg 读取清单文件以了解要安装哪些依赖项，并与 CMake 集成以提供项目所需的依赖项。
+
+    默认的`kmpkg-configuration.json`文件引入了 [baseline](../reference/kmpkg-configuration-json.mdx#registry-baseline) 约束，
+    指定项目应使用的依赖项的最低版本。虽然修改此文件超出了本教程的范围，但它在定义项目依赖项的版本约束方面发挥着至关重要的作用。因此，尽管对于
+    本教程来说并不是绝对必要的，但将`kmpkg-configuration.json`添加到源代码管理中是一个很好的做法，以确保不同开发环境之间的版本一致性。
+
+    :::warning
+    `kmpkg` 从 [GITHUB](https://github.com) 逐步迁移至 [GITEE](https://gitee.com),在迁移过程中，`kmpkg-configuration.json`基线
+    版本的基线存在仓库迁移带来的不可能安装问题，***直接删除`kmpkg-configuration.json`即可***
+    :::
+
+3. 创建项目文件。
+
+    创建包含以下内容的`CMakeLists.txt`文件：
+
+    ```cmake title=CMakelists.txt
+        cmake_minimum_required(VERSION 3.10)
+
+        project(HelloWorld)
+
+        find_package(fmt CONFIG REQUIRED)
+
+        add_executable(HelloWorld main.cpp)
+
+        target_link_libraries(HelloWorld PRIVATE fmt::fmt)
+    ```
+
+    现在，让我们分解一下 `CMakeLists.txt` 文件中每一行的作用：
+
+    - `cmake_minimum_required(VERSION 3.10)`：指定构建项目所需的最低 CMake 版本为 3.10。如果系统上安装的 CMake 版本低于此版本，则会生成错误。
+    - `project(HelloWorld)`：将项目名称设置为“HelloWorld”。
+    - `find_package(fmt CONFIG REQUIRED)`：使用其 CMake 配置文件查找 `fmt` 库。 `REQUIRED` 关键字确保在找不到包时生成错误。
+    - `add_executable(HelloWorld main.cpp)`：添加一个名为“HelloWorld”的可执行目标，该目标是从源文件“main.cpp”构建的。
+    - `target_link_libraries(HelloWorld PRIVATE fmt::fmt)`：指定 `HelloWorld` 可执行文件应链接到 `fmt` 库。 “PRIVATE”关键字表示“fmt”仅用于构建“HelloWorld”，不应传播到其他依赖项目。
+
+    创建包含以下内容的“main.cpp”文件：
+
+    ```cpp
+    #include <fmt/core.h>
+
+    int main() {
+        fmt::print("Hello World!\n");
+        return 0;
+    }
+    ```
+
+    在此`main.cpp`文件中，包含`<fmt/core.h>`头文件以使用“fmt”库。然后 `main()` 函数调用 `fmt::print()` 来输出“Hello World!”消息到控制台。
+
+## 2 - 构建并运行项目
+
+1. 运行CMake配置
+
+    为了允许 `CMake` 项目系统识别 `kmpkg` 提供的 `C++` 库，您需要提供`kmpkg.cmake`工具链文件。要自动执行此操作，请在`helloworld`目录中创建一个包含以下内容的`CMakePresets.json`文件：
+
+    ```json
+   {
+        "version": 2,
+        "configurePresets": [
+                {
+                "name": "default",
+                "generator": "Ninja",
+                "binaryDir": "${sourceDir}/build",
+                "cacheVariables": {
+                  "CMAKE_TOOLCHAIN_FILE": "$env{KMPKG_CMAKE}"
+                }
+            }
+        ]
+    }
+    ```
+
+    此`CMakePresets.json`文件包含 CMake 的单个 `default` 预设，并设置“CMAKE_TOOLCHAIN_FILE”变量。
+    `CMAKE_TOOLCHAIN_FILE` 允许 CMake 项目系统识别 kmpkg 提供的 C++ 库。添加“CMakePresets.json”会自动执行运行 CMake 时指定工具链的过程。
+
+    使用 CMake 配置构建：
+
+    ```console
+    cmake --preset=default
+    ```
+
+2. 构建项目
+
+    运行:
+
+    ```console
+    cmake --build build
+    ```
+  
+3. 运行应用
+
+    最后，运行可执行文件以查看应用程序的运行情况：
+
+   <Tabs>
+        <TabItem value="shell" label="bash" default>
+
+    ```console
+    ./build/HelloWorld
+    
+    Hello World!
+    ```
+
+   </TabItem>
+   <TabItem value="pwoershell" label="pwoershell" default>
+
+
+
+    ```console
+    .\build\HelloWorld.exe
+    
+    Hello World!
+    ```
+
+    </TabItem>
+    </Tabs>
+
+## 后续步骤
+
+- [教程：使用 kmpkg 打包库](get-started-packaging.mdx)
+- [kmpkg.json 参考](../reference/kmpkg-json.mdx)
+- [什么是清单模式？](../concepts/manifest-mode.mdx)

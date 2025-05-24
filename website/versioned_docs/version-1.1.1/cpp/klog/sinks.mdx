@@ -1,0 +1,41 @@
+# 自定义日志Sinks
+
+`turbo::LogSink` 是处理记录消息的扩展点，例如通过将它们写入磁盘文件。  可以使用以下命令将一条消息定向到它：
+`.ToSinkOnly()` 或 `.ToSinkAlso()` [mutator 方法](logging.mdx#mutators)，或者接收器可以注册以观察所有记录的消息（除了那些使用
+`.ToSinkOnly()`) 与 `turbo::add_log_sink()` 并取消注册
+`turbo::remove_log_sink`。  例如：
+
+## 基础接口
+
+```c++
+class LinePrinterLogSink : public turbo::LogSink {
+ public:
+  LinePrinterLogSink() : fp_(fopen("/dev/lp0", "a")) {
+    PCHECK(fp_ != nullptr) << "Failed to open /dev/lp0";
+  }
+  ~LinePrinterLogSink() {
+    fputc('\f', fp_);
+    PCHECK(fclose(fp_) == 0) << "Failed to close /dev/lp0";
+  }
+  void Send(const turbo::LogEntry& entry) override {
+    for (std::string_view line :
+         turbo::sr_split(entry.text_message_with_prefix(), turbo::ByChar('\n'))) {
+      // Overprint severe entries for emphasis:
+      for (int i = static_cast<int>(turbo::LogSeverity::kInfo);
+           i <= static_cast<int>(entry.log_severity()); i++) {
+        turbo::FPrintF(fp_, "%s\r", line);
+      }
+      fputc('\n', fp_);
+    }
+  }
+
+ private:
+  FILE* const fp_;
+};
+```
+
+`LogSink`接收每条`FATAL`消息的两份副本：一份没有`stacktrace`，然后是之一。这个怪癖允许一些诊断数据
+即使堆栈跟踪收集失败或花费太长时间，也会观察到。该过程将一旦`LogSink`返回，即终止，即不需要接收器调用`abort()`。
+
+发生在注册的`LogSink`或调用的函数中的任何日志记录由已注册的`LogSink`仅发送到“stderr”，而不发送到任何已注册的
+LogSink 以避免无限递归。

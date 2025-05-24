@@ -1,0 +1,145 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 服务配置
+
+这些参数用于控制和微调 kumosearch 中的各种默认服务器设置。
+
+## 使用命令行参数
+
+命令行参数可以作为 `--parameter=value` 传递到服务器。
+
+### 常用参数
+
+| 参数           | 必选   | 描述                                                                                            |
+|--------------|-----------------|-----------------------------------------------------------------------------------------------| 
+| `--config`   |   否    | [配置文件](#使用配置文件) 的路径。如果使用此参数，可以在配置文件中定义所有其他命令行参数。               |
+| `--api-key`  |   是   | 允许所有操作的初始管理 API 密钥。请务必使用 [密钥管理 API](./api-keys.mdx) 创建具有特定 ACL 的其他密钥。 **注意**：不要将管理 API 密钥公开给浏览器 JS 客户端，请使用 [密钥管理 API](./api-keys.mdx) 创建仅搜索或范围 API 密钥。 |
+| `--data-dir` |   是    | 在磁盘上存储数据的目录的路径。                                |
+
+### CORS
+
+| 参数               | 必选 | 描述                                                                        |
+|------------------|----|---------------------------------------------------------------------------|
+| `--enable-cors`  | 否  | 允许 JavaScript 客户端直接从浏览器访问 kumosearch。                                           |
+| `--cors-domains` | 否  | 允许 CORS 的域的逗号分隔列表。例如。 `https://example.com,https://example2.com`（没有尾部斜杠！） |
+
+### 分析
+
+| 参数                           | 必选 | 描述                                             |
+|------------------------------|----|------------------------------------------------|
+| `--enable-search-analytics`  | 否  | 允许聚合搜索查询以进行查询分析。默认值：`false`                    |
+| `--analytics-dir`            | 否  | kumosearch 存储分析数据的目录。                                |
+| `--analytics-flush-interval` | 否  | 确定搜索查询聚合持久保存到存储的频率（以秒为单位）。默认值：`3600`（每小时） |
+
+### 日志
+
+| 参数                            | 必选    | 描述                                                                                                                                      |
+|-------------------------------|-------|-----------------------------------------------------------------------------------------------------------------------------------------| 
+| `--log-dir`                   | 否 | 默认情况下，kumosearch 记录到 stdout 和 stderr。要启用对文件的日志记录，请提供日志记录目录的路径。           |
+| `--enable-access-logging`     | 否 | 将 API 请求和相应的 IP 地址记录到 `log-dir`。 默认值: `false`                          |
+| `--enable-search-logging`     | 否 | 在搜索请求开始时记录搜索 API 请求 + 有效负载。默认: `false`     |
+| `--log-slow-requests-time-ms` | 否 | 记录占用此时间量（以毫秒为单位）的请求。默认值：“-1”，禁用慢速请求日志记录。 <p/>您还可以通过 `/config` API [动态启用](./cluster-operations.mdx#start-disable-slow-log) 慢速请求日志记录。 |
+
+### 网络 {#network}
+
+| 参数                  | 必选    | 描述                                                    |
+|---------------------|-------|-------------------------------------------------------|
+| `--api-address`     | 否 | kumosearch API 服务绑定的地址。默认值：`0.0.0.0`                        |
+| `--api-port`        | 否 | kumosearch API 服务侦听的端口。默认值：`8868`                           |
+| `--peering-address` | 否 | kumosearch 对等互连服务绑定的内部 IP 地址。如果未指定此参数，kumosearch 将尝试使用第一个可用的内部 IP。 |
+| `--peering-port`    | 否 | kumosearch 对等互连服务侦听的端口。默认值：`8107`                           |
+| `--peering-subnet`  | 否 | kumosearch 用于对等互连的内部子网，例如：`192.160.1.0/24`                   |
+
+### SSL / HTTPS {#ssl-https}
+
+| 参数                               | 必选    | 描述                                                   |
+|----------------------------------|-------|------------------------------------------------------|
+| `--ssl-certificate`              | 否 | SSL 证书文件的路径。必须定义 `ssl-certificate-key` 才能启用 HTTPS。 |
+| `--ssl-certificate-key`          | 否 | SSL 证书密钥文件的路径。必须定义 `ssl-certificate` 才能启用 HTTPS。   |
+| `--ssl-refresh-interval-seconds` | 否 | 从磁盘自动重新加载 SSL 证书的频率。默认值：`8 * 60 * 60`。               |
+
+### 集群 {#cluster}
+
+| 参数                       | 必选    | 描述                                                 |
+|--------------------------|-------|----------------------------------------------------|
+| `--nodes`                | 否 | 包含集群中所有节点的逗号分隔字符串的文件路径。                            |
+| `--reset-peers-on-error` | 否 | 在发生不可恢复的集群错误时强制重置节点的对等点。这可能会导致间歇性数据丢失，只能作为最后的手段。 |
+
+### 资源管理
+
+| 参数                                | 必选    | 描述                                                                                                            |
+|-----------------------------------|-------|---------------------------------------------------------------------------------------------------------------|
+| `--thread-pool-size`              | 否 | 用于处理并发请求的线程数。默认值：`NUM_CORES * 8`。     |
+| `--num-collections-parallel-load` | 否 | 启动期间并行加载的索引表数。默认值：`NUM_CORES * 4`。           |
+| `--num-documents-parallel-load`   | 否 | 启动期间并行索引的每个索引表的文档数。默认值：`1000`。       |
+| `--cache-num-entries`             | 否 | 用于存储搜索查询响应的 LRU 缓存中存储的条目数。默认值：`1000`。      |
+| `--disk-used-max-percentage`      | 否 | 当使用的磁盘空间超过此百分比时拒绝写入。默认值：`100`（从不拒绝）。      |
+| `--memory-used-max-percentage`    | 否 | 当已用内存使用量超过此百分比时拒绝写入。默认值：`100`（从不拒绝）。            |
+| `--healthy-read-lag`              | 否 | 如果更新落后于此阈值，则读取将被拒绝。默认值：`1000`。      |
+| `--healthy-write-lag`             | 否 | 如果更新落后于此阈值，则写入将被拒绝。默认值：`500`。       |
+| `--snapshot-interval-seconds`     | 否 | 复制日志快照的频率。默认值：`3600` 追随者恢复。**注意**：频繁的快照有助于更快地从冷启动中恢复。但是，如果该值对于大型数据集来说太低，则重复快照实际上会减慢追随者恢复速度。           |
+| `--db-compaction-interval`        | 否 | 自动磁盘上[数据库压缩](./cluster-operations.mdx#压缩磁盘数据库) 的频率。默认值：`604,800`（7 天）如果频繁删除和重新创建索引表，建议将其设置为 24 小时。 |
+| `--skip-writes`                   | 否 | 以不从 Raft 日志读取写入的模式启动 kumosearch。适用于当服务器因最近的某些写入错误而希望暂时跳过这些错误记录的情况。|
+
+## 使用配置文件
+
+作为命令行参数的替代方案，您还可以通过配置文件或环境变量配置 kumosearch 服务器。
+
+命令行参数的优先级最高，而环境变量的优先级最低。
+
+<Tabs>
+  <TabItem value="Shell" label="Shell" default>
+
+```bash
+./kumosearch-server --config=/etc/kumosearch/kumosearch-server.ini
+```
+
+  </TabItem>
+</Tabs>
+
+我们的 Linux DEB/RPM 软件包将配置文件安装在 `/etc/kumosearch/kumosearch-server.ini`。
+
+配置文件使用简单的INI格式：
+
+<Tabs>
+    <TabItem value="INI" label="INI" default>
+
+```ini
+; /etc/kumosearch/kumosearch-server.ini
+
+[server]
+
+api-key = Rhsdhas2asasdasj2
+data-dir = /var/lib/kumosearch
+log-dir = /var/log/kumosearch
+api-port = 9090
+```
+
+    </TabItem>
+</Tabs>
+
+您可以使用上表中的任何参数，而无需在 `kumosearch-server.ini` 文件中使用前面的 `--`。
+
+## 使用环境变量
+
+如果您想使用环境变量，也可以这样做。环境变量映射到上面记录的命令行参数：只需使用大写字母和下划线而不是连字符，并在变量名称前面加上 `KUMOSEARCH_` 前缀。
+
+例如，使用 `KUMOSEARCH_DATA_DIR` 作为 `--data-dir` 参数。
+
+<Tabs>
+    <TabItem value="Shell" label="Shell" default>
+
+```bash
+KUMOSEARCH_DATA_DIR=/var/lib/kumosearch KUMOSEARCH_API_KEY=AS3das2awQ2 ./kumosearch-server
+```
+
+    </TabItem>
+</Tabs>

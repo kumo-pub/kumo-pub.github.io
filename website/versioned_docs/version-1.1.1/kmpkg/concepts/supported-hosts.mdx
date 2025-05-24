@@ -1,0 +1,164 @@
+---
+date: 06/24/2024
+---
+
+# 支持主机
+
+本文档描述了 kmpkg 支持的体系结构和操作系统。
+
+## 依赖关系
+
+kmpkg 还需要安装一些系统组件才能运行。
+
+要使用 kmpkg，需要首先在系统上安装一些组件。
+
+* Windows：Visual Studio 2015 或更高版本。
+* macOS：Xcode 命令行工具、tar、git、zip、unzip 和curl。大多数端口还需要`pkg-config`。
+我们建议通过 Homebrew 安装这些依赖项，例如通过终端命令
+`brew install zip unzip curl pkgconfig`。
+* Linux：使用的 C++ 编译器、tar、git、zip、unzip 和curl。大多数端口还需要`pkg-config`。
+我们建议使用系统包管理器安装这些依赖项。
+* 基于 apt 的平台：`apt install git curl zip unzip pkgconfig`
+* 基于 rpm 的平台：`dnf install git curl zip unzip pkgconfig`
+* 基于 pacman 的平台：`base-devel git curl zip unzip tar cmake ninja`
+
+对于 Linux 和 macOS 用户，我们还建议安装以下软件包：`autoconf`、`autoconf-archive`、`automake`、`make` 和 `libtool`。虽然不是必需的，但 kmpkg 中提供的库经常使用这些包。
+
+## 精心策划的注册表支持级别
+
+支持分为 4 个不同的类别。他们是：
+
+* **完全支持，已测试**
+用于定期测试 kmpkg 策划的注册表的配置。这些配置中的问题被 kmpkg 的维护者和社区迅速发现并修复。
+* **全力支持，预计**
+配置的优先级与“完全支持，已测试”相同，但不属于常规测试的一部分。一般来说，这些配置与经过充分测试的配置之一基本相似。
+* **社区支持**
+不受 kmpkg 维护者积极支持但有大量社区投资的配置。kmpkg 维护者接受更改以解决这些平台的问题，但不保证这些配置工作。 kmpkg 团队有兴趣将尽可能多的平台移出社区支持
+尽可能全力支持。
+* **不支持**
+由于某种原因已知无法工作的配置。一般来说，PR 仅修复这些平台不被接受。
+
+## 全面支持，并且经过测试
+
+完全支持、经过测试的平台有：
+
+### Windows
+
+* 最新的 Windows/Windows Server 版本。截至撰写本文时，这些是 Windows 11 和 Windows Server 2022。
+* 截至撰写本文时，最新的 Visual Studio 更新为 Visual Studio 2022 版本 17.8。
+
+### macOS
+
+macOS 旨在跟踪最新版本的 macOS 和当代版本的 Xcode 命令行工具。然而，
+更新 macOS 机器是一个手动过程，并且 macOS 经常以破坏 kmpkg 测试的方式进行更改。截至撰写本文时，我们正在使用：
+
+* macOS 14.5
+* XCode 命令行工具 14.4
+
+### Linux
+
+* Ubuntu 的最新 LTS 版本，当前为 22.04。
+
+### Android
+
+* Linux 64位Android NDK版本r26d
+
+## 全面支持，符合预期
+
+### Windows
+
+* Windows 8.1 / Windows Server 2016 及更高版本
+* Visual Studio 2015 及更高版本
+
+### macOS
+
+* 最新版本的 macOS，减去 2 个主要版本。例如，当前的 macOS 版本是 macOS 14 Sonoma，
+因此，我们预计 kmpkg 最早可以在 macOS 12 Monterey 上运行。这是为了跟踪苹果自己的支持
+macOS。
+* 适用于特定 macOS 版本的 Xcode 命令行工具的当代版本
+
+### Linux
+
+我们打算支持基于 glibc 的 Linux 的 AMD64 版本，但仍受到其发行版供应商的支持
+过去5年。示例：
+
+* Ubuntu 22.04 和 20.04 均受 Canonical 支持并在过去 5 年内发布，因此它们
+预计会起作用。 Ubuntu 18.04 仍然受到 Canonical 的支持，但发布已经有 5 年多了，所以
+我们不再认为它得到完全支持。 20.10 比 20.04 更新，但我们不认为它完全受支持，因为
+Canonical 不再支持它。
+* 完全支持红帽企业 Linux 9。
+* CentOS 和 Red Hat Enterprise Linux 8 已于 2024 年 5 月 31 日离开 Red Hat 支持，发布已超过 5 年
+之前，因此不再受支持。
+* CentOS 和 RHEL 7 不再获得 Red Hat 支持，预计无法运行，因为它们的发布时间已超过 5 个版本
+几年前。现在 Oracle 支持的 Oracle Linux 分支仍然得到 Oracle 的支持，但预计仍不会
+与 5 年前发布的版本一样工作。
+* 完全支持 Fedora 40 和 39，但 Fedora 不再支持 38。
+* Debian 12“Bookworm”、11“Bullseye”和 10“Buster”均受 Debian 支持并在过去 5 年中发布。
+Debian 9“Stretch”于 2022 年 7 月停止了 Debian 项目的支持，因此不受 kmpkg 的支持。
+
+我们还假设用户的构建系统将与他们正在使用的 Linux 版本相匹配，并注意确保
+像我们的清单模式 CMake 集成这样的组件将与这些依赖项的版本一起使用
+上述发行版之一。截至撰写本文时，这些依赖项版本和相关发行版是：
+
+* GCC 8.3.0 (Debian 10)
+* CMake 3.13.4 (Debian 10)
+* Ninja 1.8.2 (Debian 10)
+* Curl 7.64 (Debian 10)
+* zip 3.0 (All)
+* unzip 6.0 (All)
+
+## 社区支持
+
+### Windows
+
+* Windows 7 / Windows Server 2008 R2 及更高版本
+
+`kmpkg.exe` 应该适用于 Windows 7 版本，但绝大多数策划的注册表都需要 MSYS2 组件
+就像`pkg-config`
+[不再支持 8.1 之前的 Windows 版本](https://www.msys2.org/docs/windows_support/#current-policy)。
+
+* MinGW 或 Clang 作为构建编译器。
+
+目前 kmpkg 有许多 Visual Studio 假设；特别是我们复制匹配 PDB 的功能
+可执行文件当前需要 dumpbin（一个 Visual Studio 组件）。我们有许多热心的社区成员
+不过，关心 MinGW 支持，并且确实在框中包含 MinGW 工具链。
+
+### Linux
+
+* 非 AMD64 Linux。我们非常希望针对 arm64 Linux 的人们提供帮助，如果可以展示如何实现的话
+提供在所有 arm64 Linux 硬件上成功运行的可能性很高的二进制文件。
+* 非 glibc Linux。 kmpkg 通常为您提供的几个工具以二进制形式分发，期望系统
+libc 变为 glibc。我们确实提供了一个基于 muslc 的 kmpkg 二进制文件，我们已经测试过它可以在 Alpine 上工作，但无法
+提供许多依赖项（例如 CMake）的基于 muslc 的副本。
+
+### BSD 或其他 POSIX 系统
+
+在 BSD 目标上，不提供 kmpkg 二进制文件可供下载。相反，引导逻辑将下载
+kmpkg源代码并在本地编译。
+
+#### 依赖关系
+
+kmpkg 需要许多不属于操作系统的软件包，必须使用包管理器安装：
+
+* FreeBSD: `pkg install -y bash cmake curl git ninja zip unzip`
+* OpenBSD: `pkg_add -Iz bash cmake coreutils curl git ninja zip unzip-6.10-iconv`
+
+As on Linux, it is recommended to also install some additional packages:
+
+* FreeBSD: `pkg install -y autoconf autoconf-archive gmake pkgconf python`
+* OpenBSD: `pkg_add -Iz autoconf-2.71 autoconf-archive gmake pkgconf python3`
+
+#### 注意事项
+
+* kmpkg 从 `PATH` 执行 `unzip`。最终，这可能会导致 kmpkg 执行
+尽管使用包管理器安装了一个额外的包，但操作系统还是提供了“unzip”。
+必须将“PATH”环境变量配置为首选第三方“unzip”而不是操作系统的“unzip”，
+否则 kmpkg 将无法提取其二进制缓存。
+
+## 不支持
+
+* 32 位 Windows。针对 x86-windows 或 arm-windows 工作得很好，但 kmpkg 本身期望运行 AMD64 副本
+像 CMake 这样的支持工具。
+* Visual Studio 2013 或更早版本。
+* Windows Vista 或更早版本。
+* macOS 或 Linux 主机早于“完全支持”类别中的主机。

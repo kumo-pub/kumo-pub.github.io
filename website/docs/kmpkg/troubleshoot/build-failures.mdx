@@ -1,0 +1,238 @@
+---
+date: 03/20/2024
+---
+
+# 排查 kmpkg 端口中的构建失败问题
+
+本指南适用于在使用 kmpkg [安装端口](../commands/install.mdx)时遇到问题的用户。
+
+## 查找失败日志 {#failure-logs}
+
+生成失败的原因几乎有无数种。 当 kmpkg 无法生成端口时，诊断原因的第一步是读取日志文件。
+
+kmpkg 为生成端口时调用的每个外部进程都生成一个日志文件。 发生错误时，kmpkg 会打印错误发生之前运行的最后一个进程的日志文件位置。 在 kmpkg 输出中查找“查看日志以了解详细信息：”行。
+
+示例：日志文件位置输出
+
+```Console
+    See logs for more information:
+      C:\Users\viromer\work\kmpkg\buildtrees\detect_compiler\config-x64-linux-rel-CMakeCache.txt.log
+      C:\Users\viromer\work\kmpkg\buildtrees\detect_compiler\config-x64-linux-out.log
+```
+
+通过检查位于 `$KMPKG_ROOT/buildtrees/<port>/` 的端口 `buildtrees` 目录，可以查找所有生成的日志文件（请将 `<port>` 替换为适当的端口名称）。
+
+## 无法下载端口的资产
+
+:::info
+使用[资产缓存](../concepts/asset-caching.mdx)可能有助于通过确保缓存资产的持续可用性来缓解此类问题。
+:::
+
+安装端口期间，从网络下载资产时出现错误。
+
+```Console
+CMake Error at scripts/cmake/kmpkg_download_distfile.cmake:32 (message):
+
+  Failed to download file with error: 1
+```
+
+### 原因 1：下载 URL 不再有效
+
+由于 kmpkg 控制之外的原因，URL 可能会变得无效。 可以通过使用 Web 浏览器导航到下载 URL 来诊断损坏的链接，损坏的链接将产生 404 状态代码。
+
+解决步骤：
+
+1. 修改端口以使用资产的替代下载 URL。
+
+
+### 原因 2：文件的哈希与预期的 SHA512 不匹配
+
+```Console
+error: Failed to download from mirror set
+error: File does not have the expected hash:
+url: https://github.com/OpenImageIO/oiio/archive/v2.4.13.0.tar.gz
+File: /home/user/kmpkg/downloads/OpenImageIO-oiio-v2-9325beef.4.13.0.tar.gz.1925416.part
+Expected hash: 9325beefce55b66a58fcfc2ce93e1406558ed5f6cc37cb1e8e04aee470c4f30a14483bebfb311c329f7868afb6c508a052661c6b12d819a69f707c1a30cd9549
+Actual hash: 9e887c7039995ce7c41556e09a7eed940863260a522ecf7d9bec300189026ed507da560620dfa4a619deeb679be7adf42fe3a7020ff3094df777c7934c771227
+```
+
+当服务器以任何方式更改上游文件但下载 `URL` 保持不变时，就会出现此错误。 作为一项安全措施，`kmpkg` 将拒绝 `SHA512` 与资产的预期 `SHA512` 不匹配的文件。
+
+解决步骤：
+
+1. 验证下载的文件是否安全
+2. 修改端口以使用新文件的 SHA512
+
+## 找不到 Visual Studio 工具链
+
+安装端口时，kmpkg 无法找到合适的工具链
+
+```Console
+error: in triplet arm-windows: Unable to find a valid toolchain for requested target architecture arm.
+The selected Visual Studio instance is at: C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools
+The available toolchain combinations are: x86, amd64, x86_amd64, amd64_x86
+```
+
+### 原因 1：未安装适合目标体系结构的工具链
+
+如果 Visual Studio 实例与所需的 kmpkg 版本匹配，并且您遇到此错误，则最可能的原因是未安装相应的工具链。
+
+- 打开 Visual Studio 安装程序并安装相应的工具链。
+
+### 原因 2：所选 Visual Studio 版本不正确
+
+如果安装了所需的工具链，则 kmpkg 可能选择了未安装工具链的错误 Visual Studio 版本。 请参阅 [Visual Studio 选择算法文档](../users/triplets.mdx#kmpkg_visual_studio_path)以了解详细信息。
+
+解决步骤：
+
+1. 将 [`KMPKG_PLATFORM_TOOLSET`](../users/triplets.mdx#kmpkg_platform_toolset) 设置为相应的版本。
+2. 或者，将 [`KMPKG_VISUAL_STUDIO_PATH`](../users/triplets.mdx#kmpkg_visual_studio_path) 设置为所需的 Visual Studio 实例安装路径。
+
+## 缺少系统依赖项
+
+环境中未安装所需的生成工具或系统依赖项。
+
+示例：端口需要系统依赖项
+
+```
+alsa currently requires the following programs from the system package manager:
+    autoconf autoheader aclocal automake libtoolize
+On Debian and Ubuntu derivatives:
+    sudo apt install autoconf libtool
+On recent Red Hat and Fedora derivatives:
+    sudo dnf install autoconf libtool
+On Arch Linux and derivatives:
+    sudo pacman -S autoconf automake libtool
+On Alpine:
+    apk add autoconf automake libtool
+```
+
+大多数需要系统依赖项的 kmpkg 端口在安装过程中会打印消息。 在某些情况下，所需的系统依赖项列表可能不完整。 此类问题的诊断取决于基础生成的系统，请[检查错误日志](#failure-logs)来确定失败原因。
+
+解决步骤：
+
+1. 按照相应的步骤在环境中安装缺少的系统依赖项。
+
+## 在生成过程中找不到 FetchContent 依赖项
+
+生成失败，因为依赖项通过[`FetchContent`](https://cmake.org/cmake/help/latest/module/FetchContent.html)在生成过程中不可用。
+
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(fmt
+  GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(fmt)
+```
+
+```Console
+CMake Error at CMakeLists.txt:23 (target_link_libraries):
+  Target "my_sample_lib" links to:
+
+    fmt::fmt
+
+  but the target was not found.  Possible reasons include:
+
+    * There is a typo in the target name.
+    * A find_package call is missing for an IMPORTED target.
+    * An ALIAS target is missing.
+```
+
+kmpkg 通过 CMake 变量 [`FETCHCONTENT_FULLY_DISCONNECTED`](https://cmake.org/cmake/help/latest/module/FetchContent.html#variable:FETCHCONTENT_FULLY_DISCONNECTED) 禁用 `FetchContent`。 禁用此功能有多种动机，仅举几个例子：
+
+* `FetchContent` 可以隐藏供应商对端口的依赖关系。
+* `FetchContent` 不能很好地与完全断开连接的场景交互。
+* 通过 FetchContent 获取的依赖项可以在不参与 ABI 哈希计算的情况下更改生成。
+
+对于端口维护者，我们建议通过 `FetchContent` 获取的任何包都转换为 kmpkg 依赖项。 但对于一般用途，有一些解决方法可以启用 `FetchContent`。
+
+解决步骤：
+
+1. 使用将 [`KMPKG_CMAKE_CONFIGURE_OPTIONS`](../users/triplets.mdx#kmpkg_cmake_configure_options) 设置为 `FETCHCONTENT_FULLY_DISCONNECTED=FALSE`
+
+## 在我的项目生成过程中，`kmpkg` 安装的依赖项没有链接
+
+当通过清单模式或使用经典模式生成项目时，kmpkg 依赖项不会加载并链接到项目，从而导致生成失败。
+
+kmpkg 为 [CMake](../users/buildsystems/cmake-integration.mdx) 和 [MSBuild](../users/buildsystems/msbuild-integration.mdx) 项目提供了库和包括目录的自动链接。 通过 kmpkg 安装的依赖项应可以在项目中自动使用。
+
+### 原因 1：未安装所需的依赖项
+
+解决步骤：
+
+1. 确保项目的依赖项已准备就绪：
+
+如果使用[清单文件(kmpkg.json)](../concepts/manifest-mode.mdx)，请确保该文件位于包含 `CMakeList.txt` 文件的同一目录中。 此外，确保所有依赖项都列在清单的 [`"dependencies"`](../reference/kmpkg-json.mdx#dependencies) 字段中。 kmpkg 将在生成项目时自动在清单中安装依赖项。
+
+如果使用 kmpkg CLI 在经典模式下[安装包](../commands/install.mdx)，请确保在运行项目的生成之前预安装所有必需的依赖项。 在[经典模式](../concepts/classic-mode.mdx)下使用时，kmpkg 不会自动安装项目所需的软件包。
+
+### 原因 2：未启用生成系统的集成
+
+#### CMake
+
+解决步骤：
+
+1. 将[`CMAKE_TOOLCHAIN_FILE`变量](https://cmake.org/cmake/help/latest/variable/CMAKE_TOOLCHAIN_FILE.html)设置为 kmpkg 工具链。
+
+必须将 `CMAKE_TOOLCHAIN_FILE` 设置为指向 `${KMPKG_ROOT}/scripts/buildsystems/kmpkg.cmake` 或者 `${KMPKG_CMAKE}`中的 kmpkg CMake 工具链文件，请确保将 `${KMPKG_ROOT}` 替换为 kmpkg 安装目录的正确路径。
+
+可以使用以下任一方法设置工具链文件：
+
+- 使用 `CMakePresets.json` 文件：
+    - 如果使用版本 3 或更高版本，请设置 `toolchainFile`。
+    - 如果使用版本 2 或更早版本，则将 `CMAKE_TOOLCHAIN_FILE` 设置为 `cacheVariable`。
+- 传递`-DCMAKE_TOOLCHAIN_FILE=${KMPKG_ROOT}/scripts/buildsystems/kmpkg.cmake` CMake 调用期间的命令行参数。
+- 在 `CMakeList.txt` 文件中设置 `CMAKE_TOOLCHAIN_FILE`。 请确保在调用 `project()` 之前已设置此变量。
+
+如果已通过 `CMAKE_TOOLCHAIN_FILE` 使用自定义工具链文件，则设置[`KMPKG_CHAINLOAD_TOOLCHAIN_FILE`](../users/triplets.mdx#kmpkg_chainload_toolchain_file)，通过自定义[三元组](../concepts/triplets.mdx#custom-triplets)指向自定义工具链。
+
+#### MSBuild
+
+kmpkg 通过 [`kmpkg integrate install`](../commands/integrate.mdx#kmpkg-integrate-install) 命令提供全局集成机制。
+
+当该命令执行一次时，所有使用 MSBuild 的项目都将启用 kmpkg 集成，无论是使用[清单模式](../concepts/manifest-mode.mdx)还是[经典模式](../concepts/classic-mode.mdx)。
+
+此集成特定于运行该命令的 kmpkg 实例；因此，如果有多个 kmpkg 实例时，项目中只有该特定实例中安装的工具版本和软件包可用。
+
+阅读 [MSBuild 集成文档](../users/buildsystems/msbuild-integration.mdx#import-props-and-targets)，了解如何为单个项目或解决方案启用 kmpkg 集成。
+
+解决步骤：
+
+1 - 针对要使用的 kmpkg 实例运行 `kmpkg integrate install`
+
+运行 `kmpkg integrate install` 以启用与 MSBuild 的全局集成。 只需要这样做一次，kmpkg 实例就可以为所有项目启用。
+
+
+##  无法使用经典模式安装包
+
+使用 [`kmpkg install`](../commands/install.mdx) 命令失败，并显示以下消息：
+
+```Console
+error: Could not locate a manifest (kmpkg.json) above the current working directory.
+This kmpkg distribution does not have a classic mode instance.
+```
+
+
+
+### 原因 1：使用 kmpkg 的 Visual Studio 嵌入式副本
+
+Visual Studio 2022 包含随 C++ 工作流一起安装的 kmpkg 副本。 此捆绑 kmpkg 安装在只读位置，因此不能在[经典模式](../concepts/classic-mode.mdx)下使用。
+
+你要么使用的是 Visual Studio 嵌入式终端，要么使用的是在 PATH 中有捆绑 kmpkg 副本的 VS Developer PowerShell。
+
+解决步骤：
+
+1. [创建清单文件 (kmpkg.json)，以安装项目的依赖项](../get_started/get-started-vs.mdx)。
+2. 如果有 kmpkg 的独立实例，可以通过设置 `KMPKG_ROOT` 变量并将安装路径添加到 `PATH` 变量来使用。
+
+  ```PowerShell
+  $env:KMPKG_ROOT="path/to/standalone/kmpkg"
+  $env:PATH="$env:PATH;$env:KMPKG_ROOT"
+  ```
+
+## 未在列出问题
+
+如果此处未列出你的问题，请访问我们的[GITEE仓库](https://gitee.com/kumo-pub/kmpkg/issues)以创建新问题

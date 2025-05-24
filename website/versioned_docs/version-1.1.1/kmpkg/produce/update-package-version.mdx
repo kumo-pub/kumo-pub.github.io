@@ -1,0 +1,175 @@
+---
+date: 01/10/2024
+---
+
+# 教程：更新现有的 kmpkg 依赖项
+
+本教程向您展示如何更新现有 kmpkg 依赖项的版本
+
+本教程指导您更新现有 kmpkg 的版本依赖性。  我们建议您阅读有关[发布库](../get_started/get-started-adding-to-registry.mdx) 在继续之前。
+
+在本教程中，您将学习：
+
+* [创建覆盖端口](#create-an-overlay-port)
+* [修改端口版本](#modify-the-ports-version)
+* [修改`porfile.cmake`](#modify-portfilecmake)
+* [安装你的覆盖端口](#install-your-overlay-port)
+* [更新内置注册表端口](#update-the-built-in-registry-port)
+* [创建合并请求](#open-a-pull-request)
+
+## 先决条件
+
+* 一个终端
+* kmpkg
+* [Git](<https://git-scm.com/downloads>)
+* C++编译器
+* 完成[打包教程](../get_started/get-started-packaging.mdx)
+
+## 1 - 创建覆盖端口 {#create-an-overlay-port}
+
+第一步是创建一个 [overlay port](../concepts/overlay-ports.mdx)
+您要修改的包。
+
+### 创建一个目录来保存您的覆盖端口
+
+覆盖端口目录可以在您的任何文件系统位置创建选择。在本教程的任何步骤中，将 `$OVERLAY_LOCATION` 替换为您的
+选定的位置。
+
+```bash
+mkdir "$OVERLAY_LOCATION"
+```
+
+
+### 将端口的内容复制到覆盖端口目录中
+
+在本教程中，您将更新`kmpkg-sample-library`端口[发布包教程](../get_started/get-started-adding-to-registry.mdx) 到一个版本
+有动态库支持。
+
+```bash
+cp -R <path/to/kmpkg-sample-library> "$OVERLAY_LOCATION"
+```
+
+## 2 - 修改端口版本 {#modify-the-ports-version}
+
+将`kmpkg.json`中的版本更改为“1.0.1”。
+
+`kmpkg.json`
+
+```json
+{
+  "name": "kmpkg-sample-library",
+  "version": "1.0.1",
+  "homepage": "https://gitee.com/kumo-pub/kmpkg-docs/tree/cmake-sample-lib",
+  "description": "A sample C++ library designed to serve as a foundational example for a tutorial on packaging libraries with kmpkg.",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name" : "kmpkg-cmake",
+      "host" : true
+    },
+    {
+      "name" : "kmpkg-cmake-config",
+      "host" : true
+    },
+    "fmt"
+  ]
+}
+```
+
+## 3 - 修改`porfile.cmake` {#modify-portfilecmake}
+
+### 获取包SHA512
+
+运行 `kmpkg install --overlay-ports=$OVERLAY_LOCATION kmpkg-sample-library`，您将收到有关包的 SHA512 的错误。复制实际值
+您的端口文件中的哈希值。
+
+输出示例：
+
+```Console
+Expected hash: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+Actual hash: 1290bdba0f55fcdd702a3292ce00798b173fdffa0c0cc005e15dc88c6d2e7a1143c16f29fde0647b8bddd01a7c97299cc845f7dff22811a3326cf7c69f5957f3
+```
+
+### 修改`portfile.cmake`
+
+使用正确的值更新包的 SHA512 并确保删除`ONLY_STATIC_LIBRARY` 限制，因为新版本`kmpkg-sample-library` 添加了对将其构建为动态库的支持。
+
+您的 `portfile.cmake` 文件应类似于：
+
+`portfile.cmake`
+
+```cmake
+kmpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO Microsoft/kmpkg-docs
+    REF e5c3f12d5e6ac6450f43aee898f7697a06280521
+    SHA512 1290bdba0f55fcdd702a3292ce00798b173fdffa0c0cc005e15dc88c6d2e7a1143c16f29fde0647b8bddd01a7c97299cc845f7dff22811a3326cf7c69f5957f3
+    HEAD_REF cmake-sample-lib
+)
+kmpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+)
+kmpkg_cmake_install()
+kmpkg_copy_pdbs()
+kmpkg_cmake_config_fixup(PACKAGE_NAME "my_sample_lib")
+file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
+file(INSTALL "${SOURCE_PATH}/LICENSE" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/usage" "${CURRENT_PACKAGES_DIR}/share/${PORT}/usage" COPYONLY)
+```
+
+## 4 - 安装你的覆盖端口 {#install-your-overlay-port}
+
+要验证您的端口是否正常工作，请运行以下命令：
+
+`kmpkg install "--overlay-ports=$OVERLAY_LOCATION" kmpkg-sample-library`
+
+## 5 - 更新内置注册表端口 {#update-the-built-in-registry-port}
+
+### 替换端口的内容
+
+将“ports”目录中“kmpkg-sample-library”的内容替换为您更新的文件。然后通过运行以下命令提交更改
+在 kmckg 存储库的本地克隆中：
+
+```Console
+git checkout -b kmpkg-sample-library-1.0.1
+git add ports/kmpkg-sample-library
+git commit -m "Update kmpkg-sample-library to version 1.0.1"
+```
+
+### 更新版本数据库
+
+运行 [`kmpkg x-add-version`] 命令来更新版本数据库文件。
+
+```Console
+kmpkg x-add-version kmpkg-sample-library
+```
+
+### 将您的更改推送到 fork
+
+运行以下命令来更新版本数据库并推送更改到你的 [kmpkg](https://gitee.com/kumo-pub/kmpkg) 分支。
+
+```Console
+git add versions/.
+git commit -m "Update kmpkg-sample-library to version 1.0.1" --amend
+git push --set-upstream <fork remote> kmpkg-sample-library-1.0.1
+```
+
+## 6 - 创建合并请求 {#open-a-pull-request}
+
+1. 导航到 Gitee 上的分叉存储库。
+2. 单击`比较并拉取请求`按钮。
+3. 验证您的更改
+4. 添加描述性标题和评论
+5. 填写[PR审查清单](../contributing/pr-review-checklist.mdx)
+6. 单击`创建合并请求`。
+
+就是这样！您已成功更新 kmpkg 策划的注册表中的端口。
+
+## 参见
+
+有关更多信息，请参阅：
+
+* [CMake 指南](../contributing/cmake-guidelines.md)
+* [维护者指南](../contributing/maintainer-guide.mdx)
+* [端口](../concepts/ports.mdx)
+* [发布到私有 git 注册表](publish-to-a-git-registry.mdx)

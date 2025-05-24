@@ -1,0 +1,26 @@
+{
+  "cstangerup": {
+    "name": "Christian Stangerup",
+    "alias": "cstangerup",
+    "url": "https://github.com/cstangerup",
+    "imageURL": "https://github.com/cstangerup.png"
+  },
+  "GatienBoquet": {
+    "name": "Gatien Boquet",
+    "alias": "GatienBoquet",
+    "url": "https://github.com/GatienBoquet",
+    "imageURL": "https://github.com/GatienBoquet.png"
+  },
+  "josh-wong": {
+    "name": "Josh Wong",
+    "alias": "josh-wong",
+    "url": "https://github.com/josh-wong",
+    "imageURL": "https://github.com/josh-wong.png"
+  },
+  "slorber": {
+    "name": "Sébastien Lorber",
+    "alias": "slorber",
+    "url": "https://github.com/slorber",
+    "imageURL": "https://github.com/slorber.png"
+  }
+}

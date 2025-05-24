@@ -1,0 +1,82 @@
+---
+date: 01/26/2024
+---
+
+# 命令： kmpkg add
+
+kmpkg add 命令的参考。将包添加到清单中。
+
+## 摘要
+
+```console
+kmpkg add port [options] <port-name>...
+```
+
+## 说明
+
+`kmpkg add port` 命令可以通过将新的包依赖项添加到 C++ 项目来更新 `kmpkg.json` 清单文件。
+
+可以指定要添加的一个或多个端口名称。 还可以定义要作为依赖项包含的端口的特定功能。 然后，清单 (`kmpkg.json`) 将更新以反映这些更改。
+
+## 示例
+
+示例清单：
+
+```json
+{
+  "name": "Example",
+  "version": "1.0"
+}
+```
+
+添加端口 - `fmt`, `sqlitecpp`, `zlib`:
+
+```console
+kmpkg add port fmt sqlitecpp zlib
+```
+
+```json
+{
+  "name": "Example",
+  "version": "1.0",
+  "dependencies": [
+    "fmt",
+    "zlib",
+    "sqlitecpp"
+  ]
+}
+```
+
+指定端口及功能  - `sqlitecpp[sqlcipher]`
+
+```console
+kmpkg add port sqlitecpp[sqlcipher]
+```
+
+```json
+{
+  "name": "Example",
+  "version": "1.0",
+  "dependencies": [
+    "fmt",
+    {
+      "name": "sqlitecpp",
+      "features": [
+        "sqlcipher"
+      ]
+    },
+    "zlib"
+  ]
+}
+```
+
+:::info
+`kmpkg add port` 命令不验证端口是否存在指定的功能。 在将该功能添加到清单之前，请确保其存在。
+:::
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### port
+
+`kmpkg add port <port-name>...` 将指定端口添加到清单（如果尚不存在）。

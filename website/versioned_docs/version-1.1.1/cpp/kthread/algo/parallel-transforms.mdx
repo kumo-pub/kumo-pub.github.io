@@ -1,0 +1,121 @@
+
+# 并行变换
+
+`Taskflow` 提供模板函数来构建任务以对一系列项目执行并行转换。
+
+## 头文件
+
+```cpp
+#include <kthread/algorithm/transform.h>
+```
+## 创建一元并行转换任务
+并行转换会转换一系列项目（可能转换后的数据具有不同的类型），并将结果存储在另一范围内。由
+`kthread::transform(B first1, E last1, O d_first, C c, P part)` 创建的任务相当于并行执行以下循环：
+```cpp
+while (first1 != last1) {
+  *d_first++ = c(*first1++);
+}
+```
+`kthread::transform` 同时将可调用函数 c 应用于通过取消引用范围 `[first1, last1)` 中的每个迭代器获得的对象，并将
+结果存储在从 `d_first` 开始的另一个范围内。用户有责任确保该范围在并行转换任务执行期间有效。
+
+```cpp
+std::vector<int> src = {1, 2, 3, 4, 5};
+std::vector<int> tgt(src.size());
+taskflow.transform(src.begin(), src.end(), tgt.begin(), [](int i){
+  std::cout << "transforming item " << i << " to " << i + 1 << '\n';
+  return i + 1;
+});
+```
+## 通过引用捕获迭代器
+
+您可以使用 `std::ref` 通过引用传递迭代器，以在依赖任务之间编组参数更新。当创建并行转换任务时范
+围未知但需要从另一个任务进行初始化时，这尤其有用。
+
+```cpp
+std::vector<int> src, tgt;
+std::vector<int>::iterator first, last, d_first;
+
+kthread::Task init = taskflow.emplace([&](){
+  src.resize(1000);
+  tgt.resize(1000);
+  first   = src.begin();
+  last    = src.end();
+  d_first = tgt.begin();
+});
+
+kthread::Task transform = taskflow.transform(
+  std::ref(first), std::ref(last), std::ref(d_first),
+  [&](int i) {
+    std::cout << "transforming item " << i << " to " << i + 1 << '\n';
+    return i+1;
+  }
+);
+
+init.precede(transform);
+```
+当 `init` 完成时，并行转换任务 `transform` 将看到 `first` 指向 `src` 的开头，`last` 指向 `src` 的结尾。然后，它同时转
+换这 `1000` 个项目，为每个元素加一，并将结果存储在从 `d_first` 开始的另一个范围内。
+
+## 创建二进制并行转换任务
+
+您可以使用重载 1kthread::transform(B1 first1, E1 last1, B2 first2, O d_first, C c, P part)1 使用二元运算符 `c`
+对 `first1` 和 `first2` 指向的两个源范围执行并行转换，并将结果存储在 `d_first` 指向的另一个范围中。此方法等效于以下循环的并行执行：
+
+```cpp
+while (first1 != last1) {
+  *d_first++ = c(*first1++, *first2++);
+}
+```
+以下示例创建一个并行转换任务，将两个范围的元素逐个添加并将结果存储在目标范围内：
+```cpp
+std::vector<int> src1 = {1, 2, 3, 4, 5};
+std::vector<int> src2 = {5, 4, 3, 2, 1};
+std::vector<int> tgt(src1.size());
+taskflow.transform(
+  src1.begin(), src1.end(), src2.begin(), tgt.begin(),
+  [](int i, int j){
+    return i + j;
+  }
+);
+```
+## 配置分区器
+
+您可以为并行转换任务配置分区器，使其使用不同的调度方法运行，例如引导式分区、动态分区和静态分区。以下示例使用两个不同的分区器创建两个
+并行转换任务，一个使用静态分区算法，另一个使用引导式分区算法：
+
+```cpp
+kthread::StaticPartitioner static_partitioner;
+kthread::GuidedPartitioner guided_partitioner;
+
+std::vector<int> src1 = {1, 2, 3, 4, 5};
+std::vector<int> src2 = {5, 4, 3, 2, 1};
+std::vector<int> tgt1(src1.size());
+std::vector<int> tgt2(src2.size());
+
+// create a parallel-transform task with static execution partitioner
+taskflow.transform(
+  src1.begin(), src1.end(), src2.begin(), tgt1.begin(),
+  [](int i, int j){
+    return i + j;
+  },
+  static_partitioner
+);
+
+// create a parallel-transform task with guided execution partitioner
+taskflow.transform(
+  src1.begin(), src1.end(), src2.begin(), tgt2.begin(),
+  [](int i, int j){
+    return i + j;
+  },
+  guided_partitioner
+);
+```
+:::warning
+注意
+默认情况下，如果未指定分区器，则并行转换任务将使用 kthread::DefaultPartitioner。
+:::
+
+:::info
+更多信息请参见[算法索引](../algo.mdx)
+:::

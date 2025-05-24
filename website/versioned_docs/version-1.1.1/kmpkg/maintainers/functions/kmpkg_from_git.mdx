@@ -1,0 +1,79 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_from_git
+
+从 git 下载并提取项目。
+
+此帮助程序重复使用 git CLI 凭据。 如需为专用 `git` 主机配置凭据，请参阅[身份验证](../../users/authentication.mdx)。
+
+如果 Git 存储库托管在 BitBucket、GitHub 或 GitLab 上，则应使用其特定函数，而不是此函数：
+
+* [`kmpkg_from_bitbucket`](kmpkg_from_bitbucket.mdx)
+* [`kmpkg_from_github`](kmpkg_from_github.mdx)
+* [`kmpkg_from_gitlab`](kmpkg_from_gitlab.mdx)
+
+## 使用情况
+
+```cmake
+kmpkg_from_git(
+    OUT_SOURCE_PATH <SOURCE_PATH>
+    URL <https://android.googlesource.com/platform/external/fdlibm>
+    REF <59f7335e4d...>
+    [HEAD_REF <ref>]
+    [PATCHES <patch1.patch> <patch2.patch>...]
+    [LFS [<url>]]
+)
+```
+
+## 参数
+
+### OUT_SOURCE_PATH
+
+指定将包含提取位置的输出变量。
+
+此项应按约定设置为 `SOURCE_PATH`。
+
+### URL
+
+Git 存储库的 `url`。
+
+### REF
+
+要下载的提交的 git sha。
+
+### FETCH_REF
+
+在非 `HEAD` 模式下要提取的 `git` 分支。 提取此项后，将签出 `REF`。这在 `git` 服务器不允许签出非播发对象的情况下非常有用。
+
+### HEAD_REF
+
+请求从最新源生成包时使用的 `git` 分支。
+
+示例：`main`、`develop`、`HEAD`
+
+### PATCHES
+
+要应用于提取的源代码的修补程序列表。
+
+相对路径基于端口目录。
+
+### LFS
+
+kmpkg支持 提取使用 Git LFS 存储的文件。 仅提取 REF 指向的文件。
+
+这使 Git LFS 成为该端口必需。 如果未安装扩展，这将是致命错误。
+
+如果指定，将使用 `<url>` 而不是 LFS 的原始 git URL。
+
+## 说明
+
+必须指定 `OUT_SOURCE_PATH`、`REF` 和 `URL`。
+
+## 示例
+
+- [fdlibm](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/fdlibm/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_from\_git.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_from_git.cmake)

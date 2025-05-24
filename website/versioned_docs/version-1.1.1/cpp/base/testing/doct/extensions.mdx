@@ -1,0 +1,168 @@
+
+# 扩展
+
+## Extensions
+
+doctest 标头在其接口部分中不包含任何外部或 stdlib 标头，以提供最佳的构建时间，但这意味着它可以
+提供的功能有限 `=>` 这就是扩展发挥作用的时候。它们作为头文件位于 [`doctest/extensions`](https://gitee.com/kumo-hub/doctest/tree/master/doctest/extensions) 中，并且每个文件
+都记录在此处的一个部分中。
+
+# [Utils](https://gitee.com/kumo-hub/doctest/tree/master/doctest/extensions/doctest_util.h)
+
+这里还什么都没有...
+
+# [Distributed tests with MPI](https://gitee.com/kumo-hub/doctest/tree/master/doctest/extensions/doctest_mpi.h)
+
+通过分布式进程测试代码需要测试框架的支持。 `“doctest/extensions/doctest_mpi.h”`标头中提供了对 MPI 并行通信的 **Doctest** 支持。
+
+## 示例
+
+参考 [**the complete test**](https://gitee.com/kumo-hub/doctest/tree/master/examples/mpi/mpi.cpp) and [**the configuration of main()**](https://gitee.com/kumo-hub/doctest/tree/master/examples/mpi/main.cpp)
+
+### MPI_TEST_CASE
+
+```c++
+#include "doctest/extensions/doctest_mpi.h"
+
+int my_function_to_test(MPI_Comm comm) {
+  int rank;
+  MPI_Comm_rank(comm,&rank);
+  if (rank == 0) {
+    return 10;
+  }
+  return 11;
+}
+
+
+MPI_TEST_CASE("test over two processes",2) { // Parallel test on 2 processes
+  int x = my_function_to_test(test_comm);
+
+  MPI_CHECK( 0,  x==10 ); // CHECK for rank 0, that x==10
+  MPI_CHECK( 1,  x==11 ); // CHECK for rank 1, that x==11
+}
+```
+
+`MPI_TEST_CASE`类似于常规的`TEST_CASE`，只不过它需要第二个参数，即运行测试所需的进程数。  如果进程数小于2，则测试失败。如果进程数大于或等于2，它将在2个进
+程上创建一个子通信器，称为`test_comm`，并对这些进程执行测试。 `MPI_TEST_CASE`提供了三个对象：
+ * `test_comm`，类型为`MPI_Comm`：运行测试的 mpi 通信器，
+ * ```test_rank``` 和 ```test_nb_procs```，两个 ```int``` 分别给出当前进程的等级和 ```test_comm``` 通信器的大小。最后两个只是为了方便起见，可以从“test_comm”中检索。
+
+我们总是有：
+
+```c++
+MPI_TEST_CASE("my_test",N) {
+  CHECK( test_nb_procs == N );
+  MPI_CHECK( i, test_rank==i ); // for any i<N
+}
+```
+
+### 断言
+
+可以在`MPI_TEST_CASE`中使用常规断言。还提供了特定于 MPI 的断言，并且全部以``MPI_`` 为前缀（````MPI_CHECK````、````MPI_ASSERT````...）。第一个参数是检查它们的排名，第二个参数是要检查的常用表达式。
+
+## 主要入口点和 mpi 测试报告
+
+您需要使用“mpirun”或“mpiexec”命令启动单元测试：
+```
+mpirun -np 2 unit_test_executable.exe
+```
+
+必须在运行单元测试之前调用`doctest::mpi_init_thread()`，并在程序
+末尾调用`doctest::mpi_finalize()`。此外，使用默认的控制台报告器将导致每个进程将所有内容写入同一个位置，这不是我们想要的。提供并可以启用两个报告器。一个完整的 ```main()``` 应该是：
+
+```c++
+#define DOCTEST_CONFIG_IMPLEMENT
+
+#include "doctest/extensions/doctest_mpi.h"
+
+int main(int argc, char** argv) {
+  doctest::mpi_init_thread(argc,argv,MPI_THREAD_MULTIPLE); // Or any MPI thread level
+
+  doctest::Context ctx;
+  ctx.setOption("reporters", "MpiConsoleReporter");
+  ctx.setOption("reporters", "MpiFileReporter");
+  ctx.setOption("force-colors", true);
+  ctx.applyCommandLine(argc, argv);
+
+  int test_result = ctx.run();
+
+  doctest::mpi_finalize();
+
+  return test_result;
+}
+```
+
+### MpiConsoleReporter
+
+应将“MpiConsoleReporter”替换为默认报告器。它与常规断言的默认控制台报告程序相同，但仅在进程 0 上输出。对于 MPI 测试用例，如果出现故障，它会告诉失败的进程
+```
+[doctest] doctest version is "2.4.0"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:    171 |    171 passed |      0 failed |      0 skipped
+[doctest] assertions:    864 |    864 passed |      0 failed |
+[doctest] Status: SUCCESS!
+std_e_mpi_unit_tests
+[doctest] doctest version is "2.4.0"
+[doctest] run with "--help" for options
+===============================================================================
+path/to/test.cpp:30:
+TEST CASE: my test case
+
+On rank [2] : path/to/test.cpp:35: CHECK( x==-1 ) is NOT correct!
+  values: CHECK( 0 == -1 )
+
+===============================================================================
+[doctest] test cases:      2 |      2 passed |      0 failed |      0 skipped
+[doctest] assertions:      2 |      2 passed |      0 failed |
+[doctest] Status: SUCCESS!
+===============================================================================
+[doctest] assertions on all processes:   5 |   4 passed |      1 failed |
+===============================================================================
+[doctest] fail on rank:
+    -> On rank [2] with 1 test failed
+[doctest] Status: FAILURE!
+```
+
+如果启动测试可执行文件时使用的进程少于一项测试所需的进程数，则将跳过该测试并在 mpi 控制台报告器中将其标记为这样：
+
+```c++
+MPI_TEST_CASE("my_test",3) {
+  // ...
+}
+```
+
+```
+mpirun -np 2 unit_test_executable.exe
+```
+
+```
+===============================================================================
+[doctest] test cases:      1 |      1 passed |      0 failed |      1 skipped
+[doctest] assertions:      1 |      1 passed |      0 failed |
+[doctest] Status: SUCCESS!
+===============================================================================
+[doctest] assertions on all processes:   1 |   1 passed |      0 failed |
+[doctest] WARNING: Skipped 1 test requiring more than 2 MPI processes to run
+===============================================================================
+```
+
+### MpiFileReporter
+
+`MpiFileReporter`只会在其自己的文件中打印每个进程的结果，名为`doctest_[rank].log`。仅当您想了解并行测试用例失败时到底发生了什么时，才使用此报告器作为调试工具。
+
+### 其他记者
+
+不直接支持其他报告器（jUnit、XML），这意味着您始终可以将每个进程的结果打印到其自己的文件中，但（当前）没有等效的“MpiConsoleReporter”来聚合所有过程的结果。
+
+## 说明
+
+此功能是为了对 mpi 分布式代码进行单元测试而提供的。它**不是**在多个进程上并行化许多单元测试的方法（为此，请参阅[**示例 python 脚本**](https://gitee.com/kumo-hub/doctest/tree/master/examples/range_based_execution.py))。
+
+## TODO
+
+* 将`ConsoleReporter`的`s`成员变量作为参数传递给成员函数，以便我们可以将它们与另一个对象一起使用（将有助于分解`MPIConsoleReporter`）
+ * 仅测试 MPI_CHECK。 MPI_REQUIRE，异常处理：未进行任何测试
+ * 更多测试，自动测试
+ * 打包：创建一个新目标``mpi_doctest``？ （对于 `mpi/doctest.h` 明确依赖 MPI 可能更干净）
+ * 稍后，也许：有一个通用的机制来表示断言，这样我们就可以将报告格式（控制台、xml、junit...）与报告策略（顺序与 MPI）分开

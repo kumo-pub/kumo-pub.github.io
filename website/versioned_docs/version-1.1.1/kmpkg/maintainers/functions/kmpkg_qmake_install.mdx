@@ -1,0 +1,32 @@
+---
+date: 01/10/2024
+---
+
+# 函数： kmpkg_qmake_install
+
+构建并安装以前使用 [`kmpkg_qmake_configure()`](kmpkg_qmake_configure.mdx) 配置的 qmake 项目。
+
+```cmake
+kmpkg_qmake_install(...)
+```
+
+要使用此函数，必须依赖于帮助程序端口 `kmpkg-qmake`：
+
+```json
+"dependencies": [
+  {
+    "name": "kmpkg-qmake",
+    "host": true
+  }
+]
+```
+
+## 参数
+[See `kmpkg_qmake_install()`](kmpkg_qmake_install.mdx).
+
+## 说明
+
+此命令以透明方式转发 [`kmpkg_qmake_install()`](kmpkg_qmake_install.mdx) 并追加 `install` 目标
+
+## Source
+[ports/kmpkg-qmake/kmpkg\_qmake\_install.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/kmpkg-qmake/kmpkg_qmake_install.cmake)

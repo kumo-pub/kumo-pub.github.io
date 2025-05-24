@@ -1,0 +1,98 @@
+---
+layout: docs
+type: markdown
+---
+
+# 概览
+
+**`kthread`** 解决了一个长期存在的问题，如何让C++开发人员更轻松地快速编写具有高性能可扩展性和同时具有高生产效率的并行、异构程序？
+
+## 动机
+
+### 多核时代 {#the-era-of-multicore}
+
+过去，得益于制造技术的进步和微架构创新，我们可以自由地扩展软件的性能。大约每隔 1.5 年，我们只需切换到新的硬件和编译器供应商，
+就可以加快程序的速度，这些供应商的晶体管数量增加了 2 倍，时钟频率更快，指令级并行性更高。然而，这种模式受到了功耗壁垒和利用
+指令级并行性难度增加的挑战。计算性能的提升源于多核芯片设计的变化。
+
+import era_multicore from '@site/static/img/kthread/era_multicore.jpg';
+
+<img src={era_multicore}/>
+
+上述全面的可视化（感谢 Mark Horowitz 教授及其团队）表明，计算机架构的发展正朝着多核设计的方向发展。如今，多核处理器和多处理器系统在手
+机、笔记本电脑、台式机和服务器等许多电子产品中很常见。为了跟上性能扩展的步伐，软件开发人员有必要编写利用可用内核数量的并行程序。
+
+### 异构计算
+
+随着人工智能 (AI) 通过新的和合并的工作负载产生影响，异构计算变得越来越重要，并且在未来几年内仍将备受关注。我们不仅拥有 CPU，还拥有
+GPU、TPU、FPGA 和 ASIC，可以加速各种科学计算问题。
+
+import CPU_vs_TPU_vs_GPU from '@site/static/img/kthread/CPU-vs-TPU-vs-GPU.png';
+
+<img src={CPU_vs_TPU_vs_GPU}/>
+
+问题是：我们要如何为这些庞然大物编程？编写高性能顺序程序很难。并行编程更难。如果我们关心性能和能效，异构设备的并行编程极具挑战性。编程模型需要处理生产力与性能的问题。
+
+### 循环级并行
+
+并行编程最基本、最简单的概念是循环级并行，利用循环迭代之间存在的并行性。程序通常将迭代循环划分为一组块（固定或动态），并并行运行每个块。下图说明了这种模式。
+
+import loop_level_parallelism from '@site/static/img/kthread/loop-level-parallelism.jpeg';
+
+<img src={loop_level_parallelism} width="80%" />
+
+基于循环的方法的主要优势在于它能够轻松地加速常规工作负载，符合阿姆达尔定律。程序员只需发现循环内每次迭代的独立性，一旦有可能，就可以轻松实
+现并行分解策略。许多现有库都内置了编写并行 for 循环的支持。
+
+### 基于任务的并行
+
+传统的循环级并行很简单，但很难让用户在更不规则的应用中利用并行性，例如图算法、增量流、递归和动态分配的数据结构。为了应对这些挑战，并行编程和库正
+在从传统的基于循环的并行性发展到基于任务的模型。
+
+import TaskLevelParallelism from '@site/static/img/kthread/task-level-parallelism.svg';
+
+<TaskLevelParallelism width="80%" />
+
+上图显示了一个示例任务依赖关系图。图中的每个节点代表功能级别的任务单元，每条边表示一对任务之间的任务依赖关系。基于任务的模型提供了一种强大的方法，可
+以自上而下地表达常规和不规则并行性，并为大量内核提供透明的扩展。事实上，研究界和并行编程标准的发展都已证明，基于任务的方法最适合未来的处理器代和架构。
+
+### 系统无关
+
+Taskflow 的目标很简单 - 我们帮助开发人员快速编写具有高性能可扩展性和高生产率的并行程序。我们希望开发人员编写简单有效的并行代码，具体目标如下：
+
+- 表现力
+- 可读性
+- 透明度
+
+简而言之，使用 Taskflow 编写的代码可以自我解释。透明度使开发人员可以专注于应用程序算法和并行分解策略的开发，而不是低级、特定于系统的细节。
+
+## 实现
+
+### kthread
+
+是krpc使用的M:N线程库，目的是在提高程序的并发度的同时，降低编码难度，并在核数日益增多的CPU上提供更好
+的scalability和cache locality。”M:N“是指M个kthread会映射至N个pthread，一般M远大于N。由于
+linux当下的pthread实现([NPTL](http://en.wikipedia.org/wiki/Native_POSIX_Thread_Library))是1:1的，M个kthread也相
+当于映射至N个[LWP](http://en.wikipedia.org/wiki/Light-weight_process)。kthread的前身是
+Distributed Process(DP)中的fiber，一个N:1的合作式线程库，等价于event-loop库，但写的是同步代码。
+
+也因此kthread的切换不会陷入内核，不会进行一系列内存同步等耗
+时操作，从kthread_benchmark中可以看到kthread的创建时间和调度时间相较pthread有着数量级的提升，将大量的kthread
+映射至少量的内核线程pthread上执行，降低内核上下文切换开销，在充分利用多核的同时，具有更好的cache locality。
+
+
+### Goals
+
+- 用户可以延续同步的编程模式，能在数百纳秒内建立kthread，可以用多种原语同步。
+- kthread所有接口可在pthread中被调用并有合理的行为，使用kthread的代码可以在pthread中正常执行。
+- 能充分利用多核。
+- better cache locality, supporting NUMA is a plus.
+
+### NonGoals
+
+- 提供pthread的兼容接口，只需链接即可使用。**拒绝理由**: kthread没有优先级，不适用于所有的场景，链接的方式容易使用户在不知情的情况下误用kthread，造成bug。
+- 覆盖各类可能阻塞的glibc函数和系统调用，让原本阻塞系统线程的函数改为阻塞kthread。**拒绝理由**:
+- kthread阻塞可能切换系统线程，依赖系统TLS的函数的行为未定义。
+- 和阻塞pthread的函数混用时可能死锁。
+- 这类hook函数本身的效率一般更差，因为往往还需要额外的系统调用，如epoll。但这类覆盖对N:1合作式线程库(fiber)有一定意义：虽然函数本身慢了，但若不覆盖会更慢（系统线程阻塞会导致所有fiber阻塞）。
+- 修改内核让pthread支持同核快速切换。**拒绝理由**: 拥有大量pthread后，每个线程对资源的需求被稀释了，基于thread-local cache的代码效果会很差，比如tcmalloc。而独立的kthread不会有这个问题，因为它最终还是被映射到了少量的pthread。kthread相比pthread的性能提升很大一部分来自更集中的线程资源。另一个考量是可移植性，kthread更倾向于纯用户态代码。

@@ -1,0 +1,82 @@
+---
+ate: 01/11/2024
+---
+
+# 三元组
+
+本文解释了 kmpkg 中三元组的概念及其功能。
+
+三元组是一种在交叉编译中使用的标准术语，用于以单个方便的名称完全捕获目标环境（CPU、OS、编译器、运行时等）。
+
+在 kmpkg 中，三联密码用于描述每个库的虚构“目标配置集”。 在三联密码中，库通常使用相同的配置生成，但这不是一项要求。
+例如，可以有一个三联密码负责静态生成 `openssl` 和动态生成 `zlib`，一个负责静态生成两者，一个负责动态生成两者（全部针对同一个目标 OS 和体系结构）。
+
+一个生成将会使用两个三联密码中的文件：即目标三联密码和主机三联密码。 如果需要为不同的库应用不同的设置，则必须使用该设置组合创建一个自定义三联密码。
+请参阅[每个端口的自定义](../users/triplets.mdx#per-port-customization)，了解如何实现。
+
+kmpkg 提供许多常见平台和配置的预定义三联密码。 运行 kmpkg help triplet 以获取环境中可用的列表。
+
+
+## 三元组码选择
+
+要选择目标三元组：
+
+* 在[经典模式](../concepts/classic-mode.mdx):
+* 使用三元组名称限定包引用，例如“zlib:x64-windows-static-md”。
+* 传递 [`--triplet=<triplet>`](../commands/common-options.mdx#triplet)。
+* 在 CMake 中：
+* 设置 [`KMPKG_TARGET_TRIPLET`](../users/buildsystems/cmake-integration.mdx#kmpkg_target_triplet)。
+* 在 MSBuild 中：
+* 设置 [`KmpkgTriplet`](../users/buildsystems/msbuild-integration.mdx#kmpkgtriplet)。
+
+要为当前机器选择主机三元组：
+
+* 在[经典模式](../concepts/classic-mode.mdx):
+* 传递 [`--host-triplet=<三元组>`](../commands/common-options.mdx#host-triplet)。
+* 在 CMake 中：
+* 设置 [`KMPKG_HOST_TRIPLET`](../users/buildsystems/cmake-integration.mdx#kmpkg_host_triplet)。
+* 在 MSBuild 中：
+* 设置 [`KmpkgHostTriplet`](../users/buildsystems/msbuild-integration.mdx#kmpkghosttriplet)。
+
+## 社区三元组
+
+文件夹中包含 `triplets\community` 的三联密码不是由特选注册表的持续集成测试的，但通常由社区请求。 由
+于我们没有持续覆盖范围，因此端口更新可能会中断与社区三联密码的兼容性。 我们很乐意接受和审查旨在解决这些三联密码问题的贡献。
+
+使用社区三元组时，将在包安装过程中打印如下所示的消息：
+
+```console
+-- Using community triplet x86-uwp. This triplet configuration is not guaranteed to succeed.
+-- [COMMUNITY] Loading triplet configuration from: D:\src\kmpkg\triplets\community\x86-uwp.cmake
+```
+
+## 添加或替换三元组 {#custom-triplets}
+
+可以通过替换现成的三联密码或为特定项目创建新的三联密码来扩展 kmpkg。
+
+首先，将内置三联密码文件从 `triplets\` 目录复制到另一个文件系统位置。 然后，在与 kmpkg 交互时，将该目录添加到覆盖三联密码路径列表。
+
+* 在[清单模式](../concepts/manifest-mode.mdx)中，您可以使用[`$.kmpkg-configuration.overlay-triplets`](../reference/kmpkg-configuration-json.mdx#overlay-triplets)。
+* 当从 CMake 使用 kmpkg 时，您可以设置 [`KMPKG_OVERLAY_TRIPLETS`](../users/buildsystems/cmake-integration.mdx#kmpkg_overlay_triplets)。
+* 当使用 MSBuild 中的 kmpkg 时，您可以将 [`--overlay-triplets=...`][overlay-triplets] 添加到 [MSBuild 其他选项](../users/buildsystems/msbuild-integration.mdx#kmpkg-附加安装选项）。
+* 直接使用CLI时，可以传递[`--overlay-triplets=...`][overlay-triplets]。
+* 您可以将 [`$KMPKG_OVERLAY_TRIPLETS`](../users/config-environment.mdx#kmpkg_overlay_triplets) 环境变量设置为覆盖路径列表。
+
+请参阅我们的[覆盖三元组示例](../users/examples/overlay-triplets-linux-dynamic.mdx),了解更加详细的分步教程。
+
+[overlay-triplets]: ../commands/common-options.mdx#overlay-triplets
+
+:::info
+三元组名称只能包含小写字母数字字符和连字符。
+:::
+
+## 注解
+
+运行任何 kmpkg 命令时的默认三元组是`$KMPKG_DEFAULT_TRIPLET`或特定于平台的选择（如果该环境变量未定义）。
+
+* Windows: `x64-windows`
+* Linux: `x64-linux`
+* OSX: `x64-osx`
+
+我们建议在创建新的三元组时使用系统命名方案。这Android 工具链命名方案是一个很好的灵感来源：
+[standalone_toolchain](https://developer.android.com/ndk/guides/standalone_toolchain.html)。

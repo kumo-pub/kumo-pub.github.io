@@ -1,0 +1,55 @@
+# 内置`LogSink`接收器
+
+`Turbo`内置了若干常用的日志接收器`LogSink`，提供日志输出到磁盘或者`stderr`为输出源，
+如果有别特的需求输出到网络，请参阅[自定义日志接收器](sinks.mdx)实现功能。
+
+## 每日日志 Daily Log {#daily-log}
+
+`daily` 日志每天在固定时间，重新建立新的日志文件，并将当天的日志输出到
+新的文件当中。`max_files`配置参数的意义是最长保存多少天的日志。
+
+### 初始化
+```c++
+void setup_daily_file_sink(const std::string& base_filename,
+                                   int rotation_hour = 0,
+                                   int rotation_minute = 0,
+                                   int check_interval_s = 60,
+                                   bool truncate = false,
+                                   uint16_t max_files = 0);
+```
+
+## 小时日志 Hourly Log {#hourly-log}
+
+`Hourly` 日志每小时在固定分钟或者秒，重新建立新的日志文件，并将当前的日志输出到
+新的文件当中。`max_files`配置参数的意义是最长保存多少小时的日志，换算到天，`max_files = day*24`。
+
+### 初始化
+```c++
+void setup_hourly_file_sink(const std::string& base_filename,
+                                  int rotation_minute = 0,
+                                  int check_interval_s = 60,
+                                  bool truncate = false,
+                                  uint16_t max_files = 0);
+```
+
+## 固定文件大小日志 {#rotating_file}
+
+`rotating` 日志达到设置大小后(`max_file_size_mb`)，重新建立新的日志文件，
+`max_files`意义为最多保存多少个日志文件。
+
+### 初始化
+```c++
+void setup_rotating_file_sink(const std::string& base_filename,
+                                    int max_file_size_mb = 100,
+                                    uint16_t max_files = 100,
+                                    bool truncate = false,
+                                    int check_interval_s = 60);
+```
+
+## 彩色终端日志 Color Stderr {#color_stderr}
+
+`color`日志启动函数无参数。可直接启动。
+
+```c++
+ void setup_color_stderr_sink();
+```

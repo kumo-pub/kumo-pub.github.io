@@ -1,0 +1,41 @@
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 升级 kumosearch
+
+升级更新 kumosearch 的过程很简单：
+
+1. 安装新版本的 kumosearch
+2. 重启服务器
+
+您不需要重新索引任何文档。
+
+如果您使用 Docker 映像，只需停止正在运行的容器，然后使用新版本运行 `docker run`。请确保传递给 `docker run` 的参数与之前相同。
+
+如果您使用的是预构建的二进制文件或通过包管理器安装的 kumosearch，只需下载新版本的 kumosearch、替换二进制文件，或使用包管理器升级 DEB/RPM，然后重新启动服务即可。
+
+## 更新安装包 {#update-package}
+
+<Tabs>
+    <TabItem value="RPM" label="RPM" default>
+    ```shell
+    sudo yum install ./kumosearch-server-1.1.0-1.x86_64.rpm
+    ```
+    启动 kumosearch:
+    ```shell
+    sudo systemctl restart kumosearch-server.service
+    ```
+    </TabItem>
+    <TabItem value="DEB" label="DEB" default>
+
+        ```shell
+        sudo apt install ./kumosearch-server-1.1.0-amd64.deb
+        ```
+        启动 kumosearch:
+
+        ```shell
+        sudo systemctl restart kumosearch-server.service
+        ```
+    </TabItem>
+</Tabs>

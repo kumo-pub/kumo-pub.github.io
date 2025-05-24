@@ -1,0 +1,112 @@
+---
+date: 02/12/2024
+---
+
+# 排查资产缓存问题
+
+常见资产缓存问题的故障排除指南
+
+资产缓存可通过在本地或网络上存储下载的包（资产）来加快包检索的速度，从而减少对外部源的依赖。 本指南可帮助遇到资产缓存设置或操作问题的用户。
+
+有关初始设置说明，请参阅[资产缓存文档](../concepts/asset-caching.mdx)。
+
+## 诊断资产缓存错误
+
+kmpkg 在从 Internet 下载项目之前会检查可用的资产缓存。 默认情况下，如果未在缓存中找到资产，它则会以无提示方式回退到外部源。
+
+[`x-block-origin`](../users/assetcaching.mdx#x-block-origin) 选项可将资产还原失败转换为显式生成错误，从而防止意外的外部下载。 使用此选项可增强安全性并使未命中的缓存命中更为明显。
+
+### 检测资产还原问题
+
+默认情况下，资产还原问题处于无提示状态。 可通过验证项目的下载 URL 来检测此类问题。
+
+```Console
+Downloading 7zip...
+https://www.7-zip.org/a/7z2301-extra.7z -> C:\kmpkg\downloads\7z2301-extra.7z
+```
+
+或者，启用 `x-block-origin`选项时会出现显式错误：
+
+```Console
+error: Failed to download from mirror set
+```
+
+### 检测资产上传问题
+
+如果正确配置了资产源，kmpkg 则会在资产无法上传到缓存时发出警告。
+
+```Console
+warning: failed to store back to mirror
+```
+
+## 项目不会从资产缓存进行上传或还原 {#cache-failure}
+
+kmpkg 提供的 `x-azurl` 资产缓存后端旨在与 Azure 存储容器配合使用，而它可与能接受采用简易令牌身份验证的 PUT 请求的其他存储服务一起使用。
+
+此配置采用以下格式：
+
+`x-azurl,<url>,<sas>[,<rw>]`
+
+* `<url>`: 容器的基 URL
+* `<sas>`: 使用 Azure 存储容器时的共享访问签名 (SAS) 令牌；如果使用了其他提供程序，则为身份验证请求参数。
+* `<rw>`: （可选）读/写权限配置
+
+:::warning
+同时，它也旨在与 Azure 存储容器配合使用。 `x-azurl` 后端可用于能接受采用 `<url>?<sas>` 格式的请求的存储服务。
+:::
+
+例如，`x-azurl,https://contoso.com,token=TOKEN_VALUE,readwrite` 会生成 `https://contoso.com?token=TOKEN_VALUE` 形式的请求。
+
+如果资产缓存提供程序不要求授权，则可将 `<sas>` 参数留空。 例如 `x-azurl,https://contoso.com,,readwrite`。
+
+### 原因 1：URL 格式不正确
+
+设置资产缓存时，请务必将 `https://` 包含在 `URL` 中。
+
+解决步骤：
+
+1 - 确保已配置的 URL 正确无误。
+
+### 原因 2：授权令牌的格式不正确
+
+kmpkg 使用 `<sas>` 参数对资产缓存提供程序进行身份验证。 授权可能失败的原因有多种。
+
+如果使用的是 Azure 存储容器，`<sas>` 参数则应仅包含 SAS 令牌，而不含任何其他请求参数格式设置。 例如：
+
+`x-azurl,https://mystorageaccount.blob.core.windows.net/mystoragecontainer,sasvaluehere,readwrite`
+
+有关详细信息，请阅读有关生成 `SAS` 令牌的文档。 确保生成的令牌的读取和写入权限均与所需的用例相匹配。
+
+如果使用的是其他提供程序，则可能需要正确设置请求参数的格式。 例如，在令牌的值之前为参数名称添加前缀。
+
+`x-azurl,https://contoso.com,authorization=tokenvaluehere,readwrite`。
+
+解决步骤：
+
+1 - 确保授权令牌未过期
+
+2 - 确保授权令牌具有对容器的正确权限
+
+3 - 确保授权令牌的值正确无误
+
+4 - 确保授权令牌的格式与提供程序的所需格式匹配。
+
+## I get a "Failed to download from mirror set" error message
+
+当资产缓存配置包含 [`x-block-origin`](../users/assetcaching.mdx#x-block-origin) 时，便会出现此问题。
+
+使用 `x-block-origin` 会将从任一已配置的缓存还原资产的失败变为包生成失败。 防止针对外部源的可能不必要的访问。
+
+解决步骤：
+
+1 - 确保网络是否有权访问资产源
+
+2 - 确保请求的资产存在于至少一个已配置的资产缓存中。 如果该包不存在，则有两种方法可解决此问题：
+
+暂时禁用 `x-block-origin`，从而允许 kmpkg 下载资产并将其上传到已配置的资产缓存。
+手动将资产上传到已配置的资产缓存之一。
+3 - 确保资产缓存已正确配置；为此，请按[项目未从资产缓存进行上传或还原](#cache-failure)中的步骤进行操作。
+
+## Issue isn't listed here
+
+如果此处未列出你的问题，请访问[我们的存储库](https://gitee.com/kumo-pub/kmpkg/issues)以创建新问题。

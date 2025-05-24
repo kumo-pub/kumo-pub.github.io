@@ -1,0 +1,42 @@
+---
+date: 01/10/2024
+---
+
+# 注册表
+
+关于 kmpkg 注册表及其功能的概念。
+
+注册表是端口及其版本的集合。策划的注册表是托管在 [kmpkg](https://gitee.com/kumo-pub/kmpkg)。 kmpkg 让您可以创建
+自定义注册表，可能由各种公共或私人提供商托管。
+
+目前有两种选项可以实现您自己的注册表：基于 Git 的注册表或基于文件系统的注册表。
+
+## 内置注册表
+
+内置注册表是指经典中通常使用的隐式注册表。
+模式场景，并直接在目录“KMPKG_ROOT”中编辑。
+
+如果使用 `git clone` 获取 kmpkg，则这将引用 `KMPKG_ROOT` 本身中的注册表，
+预计是在运行 kmpkg 之前创建的 [kmpkg](https://gitee.com/kumo-pub/kmpkg) 的克隆。
+
+否则（kmpkg 是使用`oneliner`安装程序），这相当于一个 git 注册表，其 `"repository"` 为`https://gitee.com/kumo-pub/kmpkg` 。
+
+## Git 注册表
+
+Git 注册表是简单的 Git 存储库。它们可以公开共享或通过 Git 存储库的正常机制私下进行。[kmpkg存储库](https://gitee.com/kumo-pub/kmpkg) 是 Git 注册表的示例。
+
+使用 Git 注册表可为自定义注册表提供最佳体验，因为您完全控制注册表的版本和内容。
+
+## Filesystem 注册表
+
+文件系统注册表，顾名思义，位于文件系统上。 它们是位于文件系统位置的端口集合，使用每个版本的单独路径提供版本控制的基元形式。
+
+这些类型的注册表更适合成为包的测试平台。 或者，为不属于 Git 的版本控制系统中的注册表提供替代项。
+
+## 后续步骤
+
+以下是接下来要尝试的一些任务：
+
+* [创建自己的基于 Git 的注册表](../produce/publish-to-a-git-registry.mdx)
+* [从自定义注册表安装包](../consume/git-registries.mdx)
+* [读取注册表参考文档](../maintainers/registries.mdx)

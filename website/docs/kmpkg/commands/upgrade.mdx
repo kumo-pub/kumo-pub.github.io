@@ -1,0 +1,59 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg upgrade
+
+kmpkg 升级命令的命令行参考。
+
+## 摘要
+
+```console
+kmpkg upgrade [options]
+```
+
+## 说明
+
+移除并重新安装具有不同当前可用版本的[经典模式][Classic mode]包。
+
+:::warning
+此命令不会保存以前的安装状态。 如果在构建替换包时出错，将不会还原之前的一组包。
+
+如需可靠版本管理，请使用[清单模式][Manifest mode]。
+:::
+
+默认情况下，`upgrade` 打印将修改内容的计划。 传递 [`--no-dry-run`](#no-dry-run) 以执行该计划。
+
+## Example
+
+```console
+$ kmpkg upgrade
+The following packages will be rebuilt:
+  * corrade[core,interconnect,pluginmanager,testsuite,utility]:x64-windows -> 2020.06#5
+  * magnum[al-info,anyaudioimporter,anyimageconverter,anyimageimporter,anysceneconverter,anysceneimporter,anyshaderconverter,audio,cglcontext,core,debugtools,distancefieldconverter,eglcontext,fontconverter,gl,gl-info,glfwapplication,glxcontext,imageconverter,magnumfont,magnumfontconverter,meshtools,objimporter,opengltester,primitives,sceneconverter,scenegraph,sdl2application,shaderconverter,shaders,shadertools,text,texturetools,tgaimageconverter,tgaimporter,trade,wglcontext,windowlesscglapplication,windowlesseglapplication,windowlessglxapplication,windowlesswglapplication]:x64-windows -> 2020.06#12
+  * openal-soft[core]:x64-windows -> 1.23.0
+  * ragel[core]:x64-windows -> 6.10#5
+  * sdl2[base,core]:x64-windows -> 2.26.4
+Additional packages (*) will be modified to complete this operation.
+If you are sure you want to rebuild the above packages, run this command with the --no-dry-run option.
+```
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--no-dry-run` {#no-dry-run}
+
+移除过时的包，并重新安装用户公共 kmpkg 注册表的本地副本中列出的版本。
+
+### `--no-keep-going`
+
+在第一次失败时停止。
+
+默认情况下，在包安装失败时，kmpkg 将继续尝试安装其他不相关的包。
+
+### `--allow-unsupported`
+
+允许对不支持的包执行升级。
+
+[Classic mode]: ../concepts/classic-mode.mdx
+[Manifest mode]: ../concepts/manifest-mode.mdx

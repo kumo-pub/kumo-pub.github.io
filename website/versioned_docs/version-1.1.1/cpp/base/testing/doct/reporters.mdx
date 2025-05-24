@@ -1,0 +1,104 @@
+# 测试报告
+
+## 报告
+
+Doctest 有一个模块化的报告器/侦听器系统，用户可以使用该系统编写自己的报告器并注册它们。报告器界面还可用于“监听”事件。
+
+您可以使用``--list-reporters``列出所有注册的报告者/侦听者。框架中有一些已实现的报告器：
+- ```console```` - 流式传输 - 如果检测到有能力的终端，则用颜色写入正常的文本行
+- ```xml``` - 流式传输 - 以针对 doctest 定制的 xml 格式写入
+- ```junit``` - 缓冲 - 以 JUnit 兼容的 xml 写入 - 有关更多信息，请查看[此处](https://github.com/doctest/doctest/issues/318) 和[此处](https://github.com/doctest/doctest/issues/376)。
+
+
+流式传输意味着结果是逐步交付的，而不是在测试运行结束时交付的。
+
+输出默认写入 ```stdout```，但可以使用 ```--out=<filename>``` [**命令行选项**](commandline.mdx) 进行重定向。
+
+如何定义自己的记者的示例：
+
+```c++
+#include <doctest/doctest.h>
+
+#include <mutex>
+
+using namespace doctest;
+
+struct MyXmlReporter : public IReporter
+{
+    // caching pointers/references to objects of these types - safe to do
+    std::ostream&         stdout_stream;
+    const ContextOptions& opt;
+    const TestCaseData*   tc;
+    std::mutex            mutex;
+
+    // constructor has to accept the ContextOptions by ref as a single argument
+    MyXmlReporter(const ContextOptions& in)
+            : stdout_stream(*in.cout)
+            , opt(in) {}
+
+    void report_query(const QueryData& /*in*/) override {}
+
+    void test_run_start() override {}
+
+    void test_run_end(const TestRunStats& /*in*/) override {}
+
+    void test_case_start(const TestCaseData& in) override { tc = &in; }
+
+    // called when a test case is reentered because of unfinished subcases
+    void test_case_reenter(const TestCaseData& /*in*/) override {}
+
+    void test_case_end(const CurrentTestCaseStats& /*in*/) override {}
+
+    void test_case_exception(const TestCaseException& /*in*/) override {}
+
+    void subcase_start(const SubcaseSignature& /*in*/) override {
+        std::lock_guard<std::mutex> lock(mutex);
+    }
+
+    void subcase_end() override {
+        std::lock_guard<std::mutex> lock(mutex);
+    }
+
+    void log_assert(const AssertData& in) override {
+        // don't include successful asserts by default - this is done here
+        // instead of in the framework itself because doctest doesn't know
+        // if/when a reporter/listener cares about successful results
+        if(!in.m_failed && !opt.success)
+            return;
+
+        // make sure there are no races - this is done here instead of in the
+        // framework itself because doctest doesn't know if reporters/listeners
+        // care about successful asserts and thus doesn't lock a mutex unnecessarily
+        std::lock_guard<std::mutex> lock(mutex);
+
+        // ...
+    }
+
+    void log_message(const MessageData& /*in*/) override {
+        // messages too can be used in a multi-threaded context - like asserts
+        std::lock_guard<std::mutex> lock(mutex);
+
+        // ...
+    }
+
+    void test_case_skipped(const TestCaseData& /*in*/) override {}
+};
+
+// "1" is the priority - used for ordering when multiple reporters are used
+REGISTER_REPORTER("my_xml", 1, MyXmlReporter);
+
+// registering the same class as a reporter and as a listener is nonsense but it's possible
+REGISTER_LISTENER("my_listener", 1, MyXmlReporter);
+```
+
+自定义`IReporter`实现必须注册到以下之一：
+
+* `REGISTER_REPORTER`，当新报告器是用户可以在运行时选择的选项时。
+* `REGISTER_LISTENER`，当报告者实际上是一个侦听器并且必须始终执行时，无论在运行时选择了哪个报告者。
+
+可以同时使用多个报告器 - 只需通过 ```--reporters=...``` [**命令行过滤选项**](commandline.mdx) 指定它们，使用逗号将它们分开，如下所示： ```--reporters=myReporter,xml``` ，它
+们的执行顺序将基于它们的优先级 - 在上面的示例报告器的情况下，即数字`1`（较低意味着较早 - 默认控制台/框架中的 xml 报告器的优先级为 0，也接受负数）。
+
+所有注册的监听器（``REGISTER_LISTENER``）将在任何报告器之前​​执行 - 它们不需要指定，也不能通过命令行过滤。
+
+在实现报告器时，建议用户遵循上面示例中的注释，并查看框架本身中实现的少数报告器。另请查看 [**示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/reporters_and_listeners.cpp)。

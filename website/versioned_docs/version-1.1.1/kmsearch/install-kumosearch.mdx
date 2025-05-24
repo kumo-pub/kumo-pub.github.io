@@ -1,0 +1,88 @@
+# 安装 kumosearch
+
+kumosearch 以二进制的形式分发，官方提供`.tar`, `deb`,`rpm`安装包。可以在物理机和容器中运行。
+
+## 获取 kumosearch
+
+联系销售客服，获取适用于您的平台的 `DEB`、`RPM` 或二进制安装包。或者，您也可以使用官方构建的标准二进制容器版本。
+
+## kumosearch 安装
+
+### Docker
+
+```shell
+export KUMOSEARCH_API_KEY=kumo
+mkdir "$(pwd)"/kumosearch-data
+docker run -p 8808:8808 \
+            -v"$(pwd)"/kumosearch-data:/data kumo/kumosearch:{{ $site.themeConfig.kumoLatestVersion }} \
+            --data-dir /data \
+            --api-key=$KUMOSEARCH_API_KEY \
+            --enable-cors
+```
+
+### Docker Compose
+
+```yaml
+services:
+ kumosearch:
+    image: kumo/kumosearch:{{ $site.themeConfig.kumoLatestVersion }}
+    restart: on-failure
+    ports:
+      - "8808:8808"
+    volumes:
+      - ./kumosearch-data:/data
+    command: '--data-dir /data --api-key=xyz --enable-cors'
+```
+
+```shell
+mkdir "$(pwd)"/kumosearch-data
+
+docker-compose up
+```
+
+### Ubuntu/Debian平台DEB安装包
+
+```shell
+sudo apt install ./kumosearch-server-1.0.8-amd64.deb
+# Start kumosearch
+sudo systemctl start kumosearch-server.service
+```
+
+- 配置文件在 `/etc/kumosearch/kumosearch-server.ini`
+  - 管理 API 的密钥是自动生成的，可以在配置文件中看到。
+- 日志存放在 `/var/log/kumosearch/`
+- 数据文件在 `/var/lib/kumosearch/`
+
+:::warning 兼容性
+kumosearch Server 需要 Ubuntu 20 或者之后的版本。
+:::
+
+### CentOS/RHEL平台RPM安装包
+
+```shell
+sudo yum install ./kumosearch-server-1.0.8-1.x86_64.rpm
+# Start kumosearch
+sudo systemctl start kumosearch-server.service
+```
+
+- 配置文件在 `/etc/kumosearch/kumosearch-server.ini`
+  - 管理 API 的密钥是自动生成的，可以在配置文中看到。
+- 日志存放在 `/var/log/kumosearch/`
+- 数据文件在 `/var/lib/kumosearch/`
+
+:::warning 兼容性
+kumosearch Server 需要较新的 Linux 内核版本。
+:::
+
+## 安装状态检查
+
+使用`/health`接口检查服务器是否启动就绪。
+
+```bash
+curl http://localhost:8868/health
+{"ok":true}
+```
+
+## 服务配置
+
+您可以使用命令行参数配置各种 kumosearch 服务器设置。阅读这篇文档了解更多[如何配置 kumosearch Server](https://klumo)。

@@ -1,0 +1,57 @@
+
+# 系统监控
+
+`tally`提供了系统指标的监控接口。在文件
+```cpp
+    <tally/sigar.h>
+```
+中定义。
+
+## 核心功能与特性
+Sigar通过统一的API接口，屏蔽不同操作系统的底层差异，提供一致的指标采集能力。
+例如，在Windows和Linux环境下均可通过相同方法获取进程列表或实时CPU负载。其
+数据采集范围包括但不限于：CPU核心数及利用率、物理内存与虚拟内存占用、磁盘分区读写
+速率、网络接口流量统计等。对于开发者而言，这种设计简化了多平台适配的复杂度。
+
+Sigar（System Information Gatherer and Reporter）是一款跨平台的系统度量组件，
+主要用于收集操作系统中的关键性能数据。它能够高效获取CPU、内存、磁盘、网络等资源的使用情况，
+适用于运维监控、安全审计及教学研究等领域。
+
+
+
+## 默认监控
+
+在文件
+```cpp
+    <tally/sigar_metric.h>
+```
+中定义了导出的系统监控。
+导出指标参见下表。
+
+    |Metric Type| Variable| Description|
+    |:----------|:--------|:--------------|
+    | `FuncGauge<int64_t>` | mem_ram| 当前系统内存|
+    |`FuncGauge<int64_t>`| mem_total| 系统内存总量|
+    | `FuncGauge<int64_t>`| mem_used | 当前系统内存使用量|
+    | `FuncGauge<int64_t>`| mem_free | 当前系统内存剩余|
+    |`FuncGauge<int64_t>`| mem_actual_used | 当前系统内存真实使用量|
+    | `FuncGauge<int64_t>`| mem_actual_free| 当前内存真实剩余量|
+    |`FuncGauge<int64_t>` | swap_total| 交换分区总量|
+    |`FuncGauge<int64_t>` | swap_used | 交换分区使用量|
+    |`FuncGauge<int64_t>` | swap_free | 交换分区剩余量|
+    |`FuncGauge<int64_t>`| cpu_user| |
+    |`FuncGauge<int64_t>`| cpu_sys| |
+    |`FuncGauge<int64_t>`| cpu_nice| |
+    |`FuncGauge<int64_t>`| cpu_idle| |
+    |`FuncGauge<int64_t>`| cpu_wait| |
+    |`FuncGauge<int64_t>`| cpu_irq| |
+    |`FuncGauge<int64_t>`| cpu_soft_irq| |
+    |`FuncGauge<int64_t>`| cpu_stolen| |
+    |`FuncGauge<int64_t>`| cpu_total| |
+    |`FuncGauge<double>`| uptime| 启动时间 |
+    |`FuncGauge<double>`|  loadavg_1m| 系统1分钟负载 |
+    |`FuncGauge<double>`|  loadavg_5m| 系统5分钟负载 |
+    |`FuncGauge<double>`|  loadavg_15m| 系统15分钟负载 |
+    |`FuncGauge<double>`|  disk_io_read| IO 读 |
+    |`FuncGauge<double>`|  disk_io_write| IO 写|
+    |`FuncGauge<double>`|  disk_io_total| IO 读写 |

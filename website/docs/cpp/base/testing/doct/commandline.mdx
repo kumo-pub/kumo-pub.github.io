@@ -1,0 +1,137 @@
+
+# 命令行
+
+## 命令行 {#command-line}
+
+**doctest** 在没有任何命令行选项的情况下工作得非常好 - 但为了更多的控制，可以使用一堆。
+
+**查询标志** - 打印结果后，程序退出而不执行任何测试用例（并且如果框架集成到客户端代码库中，该代
+码库 [** 提供自己的 ```main()``` 入口点* *](main.mdx) - 在 ``doctest::Context`` 对象上调用 ```run()``` 后，程序应该检查 ```shouldExit()``` 方法的结果，并且应该退出 - 这由用户决定）。
+
+**Int/String 选项** - 它们需要在“=”符号后面有一个值 - 没有空格！例如：``--order-by=rand``。
+
+**Bool 选项** - 他们期望 ```1````/```yes```/```on```/```true``` 或 ```0```/` “no```/```off```/```false``` 在 ```=``` 符号
+之后 - 但它们也可以像标志和 ```=value`` 一样使用` 部分可以被跳过 - 然后假定 ```true``` 。
+
+**Filters** - 用于匹配值的以逗号分隔的通配符列表 - 其中 ```*``` 表示“匹配任何序列”，而 ```?``` 表示“匹配任何一个字符”。
+
+要传递带有间隔的模式，请使用```""```，如下所示：`--test-case="*no sound*,模糊命名的测试编号？"`。包含逗号或反斜杠
+的模式可以使用 ```\``` 进行转义（例如： ```--test-case=this\,test\,has\,commas\,and\,a\\\ ,反斜杠\,后跟\,a\,逗号```)。
+如果反斜杠后面既没有 ``\``` 也没有 ``,``` 则保持原样，例如```--test-case="测试 \ 是否正常工作"```。
+请注意：您的 shell 也可能使用 ``\``` 进行转义，因此 `\` 实际上可能会被 shell 而不是 doctest 消耗。
+
+如果用户[**提供 ```main()``` 函数**](main.mdx)，则所有选项也可以使用代码设置（默认/覆盖）。
+
+| 查询标志 | 描述 |
+|:------------|-------------|
+| ```-?``` &nbsp;&nbsp;&nbsp; ```--help``` ```-h``` | 打印列出所有这些标志/选项的帮助消息 |
+| ```-v``` &nbsp;&nbsp;&nbsp; ```--version``` | 打印 **doctest** 框架的版本 |
+| ```-c``` &nbsp;&nbsp;&nbsp; ```--count``` | 打印与当前过滤器匹配的测试用例的数量（见下文） |
+| ```-ltc``` ```--list-test-cases``` | 按名称列出与当前过滤器匹配的所有测试用例（见下文） |
+| ```-lts``` ```--list-test-suites``` | 按名称列出所有测试套件，其中至少有一个测试用例与当前过滤器匹配（见下文） |
+| ```-lr``` ```--list-reporters``` | 列出所有已注册的 [**reporters**](reporters.mdx) |
+| **`Int/String Options`** | `<hr>` |
+| ```-tc``` &nbsp; ```--test-case=<filters>``` | 根据测试用例的名称过滤测试用例。默认情况下，所有测试用例都匹配，但如果为此过滤器指定一个值，例如 ```--test-case=*math*,*sound*```，则仅测试与逗号中至少一种模式匹配的测试用例-带有通配符的分隔列表将被`executed/counted/listed` |
+| ```-tce``` ```--test-case-exclude=<filters>``` | 与 ```-test-case=<filters>``` 选项相同，但如果逗号分隔的值列表中的任何模式匹配 - 则跳过测试用例 |
+| ```-sf``` &nbsp; ```--source-file=<filters>``` | 与 ```--test-case=<filters>``` 相同，但根据编写测试用例的文件进行过滤 |
+| ```-sfe``` ```--source-file-exclude=<filters>``` |与 ```--test-case-exclude=<filters>``` 相同，但根据编写测试用例的文件进行过滤|
+| ```-ts``` &nbsp; ```--test-suite=<filters>``` | 与 ```--test-case=<filters>``` 相同，但根据测试用例所在的测试套件进行过滤 |
+| ```-tse``` ```--test-suite-exclude=<filters>``` | 与 ```--test-case-exclude=<filters>``` 相同，但根据测试用例所在的测试套件进行过滤 |
+| ```-sc``` &nbsp; ```--subcase=<filters>``` | 与 ```--test-case=<filters>``` 相同，但根据名称过滤子案例。不过滤测试用例（必须执行它们才能发现子用例），因此您可能希望将其与``--test-case=<filters>``一起使用。 |
+| ```-sce``` ```--subcase-exclude=<filters>``` | 与 ```--test-case-exclude=<filters>``` 相同，但根据子案例名称进行过滤 |
+| ```-r``` ```--reporters=<filters>``` | 要使用的 [**reporters**](reporters.mdx) 列表（默认为``console```） |
+| ```-o``` &nbsp; ```--out=<string>``` | 输出文件名 |
+| ```-ob``` &nbsp; ```--order-by=<string>``` | 测试用例在执行之前将按 **它们所在的文件** / **它们所在的测试套件** / **它们的名称** / **随机** 进行排序。 ```<string>``` 的可能值为 ```file```/```suite```/```name```/```rand```/```none ``。默认为``文件``。 **注意：“file”、“suite”和“name”选项生成的顺序取决于编译器，并且可能会根据所使用的编译器而有所不同。** |
+| ```-rs``` &nbsp; ```--rand-seed=<int>``` | 随机排序的种子 |
+| ```-f``` &nbsp;&nbsp;&nbsp; ```--first=<int>``` | 要执行的**第一个**测试用例通过当前过滤器 - 对于基于范围的执行 - 请参阅[**示例 python 脚本**](https://gitee.com/kumo-hub/doctest/tree/master/examples/range_based_execution.py) |
+| ```-l``` &nbsp;&nbsp;&nbsp; ```--last=<int>``` | 要执行的**最后**测试用例通过当前过滤器 - 对于基于范围的执行 - 请参阅[**示例 python 脚本**](https://gitee.com/kumo-hub/doctest/tree/master/examples/range_based_execution.py) |
+| ```-aa``` &nbsp; ```--abort-after=<int>``` | 在多次失败的断言之后，测试框架将停止执行测试用例/断言。默认值为 0，这意味着根本不停止。请注意，无论断言的级别如何，框架都会使用异常来停止当前测试用例（```CHECK```/```REQUIRE```） - 因此要小心析构函数中的断言...... |
+| ```-scfl``` ```--subcase-filter-levels=<int>``` | 仅对嵌套子案例的第一个 ```<int>``` 级别应用子案例过滤器，并仅运行嵌套更深的子案例。默认值是一个非常高的数字，这意味着*过滤任何子案例* |
+| **Bool Options** | `<hr>` |
+| ```-s``` &nbsp;&nbsp;&nbsp; ```--success=<bool>``` | 在输出中包含成功的断言 |
+| ```-cs``` &nbsp; ```--case-sensitive=<bool>``` | 在输出中包含成功的断言 |
+| ```-e``` &nbsp;&nbsp;&nbsp; ```--exit=<bool>``` | 测试完成后退出 - 仅当客户端[**提供了 ```main()``` 入口点**](main.mdx) 时才有意义 - 程序应检查 ```shouldExit()在“doctest::Context”对象上调用“run()”之后的“方法”应该退出——这由用户决定。这个想法是能够只执行客户端程序中的测试并且不继续执行 |
+| ```-d``` &nbsp; ```--duration=<bool>``` | 打印每个测试用例花费的时间（以秒为单位） |
+| ```-m``` &nbsp; ```--minimal=<bool>``` | 只打印失败的测试 |
+| ```-q``` &nbsp; ```--quiet=<bool>``` | 不打印任何输出 |
+| ```-nt``` &nbsp; ```--no-throw=<bool>``` | 跳过 [**与异常相关的断言**](assertions.mdx#exceptions) 检查 |
+| ```-ne``` &nbsp; ```--no-exitcode=<bool>``` | 始终返回成功的退出代码 - 即使测试用例失败 |
+| ```-nr``` &nbsp; ```--no-run=<bool>``` | 跳过所有运行时 **doctest** 操作（除了程序进入 ```main()``` 之前发生的测试注册）。如果测试框架集成到客户端代码库中，该代码库[**提供了 ```main()``` 入口点**](main.mdx) 并且用户想要跳过运行测试而只是使用该程序 |
+| ```-ni``` &nbsp; ```--no-intro=<bool>``` | 省略输出中的框架介绍 |
+| ```-nv``` &nbsp; ```--no-version=<bool>``` | 省略输出中的框架版本 |
+| ```-nc``` &nbsp; ```--no-colors=<bool>``` | 禁用输出中的颜色 |
+| ```-fc``` &nbsp; ```--force-colors=<bool>``` | 即使无法检测到 tty，也强制使用颜色 |
+| ```-nb``` &nbsp; ```--no-breaks=<bool>``` | 当断言失败时禁用调试器中的断点 |
+| ```-ns``` &nbsp; ```--no-skip=<bool>``` | 不要跳过用装饰器标记为跳过的测试用例 |
+| ```-gfl``` ```--gnu-file-line=<bool>``` | ```:n:``` 与 ```(n):``` 用于输出中的行号（gnu 模式通常用于 Linux 工具/IDE，并带有 ```:``` 分隔符） |
+| ```-npf``` ```--no-path-filenames=<bool>``` | 打印文件名时，路径将从输出中删除 - 如果您希望在不同环境下从测试框架获得相同的输出，则非常有用 |
+| ```-nln``` ```--no-line-numbers=<bool>``` | 打印源位置时，输出中的行号将替换为 ``0```` - 如果您希望测试框架具有相同的输出，即使源文件中的测试位置发生变化，这很有用 |
+| ```-ndo``` ```--no-debug-output=<bool>``` | 连接调试器时禁用调试控制台中的输出 |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| |
+
+所有标志/选项还带有前缀版本（默认情况下在前面带有 ```--dt-```） - 例如 ```--version``` 也可以与 ```- 一起使用-dt-version``` 或 ```--dt-v```。
+
+默认前缀是 ```--dt-```，但是可以通过设置 [**```DOCTEST_CONFIG_OPTIONS_PREFIX```**](configuration.mdx#doctest_config_options_prefix) 定义来更改。
+
+此处列出的所有无前缀版本都可以使用 [**```DOCTEST_CONFIG_NO_UNPREFIXED_OPTIONS````**](configuration.mdx#doctest_config_no_unprefixed_options) 定义来禁用。
+
+这样做是为了在测试框架集成到客户端代码库中时与客户端命令行选项处理轻松互操作 - 所有 **doctest** 相关标志/选项都可以添加前缀，这样就不会发生冲突，以便用户可以排除所有开始的内容从他们的选项解析中使用 ```--dt-``` 。
+
+如果没有选项可以排除以 ```--dt-``` 开头的内容，则 ```dt_removed``` 帮助器类可能有助于过滤掉它们：
+
+```c++
+#define DOCTEST_CONFIG_NO_UNPREFIXED_OPTIONS
+#define DOCTEST_CONFIG_IMPLEMENT
+#include "doctest.h"
+
+class dt_removed {
+    std::vector<const char*> vec;
+public:
+    dt_removed(const char** argv_in) {
+        for(; *argv_in; ++argv_in)
+            if(strncmp(*argv_in, "--dt-", strlen("--dt-")) != 0)
+                vec.push_back(*argv_in);
+        vec.push_back(NULL);
+    }
+
+    int          argc() { return static_cast<int>(vec.size()) - 1; }
+    const char** argv() { return &vec[0]; } // Note: non-const char **:
+};
+
+int program(int argc, const char** argv);
+
+int main(int argc, const char** argv) {
+    doctest::Context context(argc, argv);
+    int test_result = context.run(); // run queries, or run tests unless --no-run
+
+    if(context.shouldExit()) // honor query flags and --exit
+        return test_result;
+
+    dt_removed args(argv);
+    int app_result = program(args.argc(), args.argv());
+
+    return test_result + app_result; // combine the 2 results
+}
+
+int program(int argc, const char** argv) {
+    printf("Program: %d arguments received:\n", argc - 1);
+    while(*++argv)
+        printf("'%s'\n", *argv);
+    return EXIT_SUCCESS;
+}
+```
+
+当这样运行时：
+
+```
+program.exe --dt-test-case=math* --my-option -s --dt-no-breaks
+```
+
+将输出这个：
+
+```
+Program: 2 arguments received:
+'--my-option'
+'-s'
+```
+

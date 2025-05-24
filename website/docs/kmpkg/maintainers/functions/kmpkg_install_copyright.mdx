@@ -1,0 +1,74 @@
+---
+date: 01/10/2024
+---
+# 函数: kmpkg_install_copyright
+
+将多个版权文件合并为一个文件并安装。 安装单个版权文件。
+
+:::info
+kmpkg 注册表中为每个包提供的许可信息代表了 Kumo 对许可要求的最佳理解。 然而，这些信息可能不是最终的。 建议用户核实他们打算使用的每个包的确切许可要求，因为确保遵守适用的许可证最终是他们的责任。
+:::
+## 使用情况
+
+```cmake
+kmpkg_install_copyright(FILE_LIST <file1> <file2>... [COMMENT])
+```
+
+## 参数
+
+### FILE_LIST
+
+指定具有绝对路径的许可证文件列表。 必须至少提供一个文件。
+
+### COMMENT
+
+此可选参数用于在文件顶部添加注释。
+
+## 说明
+
+此函数会在 `${CURRENT_PACKAGES_DIR}/share/${PORT}` 中创建一个名为`copyright`的文件
+
+如果提供了多个文件，此函数会将多个版权文件的内容串联到一个文件中。
+
+得到一个类似于如下所示的 `copyright` 文件：
+
+```
+LICENSE-LGPL2.txt:
+
+Lorem ipsum dolor...
+
+LICENSE-MIT.txt:
+
+Lorem ipsum dolor sit amet...
+```
+
+或者，包含  `COMMENT`:
+
+```
+A meaningful comment
+
+LICENSE-LGPL2.txt:
+
+Lorem ipsum dolor...
+
+LICENSE-MIT.txt:
+
+Lorem ipsum dolor sit amet...
+```
+
+## 示例
+
+```cmake
+kmpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE/license.md" "${SOURCE_PATH}/LICENSE/license_gpl.md" COMMENT "This is a comment")
+```
+
+还可以使用 `GLOB` 模式收集所需的文件：
+
+```cmake
+file(GLOB LICENSE_FILES "${SOURCE_PATH}/LICENSES/*")
+kmpkg_install_copyright(FILE_LIST ${LICENSE_FILES})
+```
+
+## Source
+
+[kmpkg_install_copyright.mdx](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_install_copyright.cmake)

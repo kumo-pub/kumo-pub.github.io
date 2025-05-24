@@ -1,0 +1,132 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_check_features
+
+检查一项或多项功能是否为包安装的一部分。
+
+## 使用情况
+
+```cmake
+kmpkg_check_features(
+    OUT_FEATURE_OPTIONS <out-var>
+    [PREFIX <prefix>]
+    [FEATURES
+        [<feature-name> <feature-var>]...
+        ]
+    [INVERTED_FEATURES
+        [<feature-name> <feature-var>]...
+        ]
+)
+```
+按照约定，`<out-var>` 应设置为 `FEATURE_OPTIONS`。
+
+`kmpkg_check_features()` 将:
+
+- 对于 FEATURES 中传递的每个 `<feature-name>`：
+  - 如果该功能已设置，请将 `-D<feature-var>=ON` 添加到 `<out-var>`，并将 `<prefix>_<feature-var>` 设置为 `ON`。
+  - 如果该功能未设置，请将 `-D<feature-var>=OFF` 添加到 `<out-var>`，并将 `<prefix>_<feature-var>` 设置为 `OFF`。
+- 对于 `INVERTED_FEATURES` 中传递的每个 `<feature-name>`：
+  - 如果该功能已设置，请将 `-D<feature-var>=OFF` 添加到 `<out-var>`，并将 `<prefix>_<feature-var>` 设置为 `OFF`。
+  - 如果该功能未设置，请将 `-D<feature-var>=ON` 添加到 `<out-var>`，并将 `<prefix>_<feature-var>` 设置为 `ON`。
+
+如果未传递 `<prefix>`，则功能变量集只是 `<feature-var>`，而不是 `_<feature-var>`。
+
+如果未传递 `INVERTED_FEATURES`，则 `FEATURES` 关键字是可选的。 不推荐使用此行为。
+
+如果多次传递相同的 `<feature-var>`，则 `kmpkg_check_features` 会导致致命错误，因为这是一个 `bug`。
+
+## 示例
+
+### 示例 1：常规功能
+
+```cmake
+$ ./kmpkg install mimalloc[asm,secure]
+
+# ports/mimalloc/portfile.cmake
+kmpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+    FEATURES
+        asm       MI_SEE_ASM
+        override  MI_OVERRIDE
+        secure    MI_SECURE
+)
+
+kmpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+    OPTIONS
+        # Expands to "-DMI_SEE_ASM=ON;-DMI_OVERRIDE=OFF;-DMI_SECURE=ON"
+        ${FEATURE_OPTIONS}
+)
+```
+
+### 示例 2：反转功能
+
+```cmake
+$ ./kmpkg install cpprestsdk[websockets]
+
+# ports/cpprestsdk/portfile.cmake
+kmpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+    INVERTED_FEATURES
+        brotli      CPPREST_EXCLUDE_BROTLI
+        websockets  CPPREST_EXCLUDE_WEBSOCKETS
+)
+
+kmpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+    OPTIONS
+        # Expands to "-DCPPREST_EXCLUDE_BROTLI=ON;-DCPPREST_EXCLUDE_WEBSOCKETS=OFF"
+        ${FEATURE_OPTIONS}
+)
+```
+
+### 示例 3：设置同一功能的多个选项
+
+```cmake
+$ ./kmpkg install pcl[cuda]
+
+# ports/pcl/portfile.cmake
+kmpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+    FEATURES
+        cuda  WITH_CUDA
+        cuda  BUILD_CUDA
+        cuda  BUILD_GPU
+)
+
+kmpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+    OPTIONS
+        # Expands to "-DWITH_CUDA=ON;-DBUILD_CUDA=ON;-DBUILD_GPU=ON"
+        ${FEATURE_OPTIONS}
+)
+```
+
+### 示例 4：使用常规功能和反转功能
+
+```cmake
+$ ./kmpkg install rocksdb[tbb]
+
+# ports/rocksdb/portfile.cmake
+kmpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+    FEATURES
+        tbb   WITH_TBB
+    INVERTED_FEATURES
+        tbb   ROCKSDB_IGNORE_PACKAGE_TBB
+)
+
+kmpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+    OPTIONS
+        # Expands to "-DWITH_TBB=ON;-DROCKSDB_IGNORE_PACKAGE_TBB=OFF"
+        ${FEATURE_OPTIONS}
+)
+```
+
+## 端口文件中的示例
+
+- [cpprestsdk](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/cpprestsdk/portfile.cmake)
+- [pcl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/pcl/portfile.cmake)
+- [rocksdb](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/rocksdb/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_check\_features.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_check_features.cmake)

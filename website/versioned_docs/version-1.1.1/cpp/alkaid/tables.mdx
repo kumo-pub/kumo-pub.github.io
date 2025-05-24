@@ -1,0 +1,50 @@
+
+# 表格数据
+
+表格数据（Tabular Data）
+
+`表和 RecordBatch API 参考 <alkaid/core/table.h>`.
+
+虽然数组和分块数组表示一维的同类值序列，但数据通常以二维异构数据集的形式出现（例如数据库表、CSV 文件……）。Alkaid 提供了几种抽象来方便高效地处理此类数据。
+
+## Fields
+
+字段用于表示表的特定列（以及嵌套数据类型（如 `alkaid::StructType`）的特定成员）。字段，即 `alkaid::Field` 的一个实例，将数据类型、字段名称和一些可选元数据结合在一起。
+
+创建字段的推荐方法是调用 `alkaid::field`工厂函数。
+
+## Schemas
+
+模式描述了二维数据集（例如表）的整体结构。它包含一系列字段以及一些可选的模式范围元数据（除了每个字段的元数据）。创建模式的推荐方法是调用 `alkaid::schema` 工厂函数重载之一：
+
+```cpp
+    // Create a schema describing datasets with two columns:
+    // a int32 column "A" and a utf8-encoded string column "B"
+    std::shared_ptr<alkaid::Field> field_a, field_b;
+    std::shared_ptr<alkaid::Schema> schema;
+
+    field_a = alkaid::field("A", alkaid::int32());
+    field_b = alkaid::field("B", alkaid::utf8());
+    schema = alkaid::schema({field_a, field_b});
+```
+
+## Tables
+
+`alkaid::Table` 是一个二维数据集，其中包含列的分块数组，以及提供字段名称的架构。此外，每个分块列的元素数量必须具有相同的逻辑长度（尽管每列可以以不同的方式分块）。
+
+## Record Batches
+
+`alkaid::RecordBatch` 是一个二维数据集，包含多个
+连续数组，每个数组的长度相同。与表一样，记录批次
+也有一个必须与其数组的数据类型匹配的架构。
+
+记录批次是各种序列化和计算函数（可能是增量的）的便捷工作单元。
+
+import Tablesimg from '@site/static/img/alkaid/tables-versus-record-batches.svg';
+
+<Tablesimg />
+
+记录批次可以在实现之间发送，例如通过[`IPC format-ipc`](format.mdx#format-ipc) 或通过`C 数据接口 <../format/CDataInterface>`。另一方面，表和分块数组是 C++ 实现中的概念，而不是 Alkaid 格式本身中的概念，因此它们不能直接移植。
+
+但是，可以轻松地将表转换为记录批次序列并从记录批次序列构建，而无需复制底层数组缓冲区。可以使用`alkaid::TableBatchReader` 将表流式传输为任意数量
+的记录批次。相反，可以使用`alkaid::Table::FromRecordBatches` 工厂函数重载之一组装记录批次的逻辑序列以形成表。

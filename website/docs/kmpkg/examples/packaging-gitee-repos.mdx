@@ -1,0 +1,62 @@
+---
+date: 01/10/2024
+---
+# 用例： 打包 `Gitee` 项目
+
+演示如何打包一个[Gitee](https://gitee.com)项目。
+
+
+## 创建清单文件
+
+清单文件（称为`kmpkg.json`）是描述包元数据的 json 文件。
+
+对于 libogg，我们将创建包含以下内容的文件 `ports/libogg/kmpkg.json`：
+
+```json
+{
+  "name": "libogg",
+  "version-string": "1.3.3",
+  "description": "Ogg is a multimedia container format, and the native file and stream format for the Xiph.org multimedia codecs."
+}
+```
+
+您可以使用`kmpkg format-manifest ports/libogg/kmpkg.json`将清单文件格式化为我们的规范。
+
+## 创建端口文件
+
+`portfile.cmake` 描述了如何构建和安装该包。首先，我们使用 [`kmpkg_from_gitee`](../maintainers/functions/kmpkg_from_gitee.mdx) 从 Gitee 下载项目：
+
+```cmake
+kmpkg_from_gitee(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO kumo-hub/ogg
+    REF v1.3.3
+    SHA512 0bd6095d647530d4cb1f509eb5e99965a25cc3dd9b8125b93abd6b248255c890cf20710154bdec40568478eb5c4cde724abfb2eff1f3a04e63acef0fbbc9799b
+    HEAD_REF master
+)
+```
+
+要更新的重要部分是 GitHub 存储库路径的“REPO”、要使用的稳定标记/提交的“REF”以及带有下载文件的校验和的“SHA512”（您可以通过将其设置为“0”来轻松获取） `，尝试安装包，并复制校验和）。
+
+最后，我们使用 CMake 配置项目，安装包，并复制许可证文件：
+
+```cmake
+kmpkg_cmake_configure(SOURCE_PATH ${SOURCE_PATH})
+kmpkg_cmake_install()
+file(INSTALL "${SOURCE_PATH}/COPYING" DESTINATION "${CURRENT_PACKAGES_DIR}/share/libogg" RENAME copyright)
+```
+
+如果您的软件包需要其他选项，请检查 [`kmpkg_cmake_configure`](../maintainers/functions/kmpkg_cmake_configure.mdx) 和 [`kmpkg_cmake_install`](../maintainers/functions/kmpkg_cmake_install.mdx) 的文档。
+
+现在您可以运行“kmpkg install libogg”来构建和安装该软件包。
+
+## S建议的示例端口文件
+
+在 [`ports/`](https://gitee.com/kumo-pub/kmpkg/tree/master/ports) 目录中有许多可以用作示例的库，包括许多不基于 CMake 的库。
+
+- 仅标头库
+  - rapidjson
+  - range-v3
+- 非 CMake，自定义构建系统
+  - openssl
+  - ffmpeg

@@ -1,0 +1,111 @@
+---
+date: 08/10/2024
+---
+
+# json文件操作
+
+json文件提供官方提供两个只有头文件的库`nlohmann-json`和 `rapidjson`。
+
+## nlohmann-json {#nlohmann-json}
+
+### 安装 {#nlohmann-json-install}
+
+使用`kmpkg`一键安装集成：
+
+```shell
+kmpkg install nlohmann-json
+Computing installation plan...
+The following packages will be built and installed:
+    nlohmann-json:x64-linux@3.11.3#1
+Detecting compiler hash for triplet x64-linux...
+Compiler found: /bin/c++
+Restored 1 package(s) from /home/jeff/.cache/kmpkg/archives in 7.4 ms. Use --debug to see more details.
+Installing 1/1 nlohmann-json:x64-linux@3.11.3#1...
+Elapsed time to handle nlohmann-json:x64-linux: 11.5 ms
+nlohmann-json:x64-linux package ABI: b78a3e89712d3a4abdc98ea97493983540eafb33365c2317df8ec37b68aee131
+Total install time: 11.5 ms
+The package nlohmann-json provides CMake targets:
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE nlohmann_json::nlohmann_json)
+
+The package nlohmann-json can be configured to not provide implicit conversions via a custom triplet file:
+
+    set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+For more information, see the docs here:
+
+    https://json.nlohmann.me/api/macros/json_use_implicit_conversions/
+```
+
+### 文档与示例
+
+参与官方[文档](https://json.nlohmann.me/)
+
+
+## rapidjson {#rapidjson}
+
+### 安装 {#rapidjson-install}
+
+使用`kmpkg`一键安装集成：
+
+```shell
+kmpkg install rapidjson
+Computing installation plan...
+The following packages will be built and installed:
+    nlohmann-json:x64-linux@3.11.3#1
+Detecting compiler hash for triplet x64-linux...
+Compiler found: /bin/c++
+Restored 1 package(s) from /home/jeff/.cache/kmpkg/archives in 7.4 ms. Use --debug to see more details.
+Installing 1/1 nlohmann-json:x64-linux@3.11.3#1...
+Elapsed time to handle nlohmann-json:x64-linux: 11.5 ms
+nlohmann-json:x64-linux package ABI: b78a3e89712d3a4abdc98ea97493983540eafb33365c2317df8ec37b68aee131
+Total install time: 11.5 ms
+The package nlohmann-json provides CMake targets:
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE nlohmann_json::nlohmann_json)
+
+The package nlohmann-json can be configured to not provide implicit conversions via a custom triplet file:
+
+    set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+For more information, see the docs here:
+
+    https://json.nlohmann.me/api/macros/json_use_implicit_conversions/
+
+jeff@jeff-fkumo:~/gitee/kumo-ai/kumo-docs$ kmpkg install rapidjson
+Computing installation plan...
+The following packages will be built and installed:
+    rapidjson:x64-linux@2024-09-04#1
+Detecting compiler hash for triplet x64-linux...
+Compiler found: /bin/c++
+Restored 1 package(s) from /home/jeff/.cache/kmpkg/archives in 6.1 ms. Use --debug to see more details.
+Installing 1/1 rapidjson:x64-linux@2024-09-04#1...
+Elapsed time to handle rapidjson:x64-linux: 11.7 ms
+rapidjson:x64-linux package ABI: 18062329cab92d999d854c185dc90c36e7c36774cbafe2f6a6bfaae591441fc0
+Total install time: 11.7 ms
+rapidjson provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(RapidJSON CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE RapidJSON)
+
+rapidjson provides pkg-config modules:
+
+  # A fast JSON parser/generator for C++ with both SAX/DOM style API
+  RapidJSON
+
+```
+
+### 文档与示例
+
+参与官方[文档](https://rapidjson.org/zh-cn/)
+
+## 使用建议  {#using-tps}
+
+github上有[专题](https://github.com/miloyip/nativejson-benchmark)专门针对`json`个的表现做了总结，这里给出结论
+
+* 对内存、性能要求苛刻的应用请使用`rapidjson`，虽然API有些奇怪。
+* 对性能要求并非很高，或者解析`json`的频次并非很高的场景，建议实用`nlohmann-json`，它的API设计更人性化，会大幅度提升
+开发体验和开发效率。

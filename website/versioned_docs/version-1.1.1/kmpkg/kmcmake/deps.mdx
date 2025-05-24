@@ -1,0 +1,175 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程： 依赖配置
+
+该页面讲述如何配置和检查依赖项。
+
+## 依赖项配置
+
+依赖项的配置文件为`cmake/${project-name}_deps.cmake`。依赖项请在此配置。
+
+### KMCMAKE_SYSTEM_DYLINK {#km-sys-dylink}
+
+该配置项是kmcmake根据系统自动检测的系统库，对用linux系统上的`pthread`,`rt`,`dl`三个库。
+目前支持平台包括`macos`和`linux`。
+
+### KMCMAKE_DEPS_LINK {#km-deps-dylink}
+
+kmcmake使用`${KMCMAKE_DEPS_LINK}`变量存储本库所依赖的所有库。所有的依赖都加入到该变量中。
+
+## 依赖配置步骤
+
+1. 使用cmake函数查找依赖的库
+2. 将依赖库添加到`${KMCMAKE_DEPS_LINK}`中
+
+:::info
+kumo体系的库都可以使用find_package查找相应的库。并且规范为find_package(some_lib REQUIRED)。
+所有的库都会导出`some_lib：：some_module_static`和`some_lib：：some_module_shared`。
+:::
+
+### find_package {#find-package}
+
+find_package是cmake提供的函数，`find_package(some_lib REQUIRED)`检查库是否存在。每个库的写法并不
+固定，如gtest为
+
+```cmake
+find_package(GTest REQUIRED)
+```
+导出`GTest::gtest`, `GTest::gtest_main`, `GTest::gmock`, `GTest::gmock_main`。
+而turbo为
+```cmake
+find_package(turbo REQUIRED)
+```
+
+导出`turbo::turbo_static`以及`turbo::turbo_shared`。
+
+kumo自研的库都可以按照`turbo`的形式使用，这是`Kumo`的规范，第三方库，请查阅相应的资料。
+
+示例：
+添加`turbo`依赖
+
+<Tabs>
+    <TabItem value="deps-cmake" label="deps.cmake">
+        ```cmake
+        ...
+        find_package(Threads REQUIRED)
+        find_package(turbo REQUIRED)
+        ############################################################
+        #
+        # add you libs to the KMCMAKE_DEPS_LINK variable eg as turbo
+        # so you can and system pthread and rt, dl already add to
+        # KMCMAKE_SYSTEM_DYLINK, using it for fun.
+        ##########################################################
+        set(KMCMAKE_DEPS_LINK
+            turbo::turbo_static
+            ${KMCMAKE_SYSTEM_DYLINK}
+        )
+        ```
+    </TabItem>
+    <TabItem value="using-cmake" label="CMakeLists.txt">
+        ```cmake
+        ...
+        kmcmake_cc_library(
+            NAMESPACE ${PROJECT_NAME}
+            NAME foo
+            SOURCES
+            foo.cc
+            CXXOPTS
+            ${KMCMAKE_CXX_OPTIONS}
+            PLINKS
+            ${KMCMAKE_DEPS_LINK}
+            PUBLIC
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+### find_library {#find-library}
+
+`find_package`依赖于cmake的对象导出，某些第三方库并不是cmake构建，或者cmake构建但是并未导出相应的
+对象，此时cmake提供了`find_library`方法来查找库。
+
+参数：
+- OUTPUT_VAR 导出的变量，如果查找的库存在，此变量实际存储的是库的路径
+- NAMES 库文件名 如`turbo`,cmake会自动为您扩展为`libturbo.so` `libturbo.a`。如果输入为`libturbo.a`，系统不会扩展。
+  其他平台的库cmake会自动为您扩展为该平台的扩展名。
+- HINTS 最优先查找的路径
+- PATHS 查找路径
+
+示例:
+
+```cmake
+find_library(GFLAGS_STATIC_LIB NAMES libgflags.a)
+```
+判断是否找到
+
+```cmake
+if(NOT GFLAGS_STATIC_LIB)
+    message(STATUS "not find gflags library")
+else()
+    message(STATUS "find gflags library at: ${GFLAGS_STATIC_LIB}")
+endif()
+```
+
+完整示例：
+
+<Tabs>
+    <TabItem value="deps-cmake" label="deps.cmake">
+        ```cmake
+        ...
+        find_package(Threads REQUIRED)
+        find_library(GFLAGS_STATIC_LIB NAMES libgflags.a)
+        if(NOT GFLAGS_STATIC_LIB)
+            message(FATAL_ERROR "not find gflags library")
+        else()
+            message(STATUS "find gflags library at: ${GFLAGS_STATIC_LIB}")
+        endif()
+        ############################################################
+        #
+        # add you libs to the KMCMAKE_DEPS_LINK variable eg as turbo
+        # so you can and system pthread and rt, dl already add to
+        # KMCMAKE_SYSTEM_DYLINK, using it for fun.
+        ##########################################################
+        set(KMCMAKE_DEPS_LINK
+            ${GFLAGS_STATIC_LIB}
+            ${KMCMAKE_SYSTEM_DYLINK}
+        )
+        ```
+    </TabItem>
+    <TabItem value="using-cmake" label="CMakeLists.txt">
+        ```cmake
+        ...
+        kmcmake_cc_library(
+        NAMESPACE ${PROJECT_NAME}
+        NAME foo
+        SOURCES
+        foo.cc
+        CXXOPTS
+        ${KMCMAKE_CXX_OPTIONS}
+        PLINKS
+        ${KMCMAKE_DEPS_LINK}
+        PUBLIC
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+## 关于搜索路径
+
+cmake 的`find_*`函数的搜索路径包括
+
+* `find_*`函数的`HINTS`变量里的路径
+* `CMAKE_PREFIX_PATH`变量里的路径
+* 系统路径 如`/usr` `/usr/local`
+* `find_*`函数的`PATHS`变量里的路径
+
+:::warning 重要
+`CMAKE_PREFIX_PATH` 变量是个路径的列表，注意直接使用`set(CMAKE_PREFIX_PATH xxxxx)`会替换掉
+原来的路径，导致部分库在`find_*`时失败。如果要增加路径请使用`list(APPEND CMAKE_PREFIX_PATH xxxxx)`
+:::

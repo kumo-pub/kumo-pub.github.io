@@ -1,0 +1,60 @@
+# `main()`入口
+
+## main() 入口点 {#doctest_config_implement_with_main}
+
+在 C++ 中编写测试的常用方法始终是将测试代码与单独的源文件分开，形成仅包含测试的可执行文件。在这种情况下，由 **doctest** 提供的默认 ```main()``` 通常就足够了：
+
+```c++
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "doctest.h"
+```
+这应该在一个源文件中完成，甚至最好在一个单独的文件中执行此操作，其中不包含任何其他内容。
+
+但是，如果您需要更多控制 - 想要将代码设置为执行上下文的选项，或者想要将框架集成到
+生产代码中 - 那么默认的 `main()` 就无法完成这项工作。在这种情况下，请使用 [**```DOCTEST_CONFIG_IMPLMENT````**](configuration.mdx#doctest_config_implement)。
+
+所有的 [**命令行**](commandline.mdx) 选项都可以这样设置（标志不能，因为它没有意义）。过滤器
+只能使用`doctest::Context`对象的`addFilter()`或`clearFilters()`方法添加或清除 - 用户无法删除特定的过滤器与代码。
+
+```c++
+#define DOCTEST_CONFIG_IMPLEMENT
+#include "doctest.h"
+
+int main(int argc, char** argv) {
+    doctest::Context context;
+
+    // !!! THIS IS JUST AN EXAMPLE SHOWING HOW DEFAULTS/OVERRIDES ARE SET !!!
+
+    // defaults
+    context.addFilter("test-case-exclude", "*math*"); // exclude test cases with "math" in their name
+    context.setOption("abort-after", 5);              // stop test execution after 5 failed assertions
+    context.setOption("order-by", "name");            // sort the test cases by their name
+
+    context.applyCommandLine(argc, argv);
+
+    // overrides
+    context.setOption("no-breaks", true);             // don't break in the debugger when assertions fail
+
+    int res = context.run(); // run
+
+    if(context.shouldExit()) // important - query flags (and --exit) rely on the user doing this
+        return res;          // propagate the result of the tests
+    
+    int client_stuff_return_code = 0;
+    // your program - if the testing framework is integrated in your production code
+    
+    return res + client_stuff_return_code; // the result from doctest is propagated here as well
+}
+
+```
+
+注意上下文中对 ```.shouldExit()``` 的调用 - 这非常重要 - 当使用查询标志时它将被设置（或者 ```--no-run``` 选项是设置为“true”），用户有责任以正常方式退出应用程序。
+
+### Dealing with shared objects (DLLs)
+
+该框架可以在二进制文件（可执行文件/共享对象）中单独使用，每个文件都有自己的测试运行程序 - 这样甚至可以使用不同版本的 doctest - 但是没有简单的方法可以从所有加载的二进制文件执行测试并具有结果汇总并总结。
+
+还有一个选项可以通过导出其公共符号（用户编写测试所需的符号 - 所有前向声明）来将测试运行器（实现）构建为二进制文件并与其他人共享（因此有一个测试注册表）框架）。
+
+有关该检查的更多信息，请查看 [**```DOCTEST_CONFIG_IMPLMENTATION_IN_DLL```**](configuration.mdx#doctest_config_implementation_in_dll) 配置标
+识符和 [**这个示例**](https://gitee.com/kumo-hub/doctest/tree/master/examples/executable_dll_and_plugin/)。

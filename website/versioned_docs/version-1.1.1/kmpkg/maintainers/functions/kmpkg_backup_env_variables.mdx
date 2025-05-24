@@ -1,0 +1,31 @@
+---
+date: 01/10/2024
+---
+
+# 函数： kmpkg_backup_env_variables
+
+备份一组环境变量。
+
+## 使用情况
+
+```cmake
+kmpkg_backup_env_variables(VARS [<environment-variable>...])
+```
+
+### VARS
+
+要备份的变量。
+
+## 说明
+
+Variables are backed up into the current scope. You must call [`kmpkg_restore_env_variables()`](kmpkg_restore_env_variables.md from the same scope as `kmpkg_backup_env_variables()`.
+
+`kmpkg_restore_env_variables()` does not destroy the variables backed up with `kmpkg_backup_env_variables()` and so can be called multiple times within the same scope to reset back to the original values.
+
+变量将备份到当前作用域内。 必须从与 `kmpkg_restore_env_variables()` 相同的作用域调用 `kmpkg_restore_env_variables()`。
+
+`kmpkg_restore_env_variables()`不会销毁使用 `kmpkg_restore_env_variables()` 备份的变量，因此可以在同一作用域内多次调用，以重置回原始值。
+
+## Source
+
+[scripts/cmake/kmpkg\_backup\_restore\_env\_vars.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_backup_restore_env_vars.cmake)

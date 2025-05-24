@@ -1,0 +1,2211 @@
+# ktest 高级教程
+
+## 介绍 {#introduction}
+
+现在您已经阅读了 [kumotest Primer](primer.mdx) 并了解了如何使用 kumotest 编写测试，是时候学习一些新技巧了。本文件
+将向您展示更多断言以及如何构建复杂的失败消息，传播致命故障，重用并加速您的测试装置，以及
+在测试中使用各种标志。
+
+## 更多断言 {#more-assertions}
+
+本节涵盖了一些不太常用但仍然很重要的内容，断言。
+
+### 明确的成功和失败 {#explicit-success-and-failure}
+
+请参阅[显式成功和失败](reference/assertions.mdx#success-failure)断言参考。
+
+### 异常断言 {#exception-assertions}
+
+请参阅断言中的[异常断言](reference/assertions.mdx#exceptions)参考。
+
+### 谓词断言以获得更好的错误消息 {#predicate-assertions-for-better-error-messages}
+
+尽管 kumotest 有一套丰富的断言，但它们永远不可能完整，因为不可能（也不是一个好主意）预测用户可能出现的所有场景
+遇到。因此，有时用户必须使用`EXPECT_TRUE()`来检查复杂的表达，缺乏更好的宏。这有一个问题不
+向您显示表达式各部分的值，使其很难了解出了什么问题。作为解决方法，一些用户选择构建
+失败消息本身，将其流式传输到`EXPECT_TRUE()`。然而，这很尴尬，尤其是当表达式有副作用或成本高昂时
+评价。
+
+kumotest 为您提供了三种不同的选项来解决此问题：
+
+#### 使用现有的布尔函数 {#using-an-existing-boolean-function}
+
+如果您已经有一个返回`bool`的函数或函子（或一个类型）可以隐式转换为 `bool`)，您可以在 *谓词中使用它
+断言* 免费打印函数参数。看断言中的 [`EXPECT_PRED*`](reference/assertions.mdx#EXPECT_PRED)
+详细参考。
+
+#### 使用返回 AssertionResult 的函数 {#using-a-function-that-returns-an-assertionresult}
+
+虽然`EXPECT_PRED*()`和朋友可以方便地快速完成工作，但语法并不令人满意：您必须对不同的参数使用不同的宏，并且它
+感觉更像 Lisp 而不是 C++。 `::testing::AssertionResult` 类解决了
+这个问题。
+
+`AssertionResult` 对象表示断言的结果（无论是成功或失败，以及相关消息）。您可以创建一个
+`AssertionResult` 使用以下工厂函数之一：
+
+```c++
+namespace testing {
+
+// Returns an AssertionResult object to indicate that an assertion has
+// succeeded.
+AssertionResult AssertionSuccess();
+
+// Returns an AssertionResult object to indicate that an assertion has
+// failed.
+AssertionResult AssertionFailure();
+
+}
+```
+
+然后，您可以使用`<<`运算符将消息流式传输到`AssertionResult`目的。
+
+为了在布尔断言中提供更具可读性的消息（例如`EXPECT_TRUE()`），
+编写一个返回 `AssertionResult` 而不是 `bool` 的谓词函数。为了
+例如，如果将 `IsEven()` 定义为：
+
+```c++
+testing::AssertionResult IsEven(int n) {
+  if ((n % 2) == 0)
+    return testing::AssertionSuccess();
+  else
+    return testing::AssertionFailure() << n << " is odd";
+}
+```
+
+而不是：
+
+```c++
+bool IsEven(int n) {
+  return (n % 2) == 0;
+}
+```
+
+失败的断言`EXPECT_TRUE(IsEven(Fib(4)))`将打印：
+
+```none
+Value of: IsEven(Fib(4))
+  Actual: false (3 is odd)
+Expected: true
+```
+
+而不是更不透明的
+
+```none
+Value of: IsEven(Fib(4))
+  Actual: false
+Expected: true
+```
+
+如果您还想要`EXPECT_FALSE`和`ASSERT_FALSE`中的信息性消息
+（Kumo 代码库中三分之一的布尔断言是负断言），以及
+在成功的情况下可以让谓词变慢，你可以提供
+成功消息：
+
+```c++
+testing::AssertionResult IsEven(int n) {
+  if ((n % 2) == 0)
+    return testing::AssertionSuccess() << n << " is even";
+  else
+    return testing::AssertionFailure() << n << " is odd";
+}
+```
+
+然后将打印语句`EXPECT_FALSE(IsEven(Fib(6)))`
+
+```none
+  Value of: IsEven(Fib(6))
+     Actual: true (8 is even)
+  Expected: false
+```
+
+#### 使用谓词格式化程序 {#using-a-predicate-formatter}
+
+如果您发现生成的默认消息
+[`EXPECT_PRED*`](reference/assertions.mdx#EXPECT_PRED) 和
+[`EXPECT_TRUE`](reference/assertions.mdx#EXPECT_TRUE) 不满意，或者有些
+您的谓词的参数不支持流式传输到`ostream`，您可以
+相反，使用*谓词格式化程序断言*来*完全*自定义
+消息已格式化。看
+[`EXPECT_PRED_FORMAT*`](reference/assertions.mdx#EXPECT_PRED_FORMAT) 在
+断言参考了解详细信息。
+
+### 浮点比较 {#floating-point-comparison}
+
+请参阅 [浮点比较](reference/assertions.mdx#floating-point)断言参考。
+
+#### 浮点谓词格式函数 {#floating-point-predicate-format-functions}
+
+一些浮点运算很有用，但不常用。为了避免新宏的爆炸，我们将它们作为谓词格式函数提供
+可以在谓词断言宏中使用
+[`EXPECT_PRED_FORMAT2`](reference/assertions.mdx#EXPECT_PRED_FORMAT)，对于
+例子：
+
+```c++
+using ::testing::FloatLE;
+using ::testing::DoubleLE;
+...
+EXPECT_PRED_FORMAT2(FloatLE, val1, val2);
+EXPECT_PRED_FORMAT2(DoubleLE, val1, val2);
+```
+
+上面的代码验证`val1`小于或大约等于`val2`。
+
+### 使用 kMock 匹配器进行断言 {#asserting-using-kmock-matchers}
+
+请参阅断言中的 [`EXPECT_THAT`](reference/assertions.mdx#EXPECT_THAT)
+参考。
+
+### 更多字符串断言 {#more-string-assertions}
+
+（请先阅读[上一篇](#asserting-using-kmock-matchers)部分，如果你没有。）
+
+您可以使用 kMock [字符串匹配器](reference/matchers.mdx#string-matchers)
+使用 [`EXPECT_THAT`](reference/assertions.mdx#EXPECT_THAT) 执行更多字符串
+比较技巧（子字符串、前缀、后缀、正则表达式等）。为了例子，
+
+```c++
+using ::testing::HasSubstr;
+using ::testing::MatchesRegex;
+...
+  ASSERT_THAT(foo_string, HasSubstr("needle"));
+  EXPECT_THAT(bar_string, MatchesRegex("\\w*\\d+"));
+```
+
+### Windows HRESULT 断言 {#windows-HRESULT-assertions}
+
+请参阅 [Windows HRESULT 断言](reference/assertions.mdx#HRESULT)断言参考。
+
+### 类型断言 {#type-assertions}
+
+您可以调用该函数
+
+```c++
+::testing::StaticAssertTypeEq<T1, T2>();
+```
+
+断言类型`T1`和`T2`是相同的。该函数不执行任何操作，如果断言得到满足。如果类型不同，函数调用将
+编译失败，编译器错误信息会说`T1和T2不是相同类型`并且最有可能（取决于编译器）向您显示实际的
+`T1`和`T2`的值。这主要在模板代码中有用。
+
+**警告**：在类模板或函数的成员函数内部使用时
+模板中， `StaticAssertTypeEq<T1, T2>()` 仅当函数为
+实例化。例如，给定：
+
+```c++
+template <typename T> class Foo {
+ public:
+  void Bar() { testing::StaticAssertTypeEq<int, T>(); }
+};
+```
+
+代码：
+
+```c++
+void Test1() { Foo<bool> foo; }
+```
+
+不会生成编译器错误，因为 `Foo<bool>::Bar()` 实际上永远不会
+实例化。相反，您需要：
+
+```c++
+void Test2() { Foo<bool> foo; foo.Bar(); }
+```
+
+to cause a compiler error.
+
+### 断言放置 {#assertion-placement}
+
+您可以在任何 C++ 函数中使用断言。特别是，它不必是
+测试夹具类的方法。一个限制是断言
+生成致命故障（`FAIL*`和`ASSERT_*`）只能用于
+返回 void 的函数。这是 Kumo 不使用的结果
+例外情况。通过将其放在非 void 函数中，您将得到令人困惑的编译
+错误就像`"error: void value not ignored as it ought to be"` 或 `"cannot
+initialize return object of type 'bool' with an rvalue of type 'void'"` 或者
+`"error: no viable conversion from 'void' to 'string'"`。
+
+如果您需要在返回非 void 的函数中使用致命断言，则一
+选项是让函数返回输出参数中的值。为了
+例如，您可以将 `T2 Foo(T1 x)` 重写为 `void Foo(T1 x, T2* result)`。你
+需要确保“*结果”包含一些合理的值，即使
+函数提前返回。由于该函数现在返回 `void`，您可以使用
+其中的任何断言。
+
+
+如果无法更改函数的类型，则应该使用断言产生非致命故障，例如`ADD_FAILURE*`和`EXPECT_*`。
+
+:::info
+注意：构造函数和析构函数不被视为返回 void 的函数，
+根据C++语言规范，所以你不能使用 fatal
+其中的断言；如果你尝试的话，你会得到一个编译错误。相反，要么
+调用`abort`并使整个测试可执行文件崩溃，或者将致命断言放入
+`SetUp`/`TearDown` 函数；看
+[构造函数/析构函数与 `SetUp`/`TearDown`](faq.mdx#CtorVsSetUp)
+:::
+
+:::warning
+警告：辅助函数中的致命断言（私有 void 返回方法）
+从构造函数或析构函数调用不会终止当前测试，因为
+你的直觉可能会建议：它只是从构造函数返回或
+尽早析构函数，可能会将您的对象留在部分构造或
+部分破坏状态！您几乎肯定想要`abort`或使用
+改为`SetUp`/`TearDown`。
+:::
+## 跳过测试执行 {#skipping-test-execution}
+
+与断言`SUCCEED()`和`FAIL()`相关，您可以阻止进一步的测试在运行时使用`KTEST_SKIP()`宏执行。当你需要时这很有用
+在运行时检查被测系统的先决条件并跳过以有意义的方式进行测试。
+
+`KTEST_SKIP()` 可以在单独的测试用例或 `SetUp()` 方法中使用从 `::testing::Environment` 或 `::testing::Test` 派生的类。
+
+例如：
+
+```c++
+TEST(SkipTest, DoesSkip) {
+  KTEST_SKIP() << "Skipping single test";
+  EXPECT_EQ(0, 1);  // Won't fail; it won't be executed
+}
+
+class SkipFixture : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    KTEST_SKIP() << "Skipping all tests for this fixture";
+  }
+};
+
+// Tests for SkipFixture won't be executed.
+TEST_F(SkipFixture, SkipsOneTest) {
+  EXPECT_EQ(5, 7);  // Won't fail
+}
+```
+
+与断言宏一样，您可以将自定义消息流式传输到`KTEST_SKIP()`中。
+
+## 指导 kumotest 如何打印你的价值 {#teaching-kumotest-how-to-print-your-values}
+
+当诸如`EXPECT_EQ`之类的测试断言失败时，kumotest 会打印参数值来帮助您调试。它使用用户可扩展的价值打印机来完成此操作。
+
+该打印机知道如何打印内置 C++ 类型、本机数组、STL容器以及任何支持 `<<` 运算符的类型。对于其他类型，它
+打印值中的原始字节，并希望用户能够弄清楚。
+
+如前所述，打印机是*可扩展的*。这意味着你可以教它比转储字节更好地打印您的特定类型。到为此，为您的类型定义`<<`：
+
+```c++
+#include <ostream>
+
+namespace foo {
+
+class Bar {  // We want kumotest to be able to print instances of this.
+...
+  // Create a free inline friend function.
+  friend std::ostream& operator<<(std::ostream& os, const Bar& bar) {
+    return os << bar.DebugString();  // whatever needed to print bar to os
+  }
+};
+
+// If you can't declare the function in the class it's important that the
+// << operator is defined in the SAME namespace that defines Bar.  C++'s look-up
+// rules rely on that.
+std::ostream& operator<<(std::ostream& os, const Bar& bar) {
+  return os << bar.DebugString();  // whatever needed to print bar to os
+}
+
+}  // namespace foo
+```
+
+有时，这可能不是一个选择：您的团队可能认为这样做是不好的风格对于`Bar`有一个`<<`运算符，或者`Bar`可能已经有一个`<<`运算符
+不做你想做的事（而且你无法改变它）。如果是这样，您可以改为定义一个 `PrintTo()` 函数，如下所示：
+
+```c++
+#include <ostream>
+
+namespace foo {
+
+class Bar {
+  ...
+  friend void PrintTo(const Bar& bar, std::ostream* os) {
+    *os << bar.DebugString();  // whatever needed to print bar to os
+  }
+};
+
+// If you can't declare the function in the class it's important that PrintTo()
+// is defined in the SAME namespace that defines Bar.  C++'s look-up rules rely
+// on that.
+void PrintTo(const Bar& bar, std::ostream* os) {
+  *os << bar.DebugString();  // whatever needed to print bar to os
+}
+
+}  // namespace foo
+```
+
+如果您同时定义了 `<<` 和 `PrintTo()`，则在以下情况下将使用后者kumotest 很关心。这允许您自定义值的显示方式
+kumotest 的输出不会影响依赖于其行为的代码`<<` 运算符。
+
+如果您想自己使用 kumotest 的值打印机打印值`x`，只需调用`::testing::PrintToString(x)`，它返回一个`std::string`：
+
+```c++
+vector<pair<Bar, int> > bar_ints = GetBarIntVector();
+
+EXPECT_TRUE(IsCorrectBarIntVector(bar_ints))
+    << "bar_ints = " << testing::PrintToString(bar_ints);
+```
+
+## 死亡测试 {#death-tests}
+
+在许多应用程序中，如果存在断言，则可能会导致应用程序失败
+不满足条件。这些一致性检查可确保程序
+处于已知的良好状态，之后是否会尽早出现故障
+某些程序状态已损坏。如果断言检查了错误的条件，
+那么程序可能会在错误的状态下继续运行，这可能会导致内存
+腐败、安全漏洞或更糟。因此，测试这一点至关重要
+这样的断言语句按预期工作。
+
+由于这些前提条件检查会导致进程终止，因此我们将此类测试称为
+_死亡测试_。更一般地说，任何检查程序是否终止的测试
+（除了抛出异常）以预期的方式也是一个死亡测试。
+
+请注意，如果一段代码抛出异常，我们不认为它是“死亡”
+出于死亡测试的目的，因为代码的调用者可以捕获
+异常并避免崩溃。如果你想验证你的抛出的异常
+代码，请参阅[异常断言](#exception-assertions)。
+
+如果您想在测试代码中测试`EXPECT_*()/ASSERT_*()`失败，请参阅[`捕捉`失败](#catching-failures)。
+
+### 如何编写死亡测试 {#how-to-write-a-death-test}
+
+KumoTest 提供断言宏来支持死亡测试。看断言参考中的 [死亡断言](reference/assertions.mdx#death)
+了解详情。
+
+要编写死亡测试，只需使用测试函数中的宏之一即可。
+例如，
+
+```c++
+TEST(MyDeathTest, Foo) {
+  // This death test uses a compound statement.
+  ASSERT_DEATH({
+    int n = 5;
+    Foo(&n);
+  }, "Error on line .* of Foo()");
+}
+
+TEST(MyDeathTest, NormalExit) {
+  EXPECT_EXIT(NormalExit(), testing::ExitedWithCode(0), "Success");
+}
+
+TEST(MyDeathTest, KillProcess) {
+  EXPECT_EXIT(KillProcess(), testing::KilledBySignal(SIGKILL),
+              "Sending myself unblockable signal");
+}
+```
+
+验证：
+
+* 调用 `Foo(5)` 会导致进程终止并显示给定的错误消息，
+* 调用 `NormalExit()` 会导致进程将 `"Success"` 打印到 stderr 并以退出代码 0 退出，并且
+* 调用 `KillProcess()` 通过信号 `SIGKILL` 终止进程。
+
+测试函数体还可以包含其他断言和语句，如果必要的。
+
+请注意，死亡测试只关心三件事：
+
+1.`statement`是否中止或退出进程？
+2.（在`ASSERT_EXIT`和`EXPECT_EXIT`的情况下）执行退出状态满足`谓词`？或者（在`ASSERT_DEATH`和`EXPECT_DEATH`的情况下）
+退出状态非零吗？和
+3. stderr 输出是否与`matcher`匹配？
+
+特别是，如果`statement`生成`ASSERT_*`或`EXPECT_*`失败，则它不会**导致死亡测试失败，因为 kumotest 断言不会中止
+的过程。
+
+### 死亡测试命名 {#death-test-naming}
+
+:::warning 重要提示
+我们强烈建议您遵循命名约定
+**测试套件**（不是测试）*`DeathTest`*，当它包含死亡测试时，如
+在上面的例子中演示了。这
+下面的[死亡测试和线程](#death-tests-and-threads) 部分解释了原因。
+:::
+
+如果正常测试和死亡测试共享一个测试夹具类，则可以使用
+`using` 或 `typedef` 为夹具类引入别名并避免
+复制其代码：
+
+```c++
+class FooTest : public testing::Test { ... };
+
+using FooDeathTest = FooTest;
+
+TEST_F(FooTest, DoesThis) {
+  // normal test
+}
+
+TEST_F(FooDeathTest, DoesThat) {
+  // death test
+}
+```
+
+### 正则表达式语法 {#regular-expression-syntax}
+
+对于 POSIX 系统（Linux、Cygwin、Mac），kumotest 使用
+[POSIX扩展正则表达式](http://www.opengroup.org/onlinepubs/009695399/basedefs/xbd_chap09.html#tag_09_04)
+句法。要了解 POSIX 语法，您可能需要阅读此内容
+[维基百科条目](http://en.wikipedia.org/wiki/Regular_expression#POSIX_Extended_Regular_Expressions)。
+
+在 Windows 上，kumotest 使用自己的简单正则表达式实现。它缺乏许多功能。例如，我们不支持 union (`"x|y"`)、分组
+(`"(xy)"`)、括号 (`"[xy]"`) 和重复次数 (`"x{5,7}"`)，其中其他的。以下是我们支持的内容（“A”表示文字字符，句点
+(`.`)，或单个 `\\` 转义序列； `x` 和 `y` 表示正则表达式。）：
+
+表达式 | 意义
+---------- | --------------------------------------------------------------
+`c`        | 匹配任何文字字符“c”
+`\\d`      | 匹配任何十进制数字
+`\\D`      | 匹配任何非十进制数字的字符
+`\\f`      | 匹配`\f`
+`\\n`      | 匹配 `\n`
+`\\r`      | 匹配 `\r`
+`\\s`      | 匹配任何 ASCII 空格，包括 `\n`
+`\\S`      | 匹配任何不是空格的字符
+`\\t`      | 匹配 `\t`
+`\\v`      | 匹配 `\v`
+`\\w`      | 匹配任何字母、`_`或十进制数字
+`\\W`      | 匹配`\\w`不匹配的任何字符
+`\\c`      | 匹配任何文字字符`c`，它必须是标点符号
+`.`        | 匹配除`\n`之外的任何单个字符
+`A?`       | 匹配 0 或 1 次出现的`A`
+`A*`       | 匹配 0 次或多次出现的`A`
+`A+`       | 匹配 1 次或多次出现的`A`
+`^`        | 匹配字符串的开头（不是每行的开头）
+`$`        | 匹配字符串的结尾（不是每一行的结尾）
+`xy`       | 匹配`x`后跟`y`
+
+为了帮助您确定系统上可用的功能，kumotest
+定义宏来控制它使用的正则表达式。宏是：
+`KTEST_USES_SIMPLE_RE=1` 或 `KTEST_USES_POSIX_RE=1`。如果你想要你的死
+测试在所有情况下都有效，您可以在这些宏上使用“#if”或使用 more
+仅有限语法。
+
+### 它是如何运作的 {#how-it-works}
+
+请参阅断言中的[死亡断言](reference/assertions.mdx#death)参考。
+
+### 死亡测试和线程 {#death-tests-and-threads}
+
+两种死亡测试风格的原因与线程安全有关。由于在线程存在的情况下分叉的众所周知的问题，死亡测试应该
+在单线程上下文中运行。然而，有时这是不可行的安排这样的环境。例如，静态初始化的模块
+可能会在到达 main 之前启动线程。一旦创建了线程，清理它们可能很困难或不可能。
+
+kumotest 具有三个旨在提高对线程问题的认识的功能。
+
+1. 死亡测试时，如果多个线程正在运行，则会发出警告遭遇。
+2. 名称以“DeathTest”结尾的测试套件在所有其他测试套件之前运行测试。
+3. 它使用 `clone()` 而不是 `fork()` 在 Linux 上生成子进程（`clone()` 在 Cygwin 和 Mac 上不可用），因为 `fork()` 更有可能
+当父进程有多个线程时导致子进程挂起。
+
+在死亡测试语句中创建线程是完全可以的；他们是在单独的进程中执行，不会影响父进程。
+
+### 死亡测试风格 {#death-test-styles}
+
+引入`threadsafe`死亡测试风格是为了帮助缓解在可能的多线程环境中进行测试的风险。交易量增加
+测试执行时间（可能会显着增加）以提高线程安全性。
+
+自动化测试框架不设置样式标志。您可以选择一个通过以编程方式设置标志来进行特定类型的死亡测试：
+
+
+```c++
+KTEST_FLAG_SET(death_test_style, "threadsafe")
+```
+
+您可以在`main()`中执行此操作来设置二进制文件中所有死亡测试的样式，或在个别测试中。回想一下，在运行每个测试之前会保存标志
+之后恢复，因此您无需自己执行此操作。例如：
+
+```c++
+int main(int argc, char** argv) {
+  testing::InitKumoTest(&argc, argv);
+  KTEST_FLAG_SET(death_test_style, "fast");
+  return RUN_ALL_TESTS();
+}
+
+TEST(MyDeathTest, TestOne) {
+  KTEST_FLAG_SET(death_test_style, "threadsafe");
+  // This test is run in the "threadsafe" style:
+  ASSERT_DEATH(ThisShouldDie(), "");
+}
+
+TEST(MyDeathTest, TestTwo) {
+  // This test is run in the "fast" style:
+  ASSERT_DEATH(ThisShouldDie(), "");
+}
+```
+
+### 注意事项 {#caveats}
+
+`ASSERT_EXIT()`的`statement`参数可以是任何有效的 C++ 语句。如果
+它通过`return`语句或抛出一个离开当前函数
+例外，死亡测试被认为失败。一些 kumotest 宏
+可能从当前函数返回（例如`ASSERT_TRUE()`），所以一定要避免
+他们在`statement`中。
+
+由于`statement`在子进程中运行，任何内存中的副作用（例如
+修改变量、释放内存等）会导致`不`被观察到
+在父进程中。特别是，如果你在死亡测试中释放记忆，
+您的程序将无法通过堆检查，因为父进程永远不会看到
+记忆被回收。要解决这个问题，您可以
+
+1. 死亡测试中尽量不要释放内存；
+2. 在父进程中再次释放内存；或者
+3. 不要在程序中使用堆检查器。
+
+
+由于实现细节，您无法放置多个死亡测试断言在同一条线上；否则，编译将失败并出现不明显的错误
+信息。
+
+尽管`"threadsafe"`死亡方式提高了线程安全性测试发现，在存在以下情况的情况下，仍然可能出现死锁等线程问题
+使用`“pthread_atfork(3)”`注册的处理程序。
+
+## 在子例程中使用断言 {#using-assertions-in-sub-routines}
+
+:::info
+如果你想在子程序中放入一系列测试断言来检查
+对于复杂的条件，请考虑使用
+[自定义 KMock 匹配器](kmock_cook_book.mdx#NewMatchers)。这可以让你
+在发生故障时提供更具可读性的错误消息并避免所有
+问题如下所述。
+:::
+
+### 向断言添加跟踪 {#adding-traces-to-assertions}
+
+如果从多个地方调用测试子例程，当其中的断言失败，很难判断失败的是子例程的哪个调用
+从。您可以使用额外的日志记录或自定义失败来缓解此问题消息，但这通常会让你的测试变得混乱。更好的解决方案是使用
+`SCOPED_TRACE` 宏或 `ScopedTrace` 实用程序：
+
+```c++
+SCOPED_TRACE(message);
+```
+
+```c++
+ScopedTrace trace("file_path", line_number, message);
+```
+
+其中`message`可以是任何可流式传输到`std::ostream`的内容。 `范围跟踪`
+宏将导致当前文件名、行号和给定消息
+添加到每个失败消息中。 `ScopedTrace` 接受明确的文件名并且
+参数中的行号，这对于编写测试助手很有用。效果
+当控件离开当前词法范围时将被撤消。
+
+例如，
+
+```c++
+10: void Sub1(int n) {
+11:   EXPECT_EQ(Bar(n), 1);
+12:   EXPECT_EQ(Bar(n + 1), 2);
+13: }
+14:
+15: TEST(FooTest, Bar) {
+16:   {
+17:     SCOPED_TRACE("A");  // This trace point will be included in
+18:                         // every failure in this scope.
+19:     Sub1(1);
+20:   }
+21:   // Now it won't.
+22:   Sub1(9);
+23: }
+```
+
+could result in messages like these:
+
+```none
+path/to/foo_test.cc:11: Failure
+Value of: Bar(n)
+Expected: 1
+  Actual: 2
+Kumo Test trace:
+path/to/foo_test.cc:17: A
+
+path/to/foo_test.cc:12: Failure
+Value of: Bar(n + 1)
+Expected: 2
+  Actual: 3
+```
+
+如果没有痕迹，就很难知道是哪个调用两次失败分别来自`Sub1()`。 （您可以添加一个额外的
+向`Sub1()`中的每个断言发送消息以指示`n`的值，但那就是乏味。）
+
+关于使用`SCOPED_TRACE`的一些提示：
+
+1. 有了合适的消息，通常使用`SCOPED_TRACE`就足够了
+子例程的开始，而不是在每个调用站点。
+2. 在循环内调用子例程时，使循环迭代器成为循环迭代器的一部分
+`SCOPED_TRACE` 中的消息，以便您可以知道哪个迭代失败
+是从.
+3. 有时跟踪点的行号足以识别
+子例程的特殊调用。在这种情况下，您不必
+为`SCOPED_TRACE`选择一个唯一的消息。您可以简单地使用`""`。
+4. 当外部作用域中有一个时，您可以在内部作用域中使用`SCOPED_TRACE`
+范围。在这种情况下，所有活动跟踪点都将包含在故障中
+消息，按照它们遇到的相反顺序。
+5. 跟踪转储在 Emacs 中是可点击的 - 在行号上点击`return`并
+您将被带到源文件中的该行！
+
+### 传播致命故障 {#propagating-fatal-failures}
+
+使用`ASSERT_*`和`FAIL*`时的一个常见陷阱是不理解当它们失败时，它们只会中止_当前函数_，而不是整个测试。为了
+例如，以下测试将出现段错误：
+
+```c++
+void Subroutine() {
+  // Generates a fatal failure and aborts the current function.
+  ASSERT_EQ(1, 2);
+
+  // The following won't be executed.
+  ...
+}
+
+TEST(FooTest, Bar) {
+  Subroutine();  // The intended behavior is for the fatal failure
+                 // in Subroutine() to abort the entire test.
+
+  // The actual behavior: the function goes on after Subroutine() returns.
+  int* p = nullptr;
+  *p = 3;  // Segfault!
+}
+```
+
+为了缓解这个问题，kumotest 提供了三种不同的解决方案。你可以使用异常、`(ASSERT|EXPECT)_NO_FATAL_FAILURE`断言或
+`HasFatalFailure()` 函数。它们在下面两个中描述小节。
+
+#### 对有异常的子例程进行断言 {#asserting-on-subroutines-with-an-exception}
+
+以下代码可以将 ASSERT-failure 转变为异常：
+
+```c++
+class ThrowListener : public testing::EmptyTestEventListener {
+  void OnTestPartResult(const testing::TestPartResult& result) override {
+    if (result.type() == testing::TestPartResult::kFatalFailure) {
+      throw testing::AssertionException(result);
+    }
+  }
+};
+int main(int argc, char** argv) {
+  ...
+  testing::UnitTest::GetInstance()->listeners().Append(new ThrowListener);
+  return RUN_ALL_TESTS();
+}
+```
+
+如果有其他侦听器，则应将此侦听器添加到其他侦听器之后，否则
+他们不会看到失败的`OnTestPartResult`。
+
+#### 对子例程进行断言 {#asserting-on-subroutines}
+
+如上所示，如果您的测试调用一个出现 `ASSERT_*` 失败的子例程其中，子程序返回后测试将继续。这可能不是什么
+你想要的。
+
+人们常常希望致命的失败像异常一样传播。为此kumotest 提供以下宏：
+
+Fatal assertion                       | Nonfatal assertion                    | Verifies
+------------------------------------- | ------------------------------------- | --------
+`ASSERT_NO_FATAL_FAILURE(statement);` | `EXPECT_NO_FATAL_FAILURE(statement);` | `statement` doesn't generate any new fatal failures in the current thread.
+
+仅检查执行断言的线程中的失败以确定此类断言的结果。如果`statement`创建新线程，
+这些线程中的失败将被忽略。
+
+示例：
+
+```c++
+ASSERT_NO_FATAL_FAILURE(Foo());
+
+int i;
+EXPECT_NO_FATAL_FAILURE({
+  i = Bar();
+});
+```
+
+Windows 当前不支持来自多个线程的断言。
+
+#### 检查当前测试中的失败 {#checking-for-failures-in-the-current-test}
+
+如果满足以下条件，则 `::testing::Test` 类中的 `HasFatalFailure()` 返回 `true`
+当前测试中的断言遭遇了致命的失败。这允许函数捕获子例程中的致命故障并提前返回。
+
+```c++
+class Test {
+ public:
+  ...
+  static bool HasFatalFailure();
+};
+```
+
+典型用法，基本上模拟抛出异常的行为，是：
+
+```c++
+TEST(FooTest, Bar) {
+  Subroutine();
+  // Aborts if Subroutine() had a fatal failure.
+  if (HasFatalFailure()) return;
+
+  // The following won't be executed.
+  ...
+}
+```
+
+如果在`TEST()`、`TEST_F()`或测试之外使用`HasFatalFailure()`
+固定装置，您必须添加 `::testing::Test::` 前缀，如下所示：
+
+```c++
+if (testing::Test::HasFatalFailure()) return;
+```
+
+类似地，如果当前测试已达到，则`HasNonfatalFailure()`返回`true`至少一个非致命故障，并且如果当前失败，则`HasFailure()`返回`true`
+测试至少有一次失败。
+
+## 记录附加信息 {#logging-additional-nformation}
+
+在您的测试代码中，您可以调用 `RecordProperty("key", value)` 来记录其他
+信息，其中`value`可以是字符串或`int`。 *最后*值
+记录的密钥将被发送到[XML 输出](#generate-an-xml-report)（如果您指定）。例如，
+测试
+
+```c++
+TEST_F(WidgetUsageTest, MinAndMaxWidgets) {
+  RecordProperty("MaximumWidgets", ComputeMaxUsage());
+  RecordProperty("MinimumWidgets", ComputeMinUsage());
+}
+```
+
+将输出如下 XML：
+
+```xml
+  ...
+    <testcase name="MinAndMaxWidgets" file="test.cpp" line="1" status="run" time="0.006" classname="WidgetUsageTest" MaximumWidgets="12" MinimumWidgets="9" />
+  ...
+```
+
+:::info
+* `RecordProperty()` 是 `Test` 类的静态成员。因此它如果在外部使用，则需要以 `::testing::Test::` 为前缀
+   `TEST` 主体和测试夹具类。
+* *`key`* 必须是有效的XML属性名称，并且不能与
+   kumotest 已经使用的（`name`、`status`、`time`、`classname`、
+   `type_param` 和 `value_param`）。
+* 允许在测试的生命周期之外调用 `RecordProperty()`。
+  如果在测试之外但在测试套件之间调用它`SetUpTestSuite()` 和 `TearDownTestSuite()` 方法，它将是
+  归因于测试套件的 XML 元素。如果是外面叫的话在所有测试套件中（例如在测试环境中），它将归因于顶级 XML 元素。
+:::
+
+## 在同一测试套件中的测试之间共享资源 {#sharing-resources-between-tests-in-the-same-test-suite}
+
+kumotest 为每个测试创建一个新的测试夹具对象，以便测试独立且更易于调试。然而，有时测试会使用资源
+设置成本高昂，使得每次测试一份副本的模型令人望而却步昂贵的。
+
+如果测试不改变资源，那么共享资源也没有什么坏处。单个资源副本。因此，除了每个测试的`set-up/tear-down`之外，kumotest
+还支持每个测试套件的设置/拆卸。使用方法：
+
+1. 在您的测试装置类（例如 `FooTest` ）中，将某个成员声明为 `static`保存共享资源的变量。
+2. 在测试夹具类之外（通常就在它的下面），定义那些成员变量，可以选择给它们初始值。
+3. 在同一个测试夹具类中，定义一个`static void SetUpTestSuite()`函数（记住不要将其拼写为 **`SetupTestSuite`** 并带有一个小
+`u`!) 设置共享资源和 `static void TearDownTestSuite()`功能来拆除它们。
+
+就是这样！ kumotest 在运行之前会自动调用 `SetUpTestSuite()` `FooTest`测试套件中的*第一个测试*（即在创建第一个
+`FooTest` 对象），并在运行*最后一个测试*后调用 `TearDownTestSuite()`其中（即删除最后一个`FooTest`对象后）。在这之间，测试可以
+使用共享资源。
+
+请记住，测试顺序是未定义的，因此您的代码不能依赖于测试在另一个之前或之后。此外，测试不得修改状态
+任何共享资源的状态，或者，如果他们确实修改了状态，则必须恢复在将控制权传递给下一个测试之前，将状态恢复为其原始值。
+
+
+请注意，对于一个测试装置，可能会多次调用`SetUpTestSuite()`具有派生类的类，因此您不应期望函数中包含代码
+主体仅运行一次。此外，派生类仍然可以访问共享的资源定义为静态成员，因此在使用时需要仔细考虑
+管理共享资源以避免内存泄漏。
+
+以下是每个测试套件`set-up`和`tear-down`的示例：
+```c++
+class FooTest : public testing::Test {
+ protected:
+  // Per-test-suite set-up.
+  // Called before the first test in this test suite.
+  // Can be omitted if not needed.
+  static void SetUpTestSuite() {
+    // Avoid reallocating static objects if called in subclasses of FooTest.
+    if (shared_resource_ == nullptr) {
+      shared_resource_ = new ...;
+    }
+  }
+
+  // Per-test-suite tear-down.
+  // Called after the last test in this test suite.
+  // Can be omitted if not needed.
+  static void TearDownTestSuite() {
+    delete shared_resource_;
+    shared_resource_ = nullptr;
+  }
+
+  // You can define per-test set-up logic as usual.
+  void SetUp() override { ... }
+
+  // You can define per-test tear-down logic as usual.
+  void TearDown() override { ... }
+
+  // Some expensive resource shared by all tests.
+  static T* shared_resource_;
+};
+
+T* FooTest::shared_resource_ = nullptr;
+
+TEST_F(FooTest, Test1) {
+  ... you can refer to shared_resource_ here ...
+}
+
+TEST_F(FooTest, Test2) {
+  ... you can refer to shared_resource_ here ...
+}
+```
+
+:::info 注意
+虽然上面的代码声明了`SetUpTestSuite()`受保护，但它可能
+有时有必要将其声明为公共，例如与
+`TEST_P`。
+:::
+## 全局 `Set-Up` 和 `Tear-Down` {#global-set-up-and-tear-down}
+
+正如您可以在测试级别和测试套件上进行设置和拆卸一样级别，您也可以在测试程序级别进行。方法如下。
+
+首先，子类化 `::testing::Environment` 类来定义测试
+环境，它知道如何设置和拆卸：
+
+```c++
+class Environment : public ::testing::Environment {
+ public:
+  ~Environment() override {}
+
+  // Override this to define how to set up the environment.
+  void SetUp() override {}
+
+  // Override this to define how to tear down the environment.
+  void TearDown() override {}
+};
+```
+
+然后，您通过 kumotest 注册环境类的实例调用 `::testing::AddGlobalTestEnvironment()` 函数：
+
+```c++
+Environment* AddGlobalTestEnvironment(Environment* env);
+```
+
+现在，当调用`RUN_ALL_TESTS()`时，它首先调用`SetUp()`方法
+每个环境对象，如果没有任何环境，则运行测试报告致命故障并且未调用`KTEST_SKIP()`。 `RUN_ALL_TESTS()`
+总是对每个环境对象调用 `TearDown()`，无论是否没有运行测试。
+
+注册多个环境对象就可以了。在这个套件中，他们的 `SetUp()`将按照它们注册的顺序被调用，并且它们的 `TearDown()` 将被
+以相反的顺序调用。
+
+请注意，kumotest 拥有已注册环境对象的所有权。因此**不要自行删除它们**。
+
+您应该在调用`RUN_ALL_TESTS()`之前调用`AddGlobalTestEnvironment()`，
+可能在`main()`中。如果你使用`ktest_main`，你需要先调用它`main()` 启动使其生效。实现此目的的一种方法是定义一个全局的
+像这样的变量：
+
+```c++
+testing::Environment* const foo_env =
+    testing::AddGlobalTestEnvironment(new FooEnvironment);
+```
+
+但是，我们强烈建议您编写自己的`main()`并调用`AddGlobalTestEnvironment()` 在那里，依赖于全局的初始化
+变量使代码难以阅读，并且可能会在注册时导致问题来自不同翻译单元的多个环境，并且这些环境有
+它们之间的依赖关系（请记住，编译器不保证顺序其中初始化来自不同翻译单元的全局变量）。
+
+## 值参数化测试 {#value-parameterized-tests}
+
+*值参数化测试*允许您使用不同的方式测试您的代码参数，而无需编写同一测试的多个副本。这在以下情况下很有用：
+多种情况，例如：
+
+* 你有一段代码，其行为受到一个或多个因素的影响命令行标志。您希望确保您的代码能够正确执行这些标志的各种值。
+* 您想要测试 OO 接口的不同实现。
+* 您想要通过各种输入测试您的代码（也称为数据驱动测试）。此功能很容易被滥用，因此请在使用时发挥良好的判断力它！
+
+### 如何编写值参数化测试 {#how-to-write-value-parameterized-tests}
+
+要编写值参数化测试，首先应该定义一个固定类。它必须从 `testing::Test` 和 `testing::WithParamInterface<T>` 派生
+（后者是纯接口），其中`T`是参数的类型值。为了方便起见，您可以从以下派生夹具类`testing::TestWithParam<T>`，它本身源自 `testing::Test`
+和`testing::WithParamInterface<T>`。 `T` 可以是任何可复制类型。如果它是一个原始指针，您负责管理指向的生命周期。
+
+:::info
+如果您的测试装置定义了`SetUpTestSuite()`或`TearDownTestSuite()`
+它们必须被声明为**公开**而不是**受保护**才能使用`TEST_P`
+:::
+
+```c++
+class FooTest :
+    public testing::TestWithParam<const char*> {
+  // You can implement all the usual fixture class members here.
+  // To access the test parameter, call GetParam() from class
+  // TestWithParam<T>.
+};
+
+// Or, when you want to add parameters to a pre-existing fixture class:
+class BaseTest : public testing::Test {
+  ...
+};
+class BarTest : public BaseTest,
+                public testing::WithParamInterface<const char*> {
+  ...
+};
+```
+
+然后，使用`TEST_P`宏使用此夹具定义尽可能多的测试模式如你所愿。 `_P` 后缀代表`参数化`或`模式`，无论您选择哪一个
+更喜欢思考。
+
+```c++
+TEST_P(FooTest, DoesBlah) {
+  // Inside a test, access the test parameter with the GetParam() method
+  // of the TestWithParam<T> class:
+  EXPECT_TRUE(foo.Blah(GetParam()));
+  ...
+}
+
+TEST_P(FooTest, HasBlahBlah) {
+  ...
+}
+```
+
+最后，您可以使用`INSTANTIATE_TEST_SUITE_P`宏来实例化具有您想要的任何参数集的测试套件。 KumoTest 定义了一些
+用于生成测试参数的函数——详细信息请参见[`INSTANTIATE_TEST_SUITE_P`](reference/testing.mdx#INSTANTIATE_TEST_SUITE_P)
+测试参考。
+
+例如，以下语句将从`FooTest`实例化测试
+每个测试套件都有参数值`"meeny"`, `"miny"`,和 `"moe"`，使用
+[`Values`](reference/testing.mdx#param-generators) 参数生成器：
+
+```c++
+INSTANTIATE_TEST_SUITE_P(MeenyMinyMoe,
+                         FooTest,
+                         testing::Values("meeny", "miny", "moe"));
+```
+
+:::info
+上面的代码必须放在全局或命名空间范围内，而不是放在功能范围。
+:::
+
+`INSTANTIATE_TEST_SUITE_P` 的第一个参数是测试套件的实例化。下一个参数是测试的名称
+模式，最后一个是[参数生成器](reference/testing.mdx#param-generators)。
+
+您可以多次实例化一个测试模式，以便区分不同的模式的实例，实例化名称作为前缀添加到
+实际的测试套件名称。请记住为不同的情况选择唯一的前缀实例化。上面实例化的测试将具有以下名称：
+
+*   `MeenyMinyMoe/FooTest.DoesBlah/0` for `"meeny"`
+*   `MeenyMinyMoe/FooTest.DoesBlah/1` for `"miny"`
+*   `MeenyMinyMoe/FooTest.DoesBlah/2` for `"moe"`
+*   `MeenyMinyMoe/FooTest.HasBlahBlah/0` for `"meeny"`
+*   `MeenyMinyMoe/FooTest.HasBlahBlah/1` for `"miny"`
+*   `MeenyMinyMoe/FooTest.HasBlahBlah/2` for `"moe"`
+
+您可以在 [`--ktest_filter`](#running-a-subset-of-the-tests) 中使用这些名称。
+
+以下语句将再次实例化 `FooTest` 中的所有测试，每个测试
+参数值`cat`和`dog`使用 [`ValuesIn`](reference/testing.mdx#param-generators) 参数生成器：
+
+```c++
+const char* pets[] = {"cat", "dog"};
+INSTANTIATE_TEST_SUITE_P(Pets, FooTest, testing::ValuesIn(pets));
+```
+
+上面实例化的测试将具有以下名称：
+
+*   `Pets/FooTest.DoesBlah/0` for `"cat"`
+*   `Pets/FooTest.DoesBlah/1` for `"dog"`
+*   `Pets/FooTest.HasBlahBlah/0` for `"cat"`
+*   `Pets/FooTest.HasBlahBlah/1` for `"dog"`
+
+请注意，`INSTANTIATE_TEST_SUITE_P`将实例化*所有*测试
+给定的测试套件，无论它们的定义位于`之前`还是`之后`
+`INSTANTIATE_TEST_SUITE_P` 语句。
+
+此外，默认情况下，每个没有相应的`TEST_P``INSTANTIATE_TEST_SUITE_P` 导致测试套件中的测试失败
+`KumoTest验证`。如果您有一个测试套件，其中该遗漏不是错误，例如它位于可能因其他原因链接的库中或
+如果测试用例列表是动态的并且可能为空，则此检查可以是通过标记测试套件来抑制：
+
+```c++
+KTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(FooTest);
+```
+
+您可以查看 [sample7_unittest.cc] 和 [sample8_unittest.cc] 以获取更多示例。
+
+[sample7_unittest.cc]: https://gitee.com/kumo-pub/ktest/blob/master/ktest/samples/sample7_unittest.cc "Parameterized Test example"
+[sample8_unittest.cc]: https://gitee.com/kumo-pub/ktest/blob/master/kumotest/samples/sample8_unittest.cc "Parameterized Test example with multiple parameters"
+
+### 创建值参数化抽象测试 {#creating-value-parameterized-abstract-tests}
+
+在上面，我们在*同一个*源文件中定义并实例化`FooTest`。有时您可能想在库中定义值参数化测试并让
+其他人稍后实例化它们。这种模式称为*抽象测试*。作为其应用的示例，当您设计界面时，您可以
+编写一套标准的抽象测试（也许使用工厂函数作为测试参数）该接口的所有实现都应该
+经过。当有人实现该接口时，他们可以实例化您的套件免费获得所有接口一致性测试。
+
+要定义抽象测试，您应该像这样组织代码：
+
+1. 放置参数化测试夹具类的定义（例如 `FooTest`）在头文件中，输入`foo_param_test.h`。将此视为*声明*您的抽象测试。
+2. 将`TEST_P`定义放入`foo_param_test.cc`中，其中包括`foo_param_test.h`。将此视为*实现*您的抽象测试。
+
+定义它们后，您可以通过包含`foo_param_test.h`来实例化它们，调用`INSTANTIATE_TEST_SUITE_P()`，并根据库目标
+包含`foo_param_test.cc`。您可以实例化相同的抽象测试套件多次，可能在不同的源文件中。
+
+### 指定值参数化测试参数的名称 {#specifying-names-for-value-parameterized-test-parameters}
+
+`INSTANTIATE_TEST_SUITE_P()` 的可选最后一个参数允许用户指定一个函数或函子，根据以下内容生成自定义测试名称后缀
+测试参数。该函数应该接受一个类型的参数`testing::TestParamInfo<class ParamType>`，并返回 `std::string`。
+
+`testing::PrintToStringParamName` 是一个内置的测试后缀生成器，返回`testing::PrintToString(GetParam())`的值。它不适用于
+`std::string` 或 C 字符串。
+
+:::info
+测试名称必须非空、唯一，并且只能包含 ASCII 字母数字字符。特别是，他们[不应包含下划线](faq.mdx#why-should-test-suite-names-and-test-names-not-contain-underscore)
+:::
+
+```c++
+class MyTestSuite : public testing::TestWithParam<int> {};
+
+TEST_P(MyTestSuite, MyTest)
+{
+  std::cout << "Example Test Param: " << GetParam() << std::endl;
+}
+
+INSTANTIATE_TEST_SUITE_P(MyGroup, MyTestSuite, testing::Range(0, 10),
+                         testing::PrintToStringParamName());
+```
+
+提供自定义函子可以更好地控制测试参数名称生成，特别是对于自动转换不进行的类型
+生成有用的参数名称（例如上面演示的字符串）。这以下示例说明了多个参数、枚举类型的情况
+和一个字符串，还演示了如何组合生成器。它使用 lambda
+为了简洁：
+
+```c++
+enum class MyType { MY_FOO = 0, MY_BAR = 1 };
+
+class MyTestSuite : public testing::TestWithParam<std::tuple<MyType, std::string>> {
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    MyGroup, MyTestSuite,
+    testing::Combine(
+        testing::Values(MyType::MY_FOO, MyType::MY_BAR),
+        testing::Values("A", "B")),
+    [](const testing::TestParamInfo<MyTestSuite::ParamType>& info) {
+      std::string name = absl::StrCat(
+          std::get<0>(info.param) == MyType::MY_FOO ? "Foo" : "Bar",
+          std::get<1>(info.param));
+      absl::c_replace_if(name, [](char c) { return !std::isalnum(c); }, '_');
+      return name;
+    });
+```
+
+## 类型测试 {#typed-tests}
+
+假设您有同一个接口的多个实现并且想要确保它们都满足一些共同的要求。或者，您可能已经定义了
+几种应该符合相同`概念`的类型，并且您想要验证一下。在这两种情况下，您都希望针对不同的情况重复相同的测试逻辑
+类型。
+
+虽然您可以为要测试的每种类型编写一个`TEST`或`TEST_F`（并且
+您甚至可以将测试逻辑纳入您调用的函数模板中
+`TEST`），它很乏味并且无法扩展：如果您想要“m”测试而不是`n`
+类型，你最终会写出`m*n` `TEST`。
+
+*类型化测试*允许您对类型列表重复相同的测试逻辑。你只需要编写一次测试逻辑，尽管您必须知道类型列表
+编写类型测试时。操作方法如下：
+
+首先，定义一个fixture类模板。它应该由类型参数化。请记住从 `::testing::Test` 派生它：
+
+```c++
+template <typename T>
+class FooTest : public testing::Test {
+ public:
+  ...
+  using List = std::list<T>;
+  static T shared_;
+  T value_;
+};
+```
+
+接下来，将类型列表与测试套件相关联，这将重复进行列表中的每种类型：
+
+```c++
+using MyTypes = ::testing::Types<char, int, unsigned int>;
+TYPED_TEST_SUITE(FooTest, MyTypes);
+```
+
+类型别名（`using`或`typedef`）对于`TYPED_TEST_SUITE`是必需的
+宏以正确解析。否则编译器会认为中的每个逗号类型列表引入了一个新的宏参数。
+
+然后，使用`TYPED_TEST()`而不是`TEST_F()`为此定义类型测试
+测试套件。您可以根据需要多次重复此操作：
+
+```c++
+TYPED_TEST(FooTest, DoesBlah) {
+  // Inside a test, refer to the special name TypeParam to get the type
+  // parameter.  Since we are inside a derived class template, C++ requires
+  // us to visit the members of FooTest via 'this'.
+  TypeParam n = this->value_;
+
+  // To visit static members of the fixture, add the 'TestFixture::'
+  // prefix.
+  n += TestFixture::shared_;
+
+  // To refer to typedefs in the fixture, add the 'typename TestFixture::'
+  // prefix.  The 'typename' is required to satisfy the compiler.
+  typename TestFixture::List values;
+
+  values.push_back(n);
+  ...
+}
+
+TYPED_TEST(FooTest, HasPropertyA) { ... }
+```
+
+您可以查看[sample6_unittest.cc]以获得完整的示例。
+
+[sample6_unittest.cc]: https://gitee.com/kumo-pub/ktest/blob/master/kumotest/samples/sample6_unittest.cc "Typed Test example"
+
+## 类型参数化测试 {#type-parameterized-tests}
+
+*类型参数化测试* 类似于类型化测试，只是它们不需要您提前知道类型列表。相反，您可以定义测试
+首先逻辑，然后用不同类型列表实例化它。你甚至可以在同一个程序中多次实例化它。
+
+如果您正在设计一个界面或概念，您可以定义一套类型参数化测试来验证任何有效实现的属性
+界面/概念应该有。然后，每个实现的作者可以只需用其类型实例化测试套件即可验证其是否符合
+需求，而不必重复编写类似的测试。这是一个例子：
+
+首先，定义一个固定装置类模板，就像我们对类型化测试所做的那样：
+
+```c++
+template <typename T>
+class FooTest : public testing::Test {
+  void DoSomethingInteresting();
+  ...
+};
+```
+
+接下来，声明您将定义一个类型参数化测试套件：
+
+```c++
+TYPED_TEST_SUITE_P(FooTest);
+```
+
+然后，使用 `TYPED_TEST_P()` 定义类型参数化测试。你可以重复
+您可以多次执行此操作：
+
+```c++
+TYPED_TEST_P(FooTest, DoesBlah) {
+  // Inside a test, refer to TypeParam to get the type parameter.
+  TypeParam n = 0;
+
+  // You will need to use `this` explicitly to refer to fixture members.
+  this->DoSomethingInteresting()
+  ...
+}
+
+TYPED_TEST_P(FooTest, HasPropertyA) { ... }
+```
+
+现在是棘手的部分：您需要使用`REGISTER_TYPED_TEST_SUITE_P` 宏，然后才能实例化它们。第一个
+宏的参数是测试套件名称；其余的都是名字此测试套件中的测试：
+
+```c++
+REGISTER_TYPED_TEST_SUITE_P(FooTest,
+                            DoesBlah, HasPropertyA);
+```
+
+最后，您可以自由地使用您想要的类型实例化模式。如果你将上面的代码放在一个头文件中，你可以在多个C++中`#include`它
+源文件并多次实例化它。
+
+```c++
+using MyTypes = ::testing::Types<char, int, unsigned int>;
+INSTANTIATE_TYPED_TEST_SUITE_P(My, FooTest, MyTypes);
+```
+
+为了区分模式的不同实例，第一个参数`INSTANTIATE_TYPED_TEST_SUITE_P` 宏是一个前缀，将添加到
+实际的测试套件名称。请记住为不同的情况选择唯一的前缀实例。
+
+在类型列表仅包含一种类型的特殊情况下，您可以编写直接输入，无需 `::testing::Types<...>`，如下所示：
+
+```c++
+INSTANTIATE_TYPED_TEST_SUITE_P(My, FooTest, int);
+```
+
+您可以查看[sample6_unittest.cc]以获得完整的示例。
+
+## 测试私有代码 {#testing-private-code}
+
+如果您更改软件的内部实现，您的测试不应只要用户无法观察到更改，就会中断。因此，**根据
+黑盒测试原则，大多数时候你应该通过以下方式测试你的代码它的公共接口。**
+
+**如果您仍然发现自己需要测试内部实现代码，考虑是否有更好的设计。** 测试内部的愿望
+实施通常是班级做得太多的标志。考虑提取实现类并对其进行测试。然后使用该实现
+原来的班级里的班级。
+
+如果您绝对必须测试非公共接口代码，那么您可以。那里
+有两种情况需要考虑：
+
+* 静态函数（*不*与静态成员函数相同！）或未命名命名空间，以及
+* 私有或受保护的类成员
+
+为了测试它们，我们使用以下特殊技术：
+
+*   未命名命名空间中的静态函数和定义/声明
+    仅在同一翻译单元内可见。要测试它们，您可以
+    `#include` 在您的 `*_test.cc` 文件中测试整个 `.cc` 文件。
+    （#include `.cc` 文件不是重用代码的好方法 - 你不应该这样做
+    这在生产代码中！）
+
+    然而，更好的方法是将私有代码移至
+    `foo::internal` 命名空间，其中 `foo` 是您的项目的命名空间
+    通常使用，并将私有声明放在“*-internal.h”文件中。
+    您的生产“.cc”文件和您的测试可以包含此文件
+    内部标头，但您的客户不是。这样你就可以充分测试你的
+    内部实施，而不会将其泄露给您的客户。
+
+*   私人班级成员只能从班级内部或通过
+    朋友们。要访问类的私有成员，您可以声明您的测试
+    固定装置作为类的朋友并在固定装置中定义访问器。测试
+    然后使用该装置可以访问您的作品的私有成员
+    通过夹具中的访问器进行类。请注意，即使您的固定装置
+    是你的生产类的朋友，你的测试不会自动进行
+    它的朋友，因为它们在技术上是在子类中定义的
+    固定装置。
+
+    测试私有成员的另一种方法是将它们重构为
+    实现类，然后在“*-internal.h”文件中声明。你的
+    客户端不允许包含此标头，但您的测试可以。这样就是
+    称为[Pimpl](https://www.gamedev.net/articles/programming/general-and-gameplay-programming/the-c-pimpl-r1794/)（私人实施）习语。
+
+    或者，您可以通过添加以下内容来将单个测试声明为您班级的好友
+    类主体中的这一行：
+
+    ```c++
+        FRIEND_TEST(TestSuiteName, TestName);
+    ```
+
+    例如，
+
+    ```c++
+    // foo.h
+    class Foo {
+      ...
+     private:
+      FRIEND_TEST(FooTest, BarReturnsZeroOnNull);
+
+      int Bar(void* x);
+    };
+
+    // foo_test.cc
+    ...
+    TEST(FooTest, BarReturnsZeroOnNull) {
+      Foo foo;
+      EXPECT_EQ(foo.Bar(NULL), 0);  // Uses Foo's private member Bar().
+    }
+    ```
+
+    当您的类在命名空间中定义时要特别注意。如果你想
+    您的测试装置和测试要成为您班级的朋友，那么它们必须是
+    在完全相同的命名空间中定义（无匿名或内联命名空间）。
+
+    例如，如果要测试的代码如下所示：
+
+    ```c++
+    namespace my_namespace {
+
+    class Foo {
+      friend class FooTest;
+      FRIEND_TEST(FooTest, Bar);
+      FRIEND_TEST(FooTest, Baz);
+      ... definition of the class Foo ...
+    };
+
+    }  // namespace my_namespace
+    ```
+
+    您的测试代码应该类似于：
+
+    ```c++
+    namespace my_namespace {
+
+    class FooTest : public testing::Test {
+     protected:
+      ...
+    };
+
+    TEST_F(FooTest, Bar) { ... }
+    TEST_F(FooTest, Baz) { ... }
+
+    }  // namespace my_namespace
+    ```
+
+## 捕捉`失败` {#catching-failures}
+
+如果您正在 kumotest 之上构建测试实用程序，您将需要测试
+你的效用。您将使用什么框架来测试它？当然是库莫测试。
+
+挑战在于验证您的测试实用程序是否正确报告故障。
+在通过抛出异常来报告失败的框架中，您可以捕获
+异常并对其进行断言。但是kumotest不使用异常，那么怎么办
+我们测试一段代码是否会产生预期的失败？
+
+`"ktest/ktest-spi.h"` 包含一些用于执行此操作的构造。
+`#include` 此标头后，您可以使用
+
+```c++
+  EXPECT_FATAL_FAILURE(statement, substring);
+```
+
+断言“statement”会在其消息包含给定`substring`的当前线程，或使用
+
+```c++
+  EXPECT_NONFATAL_FAILURE(statement, substring);
+```
+
+如果您预计会出现非致命（例如`EXPECT_*`）失败。
+
+仅检查当前线程中的失败以确定此结果期望类型。如果`statement`创建新线程，这些线程会失败
+线程也被忽略。如果你想捕获其他线程中的失败好吧，请改用以下宏之一：
+
+```c++
+  EXPECT_FATAL_FAILURE_ON_ALL_THREADS(statement, substring);
+  EXPECT_NONFATAL_FAILURE_ON_ALL_THREADS(statement, substring);
+```
+:::info
+注意：Windows 目前不支持来自多个线程的断言。
+:::
+
+出于技术原因，有一些注意事项：
+
+1. 您无法将失败消息传输到任一宏。
+
+2.`EXPECT_FATAL_FAILURE{_ON_ALL_THREADS}()`中的`statement`无法引用
+局部非静态变量或“this”对象的非静态成员。
+
+3.`EXPECT_FATAL_FAILURE{_ON_ALL_THREADS}()`中的`statement`不能返回
+价值。
+
+## 以编程方式注册测试 {#registering-tests-programmatically}
+
+`TEST`宏处理绝大多数用例，但很少有
+需要运行时注册逻辑的地方。对于这些情况，框架
+提供 `::testing::RegisterTest` 允许调用者注册任意
+动态测试。
+
+这是一个高级 API，仅在`TEST`宏不足时使用。
+如果可能的话，宏应该是首选，因为它们避免了大多数
+调用该函数的复杂性。
+
+它提供以下签名：
+
+```c++
+template <typename Factory>
+TestInfo* RegisterTest(const char* test_suite_name, const char* test_name,
+                       const char* type_param, const char* value_param,
+                       const char* file, int line, Factory factory);
+```
+
+`factory` 参数是一个工厂可调用（可移动构造）对象或
+创建 Test 对象的新实例的函数指针。它处理所有权归调用者。可调用的签名是`Fixture*()`，其中
+`Fixture` 是测试的测试夹具类。所有测试已在相同的`test_suite_name`必须返回相同的装置类型。这是在以下位置检查的
+运行时。
+
+该框架将从工厂推断出固定装置类，并调用`SetUpTestSuite` 和 `TearDownTestSuite` 。
+
+必须在调用 RUN_ALL_TESTS() 之前调用，否则行为为不明确的。
+
+用例示例：
+
+```c++
+class MyFixture : public testing::Test {
+ public:
+  // All of these optional, just like in regular macro usage.
+  static void SetUpTestSuite() { ... }
+  static void TearDownTestSuite() { ... }
+  void SetUp() override { ... }
+  void TearDown() override { ... }
+};
+
+class MyTest : public MyFixture {
+ public:
+  explicit MyTest(int data) : data_(data) {}
+  void TestBody() override { ... }
+
+ private:
+  int data_;
+};
+
+void RegisterMyTests(const std::vector<int>& values) {
+  for (int v : values) {
+    testing::RegisterTest(
+        "MyFixture", ("Test" + std::to_string(v)).c_str(), nullptr,
+        std::to_string(v).c_str(),
+        __FILE__, __LINE__,
+        // Important to use the fixture type as the return type here.
+        [=]() -> MyFixture* { return new MyTest(v); });
+  }
+}
+...
+int main(int argc, char** argv) {
+  testing::InitKumoTest(&argc, argv);
+  std::vector<int> values_to_test = LoadValuesFromConfig();
+  RegisterMyTests(values_to_test);
+  ...
+  return RUN_ALL_TESTS();
+}
+```
+
+## 获取当前测试的名称 {#getting-the-current-test's-name}
+
+有时，函数可能需要知道当前正在运行的测试的名称。例如，您可能正在使用测试装置的`SetUp()`方法来设置
+基于正在运行的测试的黄金文件名。这[`TestInfo`](reference/testing.mdx#TestInfo) 类具有此信息。
+
+要获取当前正在运行的测试的“TestInfo”对象，请调用[`UnitTest`](reference/testing.mdx#UnitTest) 上的 `current_test_info()`
+单例对象：
+
+```c++
+  // Gets information about the currently running test.
+  // Do NOT delete the returned object - it's managed by the UnitTest class.
+  const testing::TestInfo* const test_info =
+      testing::UnitTest::GetInstance()->current_test_info();
+
+  printf("We are in test %s of test suite %s.\n",
+         test_info->name(),
+         test_info->test_suite_name());
+```
+
+如果没有测试正在运行，则`current_test_info()`返回空指针。在特别是，您无法在`SetUpTestSuite()`中找到测试套件名称，
+`TearDownTestSuite()`（您隐式知道测试套件名称），或者从它们调用的函数。
+
+## 通过处理测试事件扩展 kumotest {#extending-kumotest-by-handling-test-events}
+
+kumotest 提供了**事件侦听器 API** 来让您接收通知关于测试程序的进度和测试失败。您可以参加的活动
+监听包括测试程序、测试套件或测试的开始和结束方法等。您可以使用此 API 来增强或替换标准
+控制台输出，替换XML输出，或者提供完全不同的形式输出，例如 GUI 或数据库。您还可以使用测试事件作为
+例如，检查点来实现资源泄漏检查器。
+
+### 定义事件监听器 {#defining-event-listeners}
+
+要定义事件侦听器，您可以子类化
+[`测试::TestEventListener`](reference/testing.mdx#TestEventListener) 或
+[`测试::EmptyTestEventListener`](reference/testing.mdx#EmptyTestEventListener)
+前者是一个（抽象）接口，其中*每个纯虚方法都可以是
+重写以处理测试事件*（例如，当测试开始时，
+`OnTestStart()` 方法将被调用。）。后者提供了一个空的
+接口中所有方法的实现，这样子类只需要
+覆盖它关心的方法。
+
+当一个事件被触发时，它的上下文被作为一个传递给处理函数
+争论。使用以下参数类型：
+
+* UnitTest反映了整个测试程序的状态，
+* TestSuite 包含有关测试套件的信息，其中可以包含一个或多个
+测试，
+* TestInfo 包含测试的状态，以及
+* TestPartResult 表示测试断言的结果。
+
+事件处理函数可以检查它接收到的参数以找出答案
+有关事件和测试程序状态的有趣信息。
+
+这是一个例子：
+
+```c++
+  class MinimalistPrinter : public testing::EmptyTestEventListener {
+    // Called before a test starts.
+    void OnTestStart(const testing::TestInfo& test_info) override {
+      printf("*** Test %s.%s starting.\n",
+             test_info.test_suite_name(), test_info.name());
+    }
+
+    // Called after a failed assertion or a SUCCESS().
+    void OnTestPartResult(const testing::TestPartResult& test_part_result) override {
+      printf("%s in %s:%d\n%s\n",
+             test_part_result.failed() ? "*** Failure" : "Success",
+             test_part_result.file_name(),
+             test_part_result.line_number(),
+             test_part_result.summary());
+    }
+
+    // Called after a test ends.
+    void OnTestEnd(const testing::TestInfo& test_info) override {
+      printf("*** Test %s.%s ending.\n",
+             test_info.test_suite_name(), test_info.name());
+    }
+  };
+```
+
+### 使用事件监听器 {#using-event-isteners}
+
+要使用您定义的事件侦听器，请将其实例添加到
+kumotest 事件监听器列表（由类表示
+[`TestEventListeners`](reference/testing.mdx#TestEventListeners) - 注意`“s”`
+在你的`main()`函数中，在调用之前`RUN_ALL_TESTS()`:
+
+```c++
+int main(int argc, char** argv) {
+  testing::InitKumoTest(&argc, argv);
+  // Gets hold of the event listener list.
+  testing::TestEventListeners& listeners =
+      testing::UnitTest::GetInstance()->listeners();
+  // Adds a listener to the end.  kumotest takes the ownership.
+  listeners.Append(new MinimalistPrinter);
+  return RUN_ALL_TESTS();
+}
+```
+
+只有一个问题：默认的测试结果打印机仍然有效，所以它的输出将与极简打印机的输出混合在一起。压制
+默认打印机，只需将其从事件监听列表中释放并删除即可。您可以通过添加一行来完成此操作：
+
+```c++
+  ...
+  delete listeners.Release(listeners.default_result_printer());
+  listeners.Append(new MinimalistPrinter);
+  return RUN_ALL_TESTS();
+```
+
+Now, sit back and enjoy a completely different output from your tests. For more
+details, see [sample9_unittest.cc].
+
+[sample9_unittest.cc]: https://gitee.com/kumo-pub/ktest/blob/master/kumotest/samples/sample9_unittest.cc "Event listener example"
+
+您可以将多个侦听器添加到列表中。当`On*Start()`或`OnTestPartResult()` 事件被触发，监听器将按顺序接收它
+它们出现在列表中（因为新的侦听器被添加到列表的末尾，默认文本打印机和默认 XML 生成器将接收该事件
+第一的）。 *反向*中的侦听器将接收“On*End()”事件命令。这允许稍后添加的侦听器的输出由以下输出构成
+之前添加的听众。
+
+### 在听众中产生失败 {#generating-failures-in-listeners}
+
+您可以使用引发失败的宏（`EXPECT_*()`、`ASSERT_*()`、`FAIL()`等）
+处理事件时。有一些限制：
+
+1. 你不能在`OnTestPartResult()`中产生任何失败（否则会
+导致 `OnTestPartResult()` 被递归调用）。
+2. 处理`OnTestPartResult()`的监听器不允许生成任何
+失败。
+
+当您将侦听器添加到侦听器列表时，您应该将以下侦听器放入
+*在*可能生成失败的监听器之前处理`OnTestPartResult()`。这
+确保后者产生的故障归因于正确的测试由前者。
+
+有关失败引发侦听器的示例，请参阅 [sample10_unittest.cc]。
+
+[sample10_unittest.cc]: https://gitee.com/kumo-pub/ktest/blob/master/kumotest/samples/sample10_unittest.cc "Failure-raising listener example"
+
+## 运行测试程序：高级选项 {#running-test-programs-advanced-options}
+
+kumotest 测试程序是普通的可执行文件。构建完成后，您可以运行它们
+直接并通过以下环境变量影响他们的行为`和/或`命令行标志。为了使标志起作用，您的程序必须调用
+在调用 `RUN_ALL_TESTS()` 之前`::testing::InitKumoTest()`。
+
+要查看支持的标志及其用法的列表，请运行您的测试程序
+带有`--help`标志。您还可以使用缩写`-h`、`-?`或`/?`。
+
+如果一个选项同时由环境变量和标志指定，则后者优先。
+
+### 选择测试 {#selecting-tests}
+
+#### 列出测试名称 {#listing-test-names}
+
+有时需要先列出程序中可用的测试运行它们以便在需要时可以应用过滤器。包括国旗
+`--ktest_list_tests` 覆盖所有其他标志并在下面列出测试
+格式：
+
+```none
+TestSuite1.
+  TestName1
+  TestName2
+TestSuite2.
+  TestName
+```
+
+如果提供了该标志，则列出的测试都不会实际运行。没有该标志对应的环境变量。
+
+#### 运行测试的子集 {#running-a-subset-of-the-tests}
+
+默认情况下，kumotest 程序运行用户定义的所有测试。有时，您只想运行测试的子集（例如，用于调试或快速
+验证更改）。如果您设置了`KTEST_FILTER`环境变量或`--ktest_filter` 标志到过滤器字符串，kumotest 将只运行测试
+其全名（以`TestSuiteName.TestName`的形式）与过滤器匹配。
+
+过滤器的格式是一个以`:`分隔的通配符模式列表（称为
+*正模式*) 可选地后跟一个`-`和另一个
+'`:`' 分隔的模式列表（称为*负模式*）。测试匹配
+过滤器当且仅当它与任何正模式匹配但不匹配时
+匹配任何否定模式。
+
+模式可以包含`“*”`（匹配任何字符串）或“?”（匹配任何单个字符串）
+特点）。为了方便起见，过滤器`*-NegativePatterns`也可以
+写为`-NegativePatterns`。
+
+例如：
+
+* `./foo_test` 没有标志，因此运行其所有测试。
+* `./foo_test --ktest_filter=*` 也运行所有内容，因为单个
+匹配所有“*”值。
+* `./foo_test --ktest_filter=FooTest.*` 运行测试套件中的所有内容
+`脚测试`。
+* `./foo_test --ktest_filter=*Null*:*Constructor*` 运行任何其完整的测试
+name 包含 `"Null"` 或 `"Constructor"` 。
+* `./foo_test --ktest_filter=-*DeathTest.*` 运行所有非死亡测试。
+* `./foo_test --ktest_filter=FooTest.*-FooTest.Bar` 运行测试中的所有内容
+套件“FooTest”，但“FooTest.Bar”除外。
+* `./foo_test --ktest_filter=FooTest.*:BarTest.*-FooTest.Bar:BarTest.Foo` 运行
+测试套件`FooTest`中的所有内容（除了`FooTest.Bar`）以及`FooTest`中的所有内容
+测试套件`BarTest`，除了`BarTest.Foo`。
+
+#### 第一次失败时停止测试执行 {#stop-test-execution-upon-first-failure}
+
+默认情况下，kumotest 程序运行用户定义的所有测试。在一些情况（例如迭代测试开发和执行）可能需要停止
+第一次失败时测试执行（以改进延迟换取完整性）。如果设置了`KTEST_FAIL_FAST`环境变量或`--ktest_fail_fast`标志，
+一旦发现第一个测试失败，测试运行器将停止执行。
+
+#### 暂时禁用测试 {#temporarily-disabling-tests}
+
+如果您有无法立即修复的损坏测试，您可以添加
+其名称的前缀为`DISABLED_`。这会将其排除在执行之外。这是
+比注释掉代码或使用“#if 0”更好，因为禁用的测试
+仍然编译（因此不会腐烂）。
+
+如果您需要禁用测试套件中的所有测试，您可以添加`DISABLED_`
+添加到每个测试名称的前面，或者将其添加到
+测试套件名称。
+
+例如，以下测试不会由 kumotest 运行，即使它们
+仍将被编译：
+
+```c++
+// Tests that Foo does Abc.
+TEST(FooTest, DISABLED_DoesAbc) { ... }
+
+class DISABLED_BarTest : public testing::Test { ... };
+
+// Tests that Bar does Xyz.
+TEST_F(DISABLED_BarTest, DoesXyz) { ... }
+```
+
+:::info
+此功能只能用于暂时缓解疼痛。你还有
+以便稍后修复禁用的测试。提醒一下，kumotest 将打印
+如果测试程序包含任何禁用的测试，则会出现警告您的横幅。
+:::
+
+:::info
+您可以轻松计算您使用的已禁用测试的数量`grep`。这个数字可以用作衡量提高您的测试质量。
+:::
+
+#### 暂时启用禁用的测试 {#temporarily-enabling-disabled-tests}
+
+要在测试执行中包含禁用的测试，只需使用以下命令调用测试程序
+`--ktest_also_run_disabled_tests` 标志或设置
+将`KTEST_ALSO_RUN_DISABLED_TESTS`环境变量设置为`0`以外的值。
+您可以将其与`--ktest_filter`标志结合起来以进一步选择
+禁用测试运行。
+
+### 重复测试 {#repeating-the-tests}
+
+有时你会遇到一个结果是偶然的测试。或许它
+仅 1% 的情况下会失败，因此很难重现该错误
+一个调试器。这可能是令人沮丧的一个主要原因。
+
+`--ktest_repeat` 标志允许您重复所有（或选定的）测试方法
+一个程序很多次。希望一个不稳定的测试最终会失败并给你
+有机会调试。使用方法如下：
+
+```none
+$ foo_test --ktest_repeat=1000
+Repeat foo_test 1000 times and don't stop at failures.
+
+$ foo_test --ktest_repeat=-1
+A negative count means repeating forever.
+
+$ foo_test --ktest_repeat=1000 --ktest_break_on_failure
+Repeat foo_test 1000 times, stopping at the first failure.  This
+is especially useful when running under a debugger: when the test
+fails, it will drop into the debugger and you can then inspect
+variables and stacks.
+
+$ foo_test --ktest_repeat=1000 --ktest_filter=FooBar.*
+Repeat the tests whose name matches the filter 1000 times.
+```
+
+如果你的测试程序包含[全局设置/拆卸](#global-set-up-and-tear-down)代码，它将是
+也在每次迭代中重复，因为其中可能存在片状现象。您还可以
+通过设置“KTEST_REPEAT”环境变量来指定重复计数。
+
+### 洗牌测试 {#shuffling-the-tests}
+
+您可以指定`--ktest_shuffle`标志（或设置`KTEST_SHUFFLE`
+环境变量设置为“1”）以随机顺序在程序中运行测试。
+这有助于揭示测试之间的不良依赖性。
+
+默认情况下，kumotest 使用从当前时间计算的随机种子。
+因此，您每次都会收到不同的订单。控制台输出包括
+随机种子值，以便您可以重现与顺序相关的测试失败
+之后。要显式指定随机种子，请使用`--ktest_random_seed=SEED`
+标志（或设置`KTEST_RANDOM_SEED`环境变量），其中`SEED`是
+`[0, 99999]` 范围内的整数。种子值 0 很特殊：它告诉
+kumotest 执行从当前计算种子的默认行为
+时间。
+
+如果你将其与 `--ktest_repeat=N` 结合使用，kumotest 将选择不同的
+随机种子并在每次迭代中重新洗牌测试。
+
+### 将测试功能分发到多台机器 {#distributing-test-functions-to-multiple-machines}
+
+如果您有不止一台机器可以用来运行测试程序，您可能
+希望并行运行测试函数并更快地获得结果。我们打电话
+这种技术*分片*，其中每台机器称为*分片*。
+
+KumoTest 与测试分片兼容。要利用此功能，您的测试运行程序（不是 KumoTest 的一部分）需要执行以下操作：
+
+1. 分配一定数量的机器（分片）来运行测试。
+2. 在每个分片上，将`KTEST_TOTAL_SHARDS`环境变量设置为总数
+分片数量。所有分片必须相同。
+3. 在每个分片上，将`KTEST_SHARD_INDEX`环境变量设置为索引
+分片的。不同的分片必须分配不同的索引，这
+必须在`[0, KTEST_TOTAL_SHARDS - 1]`范围内。
+4. 在所有分片上运行相同的测试程序。当KumoTest看到上面两个
+环境变量，它将选择测试函数的子集来运行。
+在所有分片中，程序中的每个测试函数都将准确运行
+一次。
+5. 等待所有分片完成，然后收集并报告结果。
+
+您的项目可能有没有使用 KumoTest 编写的测试，因此不会
+了解这个协议。为了让你的测试运行者弄清楚哪个测试
+支持分片，可以设置环境变量`KTEST_SHARD_STATUS_FILE`
+到一个不存在的文件路径。如果测试程序支持分片，它将创建
+本文件承认这一事实；否则它不会创建它。实际的
+文件的内容此时并不重要，尽管我们可以放一些
+里面的信息对以后有用。
+
+这是一个例子来说明这一点。假设你有一个测试程序`foo_test`其中包含以下5个测试函数：
+
+```
+TEST(A, V)
+TEST(A, W)
+TEST(B, X)
+TEST(B, Y)
+TEST(B, Z)
+```
+
+假设您有 3 台机器可供使用。运行测试函数
+并行，您可以在所有机器上将`KTEST_TOTAL_SHARDS`设置为 3，然后设置
+机器上的`KTEST_SHARD_INDEX`分别为 0、1 和 2。那么你会
+在每台机器上运行相同的“foo_test”。
+
+KumoTest 保留更改工作在整个组织中分配方式的权利
+分片，但这是一种可能的情况：
+
+* 机器 #0 运行`A.V`和`B.X`。
+* 1 号机器运行`A.W`和`B.Y`。
+* 2 号机器运行`B.Z`。
+
+### 控制测试输出 {#controlling-test-output}
+
+#### 彩色端子输出 {#colored-terminal-output}
+
+kumotest 可以在其终端输出中使用颜色，以便更容易地发现
+重要信息：
+
+```
+<font color="green">[----------]</font> 1 test from FooTest
+<font color="green">[ RUN      ]</font> FooTest.DoesAbc
+<font color="green">[       OK ]</font> FooTest.DoesAbc
+<font color="green">[----------]</font> 2 tests from BarTest
+<font color="green">[ RUN      ]</font> BarTest.HasXyzProperty
+<font color="green">[       OK ]</font> BarTest.HasXyzProperty
+<font color="green">[ RUN      ]</font> BarTest.ReturnsTrueOnSuccess
+... some error messages ...
+<font color="red">[   FAILED ]</font> BarTest.ReturnsTrueOnSuccess
+...
+<font color="green">[==========]</font> 30 tests from 14 test suites ran.
+<font color="green">[   PASSED ]</font> 28 tests.
+<font color="red">[   FAILED ]</font> 2 tests, listed below:
+<font color="red">[   FAILED ]</font> BarTest.ReturnsTrueOnSuccess
+<font color="red">[   FAILED ]</font> AnotherTest.DoesXyz
+
+ 2 FAILED TESTS
+```
+
+您可以设置`KTEST_COLOR`环境变量或`--ktest_color`
+命令行标志为`yes`、`no`或`auto`（默认）以启用颜色，
+禁用颜色，或者让 kumotest 决定。当值为`auto`时，kumotest
+当且仅当输出到达终端并且（在非 Windows 上）时才会使用颜色
+平台）`TERM`环境变量设置为`xterm`或`xterm-color`。
+
+#### 抑制测试通过 {#suppressing-test-passes}
+
+默认情况下，kumotest 为每个测试打印 1 行输出，表明是否
+通过或失败。要仅显示测试失败，请运行测试程序
+`--ktest_brief=1`，或将 KTEST_BRIEF 环境变量设置为 `1`。
+
+#### 抑制流逝的时间 {#suppressing-the-elapsed-time}
+
+默认情况下，kumotest 打印运行每个测试所需的时间。禁用
+使用 `--ktest_print_time=0` 命令行标志运行测试程序，或者
+将 KTEST_PRINT_TIME 环境变量设置为`0`。
+
+#### 抑制 UTF-8 文本输出 {#suppressing-utf-8-text-output}
+
+如果断言失败，kumotest 会打印预期值和实际值
+输入`string`作为十六进制编码的字符串以及可读的 UTF-8 文本，如果
+它们包含有效的非 ASCII UTF-8 字符。如果你想抑制UTF-8
+文本，因为，例如，您没有 UTF-8 兼容的输出介质，请运行
+测试程序使用 `--ktest_print_utf8=0` 或设置 `KTEST_PRINT_UTF8`
+环境变量设置为“0”。
+
+#### 生成 XML 报告 {#generate-an-xml-report}
+
+除了正常的报告之外，kumotest 还可以向文件发送详细的 XML 报告
+文本输出。该报告包含每次测试的持续时间，因此可以帮助
+您识别出缓慢的测试。
+
+要生成 XML 报告，请设置`KTEST_OUTPUT`环境变量或
+`--ktest_output` 标记到字符串 `"xml:path_to_output_file"`，这将
+在给定位置创建文件。您也可以只使用字符串“xml”，
+在这种情况下，可以在“test_detail.xml”文件中找到输出
+当前目录。
+
+如果您指定一个目录（例如，Linux 上的`xml:output/directory/`）或
+Windows 上的`xml:output\directory\`），kumotest 将在以下位置创建 XML 文件
+该目录，以测试可执行文件命名（例如用于测试的`foo_test.xml`
+程序`foo_test`或`foo_test.exe`）。如果文件已经存在（可能还剩下
+与之前的运行相比），kumotest 将选择一个不同的名称（例如
+`foo_test_1.xml`) 以避免覆盖它。
+
+该报告基于 `junitreport` Ant 任务。由于该格式是
+最初是为 Java 设计的，需要一点解释才能实现
+适用于 kumotest 测试，如下所示：
+
+```xml
+<testsuites name="AllTests" ...>
+  <testsuite name="test_case_name" ...>
+    <testcase    name="test_name" ...>
+      <failure message="..."/>
+      <failure message="..."/>
+      <failure message="..."/>
+    </testcase>
+  </testsuite>
+</testsuites>
+```
+
+* 根`<testsuites>`元素对应于整个测试程序。
+* `<testsuite>` 元素对应于 kumotest 测试套件。
+* `<testcase>` 元素对应于 kumotest 测试函数。
+
+例如，下面的程序
+
+```c++
+TEST(MathTest, Addition) { ... }
+TEST(MathTest, Subtraction) { ... }
+TEST(LogicTest, NonContradiction) { ... }
+```
+
+可以生成此报告：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="3" failures="1" errors="0" time="0.035" timestamp="2011-10-31T18:52:42" name="AllTests">
+  <testsuite name="MathTest" tests="2" failures="1" errors="0" time="0.015">
+    <testcase name="Addition" file="test.cpp" line="1" status="run" time="0.007" classname="">
+      <failure message="Value of: add(1, 1)&#x0A;  Actual: 3&#x0A;Expected: 2" type="">...</failure>
+      <failure message="Value of: add(1, -1)&#x0A;  Actual: 1&#x0A;Expected: 0" type="">...</failure>
+    </testcase>
+    <testcase name="Subtraction" file="test.cpp" line="2" status="run" time="0.005" classname="">
+    </testcase>
+  </testsuite>
+  <testsuite name="LogicTest" tests="1" failures="0" errors="0" time="0.005">
+    <testcase name="NonContradiction" file="test.cpp" line="3" status="run" time="0.005" classname="">
+    </testcase>
+  </testsuite>
+</testsuites>
+```
+
+注意事项：
+
+* `<testsuites>` 或 `<testsuite>` 元素的 `tests` 属性告诉我们如何
+kumotest 程序或测试套件包含许多测试函数，而
+`failures` 属性告诉我们其中有多少失败了。
+
+* `time` 属性表示测试、测试套件或测试的持续时间
+整个测试程序只需几秒钟。
+
+* `timestamp`属性记录测试的本地日期和时间
+执行。
+
+* `file` 和 `line` 属性记录源文件位置，其中
+测试被定义​​。
+
+* 每个`<failure>`元素对应于一个失败的kumotest
+断言。
+
+#### 生成 JSON 报告 {#generating-a-json-report}
+
+kumotest 还可以发出 JSON 报告作为 XML 的替代格式。到
+生成 JSON 报告，设置 `KTEST_OUTPUT` 环境变量或
+`--ktest_output` 标记到字符串 `"json:path_to_output_file"`，这将
+在给定位置创建文件。您也可以只使用字符串
+`"json"`，在这种情况下，可以在 `test_detail.json` 文件中找到输出
+在当前目录中。
+
+报告格式符合以下 JSON Schema：
+
+```json
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "definitions": {
+    "TestCase": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "tests": { "type": "integer" },
+        "failures": { "type": "integer" },
+        "disabled": { "type": "integer" },
+        "time": { "type": "string" },
+        "testsuite": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TestInfo"
+          }
+        }
+      }
+    },
+    "TestInfo": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer" },
+        "status": {
+          "type": "string",
+          "enum": ["RUN", "NOTRUN"]
+        },
+        "time": { "type": "string" },
+        "classname": { "type": "string" },
+        "failures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Failure"
+          }
+        }
+      }
+    },
+    "Failure": {
+      "type": "object",
+      "properties": {
+        "failures": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    }
+  },
+  "properties": {
+    "tests": { "type": "integer" },
+    "failures": { "type": "integer" },
+    "disabled": { "type": "integer" },
+    "errors": { "type": "integer" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "time": { "type": "string" },
+    "name": { "type": "string" },
+    "testsuites": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TestCase"
+      }
+    }
+  }
+}
+```
+
+报告使用符合以下Proto3的格式，使用
+[JSON 编码](https://developers.google.com/protocol-buffers/docs/proto3#json)：
+
+```proto
+syntax = "proto3";
+
+package kumotest;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+message UnitTest {
+  int32 tests = 1;
+  int32 failures = 2;
+  int32 disabled = 3;
+  int32 errors = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  google.protobuf.Duration time = 6;
+  string name = 7;
+  repeated TestCase testsuites = 8;
+}
+
+message TestCase {
+  string name = 1;
+  int32 tests = 2;
+  int32 failures = 3;
+  int32 disabled = 4;
+  int32 errors = 5;
+  google.protobuf.Duration time = 6;
+  repeated TestInfo testsuite = 7;
+}
+
+message TestInfo {
+  string name = 1;
+  string file = 6;
+  int32 line = 7;
+  enum Status {
+    RUN = 0;
+    NOTRUN = 1;
+  }
+  Status status = 2;
+  google.protobuf.Duration time = 3;
+  string classname = 4;
+  message Failure {
+    string failures = 1;
+    string type = 2;
+  }
+  repeated Failure failures = 5;
+}
+```
+
+例如，下面的程序
+
+```c++
+TEST(MathTest, Addition) { ... }
+TEST(MathTest, Subtraction) { ... }
+TEST(LogicTest, NonContradiction) { ... }
+```
+
+可以生成此报告：
+
+```json
+{
+  "tests": 3,
+  "failures": 1,
+  "errors": 0,
+  "time": "0.035s",
+  "timestamp": "2011-10-31T18:52:42Z",
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "MathTest",
+      "tests": 2,
+      "failures": 1,
+      "errors": 0,
+      "time": "0.015s",
+      "testsuite": [
+        {
+          "name": "Addition",
+          "file": "test.cpp",
+          "line": 1,
+          "status": "RUN",
+          "time": "0.007s",
+          "classname": "",
+          "failures": [
+            {
+              "message": "Value of: add(1, 1)\n  Actual: 3\nExpected: 2",
+              "type": ""
+            },
+            {
+              "message": "Value of: add(1, -1)\n  Actual: 1\nExpected: 0",
+              "type": ""
+            }
+          ]
+        },
+        {
+          "name": "Subtraction",
+          "file": "test.cpp",
+          "line": 2,
+          "status": "RUN",
+          "time": "0.005s",
+          "classname": ""
+        }
+      ]
+    },
+    {
+      "name": "LogicTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "time": "0.005s",
+      "testsuite": [
+        {
+          "name": "NonContradiction",
+          "file": "test.cpp",
+          "line": 3,
+          "status": "RUN",
+          "time": "0.005s",
+          "classname": ""
+        }
+      ]
+    }
+  ]
+}
+```
+
+:::warning 重要提示
+JSON 文档的确切格式可能会发生变化。
+:::
+
+### 控制如何报告故障 {#controlling-how-failures-are-reported}
+
+#### 检测测试过早退出 {#detecting-test-premature-exit}
+
+Kumo Test 为测试运行者实现了 _premature-exit-file_ 协议
+捕获测试程序的任何意外退出。开始时，Kumo 测试
+创建的文件将在所有工作完成后自动删除
+完成的。然后，测试运行者可以检查该文件是否存在。万一文件
+仍未删除，检查的测试已提前退出。
+
+仅当`TEST_PREMATURE_EXIT_FILE`环境启用此功能
+变量已设置。
+
+#### 将断言失败变成断点 {#turning-assertion-failures-into-break-points}
+
+在调试器下运行测试程序时，如果
+调试器可以捕获断言失败并自动进入交互状态
+模式。 kumotest 的 *break-on-failure* 模式支持这种行为。
+
+要启用它，请将`KTEST_BREAK_ON_FAILURE`环境变量设置为一个值
+除了`0`之外。或者，您可以使用`--ktest_break_on_failure`
+命令行标志。
+
+#### 禁用捕获测试引发的异常 {#disabling-catching-test-thrown-exceptions}
+
+kumotest 可以在启用或不启用异常的情况下使用。如果一个测试
+默认情况下，抛出 C++ 异常或（在 Windows 上）结构化异常 (SEH)
+kumotest 捕获它，将其报告为测试失败，然后继续下一个
+测试方法。这最大化了测试运行的覆盖范围。另外，在 Windows 上
+未捕获的异常会导致弹出窗口，因此捕获异常允许
+您自动运行测试。
+
+然而，在调试测试失败时，您可能需要异常
+由调试器处理，这样您就可以在发生错误时检查调用堆栈
+抛出异常。为此，请设置`KTEST_CATCH_EXCEPTIONS`
+环境变量设置为`0`，或者在以下情况下使用`--ktest_catch_exceptions=0`标志：
+运行测试。
+
+### Sanitizer 集成 {#sanitizer-integration}
+
+这
+[未定义行为消毒剂](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html),
+[地址消毒剂](https://github.com/google/sanitizers/wiki/AddressSanitizer),
+和
+[线程消毒剂](https://github.com/google/sanitizers/wiki/ThreadSanitizerCppManual)
+所有这些都提供了弱函数，您可以覆盖这些函数以触发显式失败
+当他们检测到清理程序错误时，例如从“nullptr”创建引用。
+要覆盖这些函数，请将它们的定义放置在源文件中
+作为主二进制文件的一部分进行编译：
+
+```
+extern "C" {
+void __ubsan_on_report() {
+  FAIL() << "Encountered an undefined behavior sanitizer error";
+}
+void __asan_on_error() {
+  FAIL() << "Encountered an address sanitizer error";
+}
+void __tsan_on_report() {
+  FAIL() << "Encountered a thread sanitizer error";
+}
+}  // extern "C"
+```
+
+在启用其中一种消毒剂的情况下编译项目后，如果特定测试触发清理程序错误，kumotest 将报告失败。

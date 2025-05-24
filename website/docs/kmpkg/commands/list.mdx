@@ -1,0 +1,36 @@
+---
+date: 01/10/2024
+---
+# 命令： kmpkg list
+
+kmpkg list 命令的命令行参考。显示已安装树中的软件包列表，以及每个软件包的版本和描述。
+
+## 摘要
+
+```console
+kmpkg list [options]
+```
+
+## 说明
+
+显示已安装树中的包列表以及每个包的版本和说明。
+
+## Example
+
+```console
+$ kmpkg list
+
+cxxopts:x64-windows              3.0.0              This is a lightweight C++ option parser library...
+fmt:x64-windows                  9.0.0              Formatting library for C++. It can be used as a...
+range-v3:x64-windows             0.12.0             Range library for C++11/14/17/20.
+kmpkg-cmake-config:x64-windows   2022-02-06#1
+kmpkg-cmake:x64-windows          2022-08-18
+```
+
+## 选项
+
+所有 kmpkg 命令都支持一组[通用选项](common-options.mdx)。
+
+### `--x-full-desc`
+
+打印每个包的完整、未截断的说明。

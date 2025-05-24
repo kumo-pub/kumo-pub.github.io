@@ -1,0 +1,109 @@
+
+# JSON format
+
+## 读取 JSON 文件
+
+行分隔的 JSON 文件既可以用 `~TableReader` 读取为单个 Alkaid 表，也可以用 `~StreamingReader` 流式传输为 RecordBatches。
+
+这两个读取器都需要一个表示输入文件的 `alkaid::io::InputStream` 实例。它们的行为可以通过 `~ReadOptions`、`~ParseOptions` 和
+其他参数的组合进行自定义。`JSON 读取器 API 参考 <cpp-api-json>`。
+
+### TableReader
+
+`~TableReader` 一次性将整个文件读取为 `~alkaid::Table`。输入文件中的每个独立 JSON 对象都转换为
+输出表中的一行。
+
+``` sourceCode
+#include "arrow/json/api.h"
+
+{
+   // ...
+   alkaid::MemoryPool* pool = default_memory_pool();
+   std::shared_ptr<alkaid::io::InputStream> input = ...;
+
+   auto read_options = alkaid::json::ReadOptions::Defaults();
+   auto parse_options = alkaid::json::ParseOptions::Defaults();
+
+   // Instantiate TableReader from input stream and options
+   auto maybe_reader = alkaid::json::TableReader::Make(pool, input, read_options, parse_options);
+   if (!maybe_reader.ok()) {
+      // Handle TableReader instantiation error...
+   }
+   auto reader = *maybe_reader;
+
+   // Read table from JSON file
+   auto maybe_table = reader->Read();
+   if (!maybe_table.ok()) {
+      // Handle JSON read error
+      // (for example a JSON syntax error or failed type conversion)
+   }
+   auto table = *maybe_table;
+}
+```
+
+### StreamingReader
+---------------
+
+`~StreamingReader` 从字节大小大致相等的块中逐步读取文件，每个块产生一个 `~alkaid::RecordBatch`。块中的每个独立 JSON 对象都转换为输出批次中的一行。
+
+所有批次都遵循一致的 `~alkaid::Schema`，该模式源自第一个加载的批次。或者，可以通过 `~ParseOptions` 传递显式架构。
+
+``` sourceCode
+#include "arrow/json/api.h"
+
+{
+   // ...
+   auto read_options = alkaid::json::ReadOptions::Defaults();
+   auto parse_options = alkaid::json::ParseOptions::Defaults();
+
+   std::shared_ptr<alkaid::io::InputStream> stream;
+   auto result = alkaid::json::StreamingReader::Make(stream,
+                                                    read_options,
+                                                    parse_options);
+   if (!result.ok()) {
+      // Handle instantiation error
+   }
+   std::shared_ptr<alkaid::json::StreamingReader> reader = *result;
+
+   for (alkaid::Result<std::shared_ptr<alkaid::RecordBatch>> maybe_batch : *reader) {
+      if (!maybe_batch.ok()) {
+         // Handle read/parse error
+      }
+      std::shared_ptr<alkaid::RecordBatch> batch = *maybe_batch;
+      // Operate on each batch...
+   }
+}
+```
+
+### 数据类型
+
+由于 JSON 值是类型化的，因此输出的可能 Alkaid 数据类型取决于输入值类型。顶级 JSON 值应始终为对象。
+顶级对象的字段用于表示 Alkaid 数据中的列。对于 JSON 对象中的每个名称/值对，有两种可能的模式来决定输出数据类型：
+
+- 如果名称在 `ParseOptions::explicit_schema` 中，则尝试将 JSON 值转换为相应的 Alkaid 数据类型；
+- 否则，通过对 JSON 值进行类型推断来确定 Alkaid 数据类型，按顺序尝试多种 Alkaid 数据类型。
+
+下表显示了这两种模式的可能组合。
+从 JSON 到 Alkaid 的显式转换:
+
+
+| JSON value type | Allowed Alkaid data types                           |
+|-----------------|-----------------------------------------------------|
+| Null            | Any (including Null)                                |
+| Number          | All Integer types, Float32, Float64,                |
+|                 | Date32, Date64, Time32, Time64                      |
+| Boolean         | Boolean                                             |
+| String          | Binary, LargeBinary, String, LargeString, Timestamp |
+| Array           | List                                                |
+| Object (nested) | Struct                                              |
+
+从 JSON 到 Alkaid 的隐式类型推断:
+
+| JSON value type | Inferred Alkaid data types (in order) |
+|-----------------|---------------------------------------|
+| Null            | Null, any other                       |
+| Number          | Int64, Float64                        |
+| Boolean         | Boolean                               |
+| String          | Timestamp (with seconds unit), String |
+| Array           | List                                  |
+| Object (nested) | Struct                                |

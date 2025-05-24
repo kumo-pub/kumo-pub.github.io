@@ -1,0 +1,118 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_configure_make
+
+为项目的调试和发布构建配置 configure。
+
+## 使用情况
+
+```cmake
+kmpkg_configure_make(
+    SOURCE_PATH <${SOURCE_PATH}>
+    [AUTOCONFIG]
+    [USE_WRAPPERS] [NO_WRAPPERS]
+    [DETERMINE_BUILD_TRIPLET]
+    [BUILD_TRIPLET "--host=x64 --build=i686-unknown-pc"]
+    [NO_ADDITIONAL_PATHS]
+    [CONFIG_DEPENDENT_ENVIRONMENT <SOME_VAR>...]
+    [CONFIGURE_ENVIRONMENT_VARIABLES <SOME_ENVVAR>...]
+    [ADD_BIN_TO_PATH]
+    [DISABLE_VERBOSE_FLAGS]
+    [NO_DEBUG]
+    [SKIP_CONFIGURE]
+    [PROJECT_SUBPATH <${PROJ_SUBPATH}>]
+    [PRERUN_SHELL <${SHELL_PATH}>]
+    [OPTIONS <-DUSE_THIS_IN_ALL_BUILDS=1>...]
+    [OPTIONS_RELEASE <-DOPTIMIZE=1>...]
+    [OPTIONS_DEBUG <-DDEBUGGABLE=1>...]
+)
+```
+
+## 参数
+
+### SOURCE_PATH
+
+指定包含 `configure/configure.ac` 的目录。 按照约定，这通常在端口文件中设置为变量 `SOURCE_PATH`。
+
+### PROJECT_SUBPATH
+
+指定包含 `configure/configure.ac` 的目录。 按照约定，这通常在端口文件中设置为变量 `SOURCE_PATH`。
+
+### SKIP_CONFIGURE
+
+跳过配置进程
+
+### USE_WRAPPERS
+
+使用 autotools ar-lib 和编译包装器（仅适用于 windows cl 和 lib）
+
+### NO_WRAPPERS
+
+停用 autotools ar-lib 和编译包装器的使用（仅适用于 windows cl 和 lib）
+
+### BUILD_TRIPLET
+
+用于传递要配置的自定义 `--build/` `--target/` `--host`。 可通过 `KMPKG_MAKE_BUILD_TRIPLET` 全局覆盖
+
+### DETERMINE_BUILD_TRIPLET
+
+对于有配置脚本的端口，请遵循自动工具规则来选择三元组
+
+### NO_ADDITIONAL_PATHS
+
+不要将除 `--prefix` 以外的任何其他路径传递给配置调用
+
+### AUTOCONFIG
+
+需要使用自动配置来生成配置文件。
+
+### PRERUN_SHELL
+
+配置之前需要调用的脚本（不用于仅调用 autoconf 或 configure 的批处理文件）
+
+### ADD_BIN_TO_PATH
+
+在配置过程中，将相应的发布和调试 `bin\` 目录添加到该路径，以便可执行文件可以针对树内 DLL 运行。
+
+
+### DISABLE_VERBOSE_FLAGS
+
+不要将 `--disable-silent-rules --verbose` 传递给 configure。
+
+### OPTIONS
+
+配置期间传递给 configure 的其他选项。
+
+### OPTIONS_RELEASE
+
+发布配置期间传递给 `configure` 的其他选项。 这些是对 `OPTIONS` 的补充。
+
+### OPTIONS_DEBUG
+
+调试配置期间传递给 `configure` 的其他选项。 这些是对 `OPTIONS` 的补充。
+
+### CONFIG_DEPENDENT_ENVIRONMENT
+
+要设置的其他配置依赖环境变量的列表。 传递 `SOMEVAR` 以设置环境，
+并将端口文件中的 `SOMEVAR_(DEBUG|RELEASE)` 设置为适当的值。一般环境变量可从端口文件本身内部进行设置。
+
+
+### CONFIGURE_ENVIRONMENT_VARIABLES
+
+要通过 configure 调用传递的其他环境变量的列表。
+
+## 备注
+
+此命令向 configure 提供了许多常用参数。 要查看完整列表，请检查源。
+
+## 示例
+
+- [x264](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/x264/portfile.cmake)
+- [tcl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/tcl/portfile.cmake)
+- [freexl](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/freexl/portfile.cmake)
+- [libosip2](https://gitee.com/kumo-pub/kmpkg/blob/master/ports/libosip2/portfile.cmake)
+
+## Source
+
+[scripts/cmake/kmpkg\_configure\_make.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_configure_make.cmake)

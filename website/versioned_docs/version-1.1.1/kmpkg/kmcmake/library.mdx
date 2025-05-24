@@ -1,0 +1,186 @@
+---
+date: 7/16/2024
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 教程： 编译库
+
+该页面内容为构建c++库
+
+## 只有头文件的库 {#header-only}
+
+kmcmake 构建体系会导出`cmake`构建的对象，有些库并没有C++源文件，只有头文件。
+这种类型的工程，可以使用 `kmcmake_cc_interface`函数导出对象。
+
+函数： kmcmake_cc_interface
+
+参数：
+
+- PUBLIC 导出库必选。内部库不选
+- NAMESPACE 必选
+- NAME 必选
+- HEADERS 必选
+
+示例：
+
+<Tabs>
+    <TabItem value="header-only" label="header-only">
+        ```cmake
+        kmcmake_cc_interface(
+        NAMESPACE ${PROJECT_NAME}
+        NAME api
+        HEADERS
+        api.h
+        CXXOPTS
+        ${KMCMAKE_CXX_OPTIONS}
+        PUBLIC
+        )
+        ```
+        :::warning
+        CXXOPTS 在头文件的库中无效果
+        :::
+    </TabItem>
+</Tabs>
+
+## 编译对象 {#build-object}
+
+cmake 构建系统中的`对象`（`OBJECT`）实际上是一组`.o`的集合。是中间的产物。如果一个库有
+多个子模块，可以使用`kmcmake_cc_object`先将各个子模块编译为`OBJECT`,再将`OBJECT`使用`kmcmake_cc_library`合并编译为库。
+
+函数：kmcmake_cc_object
+
+参数：
+- [NAMESPACE](general-parameters.mdx#general-parameter-namespace) 参见上文
+- [NAME](general-parameters.mdx#general-parameter-name) 参见上文
+- [SOURCES](general-parameters.mdx#general-parameter-sources) 参见上文
+- [CXXOPTS](general-parameters.mdx#general-parameter-cxxopts) 参见上文
+- [DEPS](general-parameters.mdx#general-parameter-deps) 参见上文
+- [HEADERS](general-parameters.mdx#general-parameter-headers) 参见上文
+- [INCLUDES](general-parameters.mdx#general-parameter-includes) 参见上文
+- [DEFINES](general-parameters.mdx#general-parameter-defines) 参见上文
+
+示例：
+
+<Tabs>
+    <TabItem value="kmcmake_cc_object" label="kmcmake_cc_object">
+        ```cmake
+        kmcmake_cc_object(
+        NAMESPACE changeme
+        NAME obj2
+        SOURCES object2.cc
+        CXXOPTS
+        ${CARBIN_CXX_OPTIONS}
+        DEPS
+        changeme::object
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+## 编译库 {#build-library}
+
+`kmcmake_cc_library`是编译库的工具函数，不仅可以从源文件编译，同时
+可以将[`kmcmake_cc_object`](#build-object)生成的对象合并到库中。
+
+函数：kmcmake_cc_library
+
+参数：
+- [NAMESPACE](general-parameters.mdx#general-parameter-namespace) 参见上文
+- [NAME](general-parameters.mdx#general-parameter-name) 参见上文
+- [SOURCES](general-parameters.mdx#general-parameter-sources) 参见上文
+- [CXXOPTS](general-parameters.mdx#general-parameter-cxxopts) 参见上文
+- [DEPS](general-parameters.mdx#general-parameter-deps) 参见上文
+- [HEADERS](general-parameters.mdx#general-parameter-headers) 参见上文
+- [INCLUDES](general-parameters.mdx#general-parameter-includes) 参见上文
+- [DEFINES](general-parameters.mdx#general-parameter-defines) 参见上文
+- [LINKS](general-parameters.mdx#general-parameter-links) 参见上文
+- [PLINKS](general-parameters.mdx#general-parameter-plinks) 参见上文
+- [WLINKS](general-parameters.mdx#general-parameter-wlinks) 参见上文
+
+示例：
+<Tabs>
+    <TabItem value="kmcmake_cc_library" label="kmcmake_cc_library">
+        ```cmake
+        kmcmake_cc_library(
+            NAMESPACE ${PROJECT_NAME}
+            NAME foo
+            SOURCES
+            foo.cc
+            CXXOPTS
+            ${KMCMAKE_CXX_OPTIONS}
+            PLINKS
+            ${KMCMAKE_DEPS_LINK}
+            PUBLIC
+        )
+        ```
+    </TabItem>
+</Tabs>
+
+## 库安装
+
+
+### 库文件安装
+
+`kmcmake_cc_*`函数已经集成了安装和导出对象的功能，在centos系统上， `.so`和`.a`库文件会安装到`lib64`文件夹
+下，`kmcmake`提供了`KMCMAKE_INSTALL_LIB`选项，编译时使用-DKMCMAKE_INSTALL_LIB=ON选项，可以设置库安装到`lib`文件夹下。
+
+### 头文件安装
+
+头文件默认提供了安装步骤:
+
+```cmake
+install(DIRECTORY ${PROJECT_NAME}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING
+        PATTERN "*.inc"
+        PATTERN "*.h"
+        PATTERN "*.hpp"
+        )
+```
+如果对头文件的类型或者安装有额外需要，请在`CMakeLists.txt`文件中做修改。
+
+### 对象导出
+
+对于 `C++`的库，kumo 默认导出一个静态库和一个动态库，调用者根据需要调用动态或者静态库
+
+示例：
+
+<Tabs>
+    <TabItem value="call_turbo_static" label="静态库">
+        ```cmake
+        find_package(turbo REQUIRED)
+
+        kmcmake_cc_library(
+            NAMESPACE ${PROJECT_NAME}
+            NAME foo
+            SOURCES
+            foo.cc
+            CXXOPTS
+            ${KMCMAKE_CXX_OPTIONS}
+            PLINKS
+            ${KMCMAKE_DEPS_LINK} turbo::turbo_static
+            PUBLIC
+        )
+        ```
+    </TabItem>
+    <TabItem value="call_turbo_shared" label="动态库">
+        ```cmake
+        find_package(turbo REQUIRED)
+
+        kmcmake_cc_library(
+            NAMESPACE ${PROJECT_NAME}
+            NAME foo
+            SOURCES
+            foo.cc
+            CXXOPTS
+            ${KMCMAKE_CXX_OPTIONS}
+            PLINKS
+            ${KMCMAKE_DEPS_LINK} turbo::turbo_shared
+            PUBLIC
+        )
+        ```
+    </TabItem>
+</Tabs>

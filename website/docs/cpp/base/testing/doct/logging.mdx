@@ -1,0 +1,66 @@
+## Logging macros
+
+可以在测试用例期间记录其他消息（即使在[**并发线程**](faq.mdx#is-doctest-thread-aware)中也可以安全地记录）。
+
+## INFO()
+
+``INFO()`` 宏允许通过用逗号列出表达式来捕获异构表达式序列。
+
+```c++
+INFO("The number is ", i);
+```
+
+此消息将与当前作用域或当前作用域中嵌套的作用域中其后的所有断言相关，并且仅在断言失败时才会在稍后打印。
+
+该表达式**不会**立即求值 - 相反，它仅在需要时才进行延迟求值。
+
+一些注意事项：
+
+- 惰性字符串化意味着当断言失败时而不是在捕获点时将计算表达式 - 因此到那时值可能已经改变
+- 有关如何教 doctest 对类型进行字符串化的信息，请参阅 [**stringification**](stringification.mdx) 页面
+
+惰性求值意味着在常见情况下，当没有断言失败时，代码运行得非常快。这使得它甚至适合循环 - 也许可以记录迭代。
+
+还有 **````CAPTURE()````** 宏，它是 **````INFO()````** 的便捷包装：
+
+```c++
+CAPTURE(some_variable)
+```
+
+这将为您处理变量名称的字符串化（实际上它适用于任何表达式，而不仅仅是变量）。
+
+这会记录类似以下内容：
+
+```c++
+  some_variable := 42
+```
+
+## Messages which can optionally fail test cases {#messages-which-can-optionally-fail-test-cases}
+
+还有一些其他宏用于记录信息：
+
+- ```MESSAGE(message)```
+- ```FAIL_CHECK(message)```
+- ```FAIL(message)```
+
+```FAIL()``` 就像一个 ```REQUIRE``` 断言 - 测试用例失败并退出。 ```FAIL_CHECK()``` 的
+作用类似于 ```CHECK``` 断言 - 测试用例失败，但继续执行。 ```MESSAGE()``` 只是打印一条消息。
+
+```c++
+FAIL("This is not supposed to happen! some var: ", var);
+```
+
+这里也没有惰性字符串化 - 字符串总是被构造和打印。
+
+还有一些供第三方库使用，例如模拟框架：
+
+- ```ADD_MESSAGE_AT(file, line, message)```
+- ```ADD_FAIL_CHECK_AT(file, line, message)```
+- ```ADD_FAIL_AT(file, line, message)```
+
+当将来自不同框架的断言与 doctest 集成时，它们非常有用。
+
+------
+
+- 查看 [**example**](https://gitee.com/kumo-hub/doctest/tree/master/examples/all_features/logging.cpp)，它显示了如何使用所有这些。
+

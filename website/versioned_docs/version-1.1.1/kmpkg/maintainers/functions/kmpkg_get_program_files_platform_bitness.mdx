@@ -1,0 +1,16 @@
+---
+date: 01/10/2024
+---
+# 函数： kmpkg_get_program_files_platform_bitness
+
+获取当前平台的位数的`程序文件`目录：在 64 位 Windows 上是 `$ENV{ProgramW6432}`，在 32 位 Windows 上是 `$ENV{PROGRAMFILES}`。
+
+## 使用情况
+
+```cmake
+kmpkg_get_program_files_platform_bitness(<variable>)
+```
+
+## Source
+
+[scripts/cmake/kmpkg\_get\_program\_files\_platform\_bitness.cmake](https://gitee.com/kumo-pub/kmpkg/blob/master/scripts/cmake/kmpkg_get_program_files_platform_bitness.cmake)

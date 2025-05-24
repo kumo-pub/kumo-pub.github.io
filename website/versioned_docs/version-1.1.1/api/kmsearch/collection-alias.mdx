@@ -1,0 +1,233 @@
+---
+sidebarDepth: 1
+sitemap:
+priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 索引表别名
+
+别名是指向实际索引表的虚拟索引表名称。它与 Linux 上的符号链接相似。
+
+当您希望在不修改代码的情况下将应用程序切换到新索引表时，使用别名会非常方便。例如：
+
+假设我们有一个名为 `companies_june10` 的索引表和一个指向该索引表的名为 `companies` 的别名。
+
+`companies ---> companies_june10`
+
+第二天（6 月 11 日），我们创建一个名为 `companies_june11` 的新索引表，并在后台将文档索引到该索引表中。当完成索引时，只需更新 `companies` 别名以指向这个新索引表，应用程序将立即开始查询新索引的索引表。
+
+`companies ---> companies_june11`
+
+现在让我们看看如何创建、更新和管理别名。
+
+## 创建或更新别名
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+        ```js
+        aliased_collection = {
+        'collection_name': 'companies_june11'
+    }
+
+        // Creates/updates an alias called `companies` to the `companies_june11` collection
+        client.aliases().upsert('companies', aliased_collection)
+        ```
+
+    </TabItem>
+
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        aliased_collection = {
+        'collection_name': 'companies_june11'
+    }
+
+        # Creates/updates an alias called `companies` to the `companies_june11` collection
+        client.aliases.upsert('companies', aliased_collection)
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl "http://localhost:8868/aliases/companies" -X PUT \
+        -H "Content-Type: application/json" \
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+        "collection_name": "companies_june11"
+    }'
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+        ```json
+        {
+            "name": "companies",
+            "collection_name": "companies_june11",
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`PUT ${KUMOSEARCH_HOST}/aliases/:alias`
+
+### 参数
+| 参数               | 必选 | 描述               |
+|------------------|----|------------------| 
+| collection_name     | 是     | 希望将别名映射到的索引表的名称。 |
+
+## 检索别名
+
+我们可以通过检索别名来找出别名指向哪个索引表。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+        ```js
+        client.aliases('companies').retrieve()
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        client.aliases['companies'].retrieve()
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        "http://localhost:8868/aliases/companies"
+
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "name": "companies",
+            "collection_name": "companies_june11",
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/aliases/:alias`
+
+## 列出所有别名
+
+列出所有别名及其映射到的相应索引表。
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+
+        ```js
+        client.aliases().retrieve()
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+
+        ```py
+        client.aliases.retrieve()
+        ```
+
+    </TabItem>
+
+    <TabItem value="Shell" label="Shell" default>
+
+        ```bash
+        curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+        "http://localhost:8868/aliases"
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "aliases": [
+        {
+            "name": "companies",
+            "collection_name": "companies_june11"
+        },
+        {
+            "name": "employees",
+            "collection_name": "employees_june11"
+        }
+            ]
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`GET ${KUMOSEARCH_HOST}/aliases`
+
+## 删除别名
+
+<Tabs>
+    <TabItem value="JavaScript" label="JavaScript" default>
+        ```js
+        client.aliases('companies').delete()
+        ```
+
+    </TabItem>
+    <TabItem value="Python" label="Python" default>
+        ```py
+        client.aliases['companies'].delete()
+        ```
+
+    </TabItem>
+    <TabItem value="Shell" label="Shell" default>
+        ```bash
+        curl "http://localhost:8868/aliases/companies" -X DELETE
+        -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}"
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 响应示例
+
+<Tabs>
+    <TabItem value="json" label="json" default>
+
+        ```json
+        {
+            "name": "companies",
+            "collection_name": "companies_june11"
+        }
+        ```
+
+    </TabItem>
+</Tabs>
+
+#### 定义
+`DELETE ${KUMOSEARCH_HOST}/aliases/:alias`
+

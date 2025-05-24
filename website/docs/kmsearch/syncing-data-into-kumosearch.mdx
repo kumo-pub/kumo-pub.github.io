@@ -1,0 +1,91 @@
+# 将数据同步到 kumosearch
+
+kumosearch 提供了一个 restful API，可以使用它将数据从主数据库同步到 kumosearch。
+
+有几种实现方法，具体的方法取决于您的架构、kumosearch 集群中的 CPU 容量以及所需的**实时性**。
+
+## 定期批量同步更改 {#sync-changes-in-bulk-periodically}
+
+### 轮询您的主数据库 {#polling-your-primary-database}
+
+1. 向主数据库中的每条记录添加 `updated_at` 时间戳，并在对记录进行任何更改时更新它。
+2. 对于已删除的记录，可以使用设置为 `true` 的 `is_deleted` 布尔字段来 `软删除` 该记录，或者将已删除记录的 ID 保存在具有 `deleted_at` 时间戳的单独表中。
+3. 定期（例如每 30 秒）查询数据库，查找在当前时间和上次同步进程运行之间具有 `updated_at` 时间戳的所有记录（应持久化存储此 `last_synced_at` 时间戳）。
+4. 使用[API 批量导入索引](../api/kmsearch/documents.mdx#index-multiple-documents)，将这些记录同步到 kumosearch，使用 `action=upsert`。
+5. 对于步骤 2 中标记为已删除的记录，通过[按查询删除](../api/kmsearch/documents.mdx#delete-by-query) API 调用从 kumosearch 中删除，使用如下所示的过滤器包含所有记录 ID：`filter_by:=[id1,id2,id3]`。
+
+如果数据跨越多个表，且数据库支持视图，可以创建一个视图将所需的所有表进行 JOIN 操作，并轮询该视图而不是单个表。
+
+### 使用变更监听器 {#using-change-listeners}
+
+如果您的主数据库支持变更触发器或更改数据捕获（CDC）：
+
+1. 编写一个监听器挂钩这些更改流，并将更改推送到临时队列中。
+2. 设置一个计划任务，每隔 5 秒读取队列中的所有更改并[批量导入](../api/kmsearch/documents.mdx#index-multiple-documents)到 kumosearch。
+
+### 使用ORM回调 {#using-orm-hooks}
+
+如果您使用 ORM，可以利用 ORM 框架提供的回调：
+
+1. 在 ORM 的 `on_save` 回调中（名称可能因 ORM 而异），将需要同步到 kumosearch 的更改写入临时队列。
+2. 设置一个计划任务，每隔 5 秒读取队列中的所有更改并[批量导入](../api/kmsearch/documents.mdx#index-multiple-documents)kumosearch。
+
+## 同步实时更改 {#sync-real-time-changes}
+
+### 使用API {#using-the-api}
+
+除了[定期同步更改](#sync-changes-in-bulk-periodically) 之外，如果您有需要实时更新某些记录的应用场景（例如，用户编辑的记录需要立即反映在搜索结果中），
+可以使用[单文档索引 API](../api/kmsearch/documents.mdx#index-a-single-document)。这样可以确保编辑后的数据实时反映在搜索结果中，而不是等待 10 秒或任何同步间隔。
+
+需要注意的是，对于相同数量的文档，批量导入端点的性能高于单个文档索引端点，并且使用的 CPU 资源更少。因此，建议尽可能使用批量导入端点，即使这意味着将同步间隔缩短至 2 秒。
+
+## 完全重新索引 {#full-re-indexing}
+
+除了上述策略外，您还可以每晚对整个数据集进行重新索引。这有助于填补由于schema验证错误、网络问题或重试失败等原因导致的同步数据中的任何缺漏。
+
+您可以使用[索引表别名](../api/kmsearch/collection-alias.mdx)功能在不中断服务的情况下重新索引到新的索引表，然后将别名切换到新索引表。
+
+## 导入数据时的技巧 {#tips-when-importing-data}
+
+以下是批量导入 kumosearch 数据时的一些技巧：
+
+### 文档 ID {#document-ids}
+
+为了后续更新推送到 kumosearch 的记录，需要在每个发送到 kumosearch 的文档中设置 `id` 字段。这是 kumosearch 用于内部参考文档的特殊字段。
+
+如果没有显式设置 `id` 字段，kumosearch 将自动为文档生成一个字段。可以通过将 `return_ids=true` 设置为导入端点的参数，来获取这些自动生成的 ID。建议将这些 `id` 字段保存在数据库中，以便在未来更新相同记录时使用。
+
+### 客户端超时 {#client-side-timeouts}
+
+导入大批量数据时，请确保在实例化客户端库时，将默认的客户端超时设置延长到最多 60 分钟。
+
+kumosearch 的写入 API 调用是同步的，因此如果客户端因超时而提前断开连接，再次重试相同的写入操作时可能会产生重复。
+
+### 处理 HTTP 503 {#handling-http-503s}
+
+当发送到 kumosearch 的写入量很大时，kumosearch 有时会返回 HTTP 503 状态码，表示未就绪或滞后。
+
+这是 kumosearch 内置的反压机制，用于防止大量写入占用全部 CPU 资源，从而影响读取性能。
+
+如果遇到 HTTP 503 错误，请尝试以下一项或多项措施：
+
+1. 添加更多核 CPU，以便可以并行写入。对于大容量写入，我们建议至少使用 4 核 CPU。
+2. 确保已将客户端超时（在实例化客户端库时设置）提高到 60 分钟，以避免客户端因超时而中断正在进行的写入。较短的客户端超时可能导致频繁重试同样的数据写入，从而造成“雷群效应”。
+3. 增加客户端库中的重试时间间隔，或将其设置为 10 到 60 秒之间的随机值（特别是在无服务器环境中），以在重试时引入一些抖动。这可以给 kumosearch 更多时间处理之前的写入操作。
+4. 如果您的字段仅用于显示目的，而不用于搜索/过滤/分面/排序/分组，则应不将其设置在schema中，以避免对这些字段进行索引。这样，在将文档发送到 kumosearch 时，这些字段只会存储在磁盘上并在需要时返回，而不会消耗内存中的索引资源。这有助于减少不必要的 CPU 周期消耗。
+5. 有时，磁盘 I/O 可能成为瓶颈，特别是当每个单独的文档都很大时。在这种情况下，可以在 kumosearch Cloud 中启用高性能磁盘或使用 nVME SSD 磁盘以提高性能。
+6. 还可以调整 [服务器配置参数](../api/kmsearch/server-configuration.mdx)中的 `healthy-read-lag` 和 `healthy-write-lag` 值。但采取以上步骤后，通常不再需要这样做。
+
+### 处理拒绝写入：资源类型耗尽错误
+
+当 RAM (OUT_OF_MEMORY) 或磁盘空间 (OUT_OF_DISK) 耗尽时，可能会看到 `资源类型耗尽` 错误。
+
+kumosearch 使用的 [RAM容量](./system-requirements.mdx#内存选择) 与 kumosearch 节点中索引的数据量成正比。因此，如果遇到 `OUT_OF_MEMORY` 错误，需要增加 RAM 以容纳内存中的数据集。
+
+当遇到 `OUT_OF_DISK` 时，应增加磁盘容量并重新启动 kumosearch。在 kumosearch Cloud 上，如果 X 是 RAM 量，我们提供 5X 磁盘空间（或至少 8GB）。因此，要添加更多磁盘空间，您需要升级到下一个 RAM 层级。
+
+### 客户端批处理大小与服务器端批处理
+
+在导入 API 调用中，有一个名为[batch_size](../api/kmsearch/documents.mdx#configure-bulk-size)的参数，用于控制服务器端批处理（即在服务搜索队列之前处理来自导入 API 调用的文档数量）。通常无需更改此默认值。
+
+此外，可以通过控制单个导入 API 调用中的文档数量来进行客户端批处理，并可能并行执行多个 API 调用。

@@ -1,0 +1,839 @@
+---
+sidebarDepth: 2
+sitemap:
+  priority: 0.7
+---
+
+import Tabs from '@theme/Tabs';
+
+import TabItem from '@theme/TabItem';
+
+# 索引表
+
+在 kumosearch 中，您索引的每条记录都称为“文档”，一组具有相似字段的文档称为“索引表”。索引表大致相当于关系数据库中的表。
+
+## 创建索引表 {#create-a-collection}
+
+在[添加文档](./documents.mdx#index-a-single-document)到 kumosearch 之前，您需要首先创建一个 `索引表 collections` - 为其命名并定义将从索引中检索的字段。我们称此定义为索引表的 `schema`，它描述了文档中的字段及其[数据类型](#field-type)。
+
+:::tip
+将索引表 `schema` 定义为类似于在强类型编程语言（如 Typescript、C、Java、Dart、Rust 等）中定义 `类型`。
+这确保了添加到索引表中的文档具有一致的数据类型并经过验证，从而有助于防止因文档之间的数据类型不匹配或不一致而出现的错误。
+:::
+
+:::tip 组织索引表
+
+有关如何将数据组织到索引表中的更多信息，请阅读：[管理索引表](../../kmsearch/organizing-collections.mdx)。
+
+:::
+
+有两种指定 `schema` 的方法：
+
+1. [预定义 schema](#with-pre-defined-schema)：预定义要索引的所有字段。
+2. [自动检测 schema](#auto-detect-schema)：让 kumosearch 自动检测您索引的文档中的字段和数据类型。
+
+最简单的选项是 [#2](#auto-detect-schema)，这样无需显式定义 `schema`。但如果需要更细粒度的控制或验证，可以选择使用[#1](#with-pre-defined-schema)，或将两者结合使用。
+
+### 预定义 schema {#with-pre-defined-schema}
+
+让我们首先创建一个具有显式预定义 `schema` 的索引表。
+
+此选项使您可以对文档字段的[数据类型](#field-type)进行细粒度控制，并将索引表配置为拒绝与 `schema` 中定义的数据类型不匹配的文档([默认](./documents.mdx#处理脏数据))。
+
+如果您希望 kumosearch 自动为您检测 `schema`，请跳至[自动检测schema](#auto-detect-schema)。
+
+<Tabs>
+  <TabItem value="JavaScript" label="JavaScript">
+
+```js
+let schema = {
+  'name': 'companies',
+  'fields': [
+    {
+      'name': 'company_name',
+      'type': 'string',
+      'facet': false
+    },
+    {
+      'name': 'num_employees',
+      'type': 'int32',
+      'facet': false
+    },
+    {
+      'name': 'country',
+      'type': 'string',
+      'facet': true
+    }
+  ],
+  'default_sorting_field': 'num_employees'
+}
+
+client.collections().create(schema)
+```
+
+  </TabItem>
+
+    <TabItem value="Python" label="Python">
+
+```py
+schema = {
+  'name': 'companies',
+  'fields': [
+    {
+      'name'  :  'company_name',
+      'type'  :  'string'
+    },
+    {
+      'name'  :  'num_employees',
+      'type'  :  'int32'
+    },
+    {
+      'name'  :  'country',
+      'type'  :  'string',
+      'facet' :  True
+    }
+  ],
+  'default_sorting_field': 'num_employees'
+}
+
+client.collections.create(schema)
+```
+
+    </TabItem>
+
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/collections" \
+       -X POST \
+       -H "Content-Type: application/json" \
+       -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+       -d '{
+         "name": "companies",
+         "fields": [
+           {"name": "company_name", "type": "string" },
+           {"name": "num_employees", "type": "int32" },
+           {"name": "country", "type": "string", "facet": true }
+         ],
+         "default_sorting_field": "num_employees"
+       }'
+```
+
+    </TabItem>
+</Tabs>
+
+有关所有可用选项，请参阅[schema参数](#schema-parameter)；有关所有可用数据类型，请参阅[字段类型](#field-type)。
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "name": "companies",
+  "num_documents": 0,
+  "fields": [
+    {"name": "company_name", "type": "string" },
+    {"name": "num_employees", "type": "int32" },
+    {"name": "country", "type": "string", "facet": true }
+  ],
+  "default_sorting_field": "num_employees"
+}
+```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+
+`POST ${KUMOSEARCH_HOST}/collections`
+
+:::warning 重要提示
+
+在索引表 `schema` 中提到的所有字段都将在内存中建立索引。
+
+在某些情况下，您可能不打算按特定字段搜索/过滤/分面/分组，而只是将其存储（在磁盘上）并在文档被搜索命中时按原样返回。例如，您可能希望在每个文档中存储图像 URL，但不希望对实际 URL 进行文本搜索。
+
+在这种情况下，不应在索引表的 `schema` 中提及这些字段，或可以将这些字段设置为 `index: false`（请参阅下面的 `fields`[schema参数](#schema-parameter)），以将其标记为未索引字段。将文档添加到索引表时，可以添加任意数量的额外未索引字段 - 它们只会存储在磁盘上，不会占用内存。
+:::
+
+### 自动检测 schema {#auto-detect-schema}
+
+如果您的字段名称是动态的并且预先未知，或者您只是希望简化操作并对文档中的所有字段进行索引，那么可以使用自动检测 `schema`。
+
+当[添加文档](./documents.mdx#index-a-single-document)到索引表时，可以定义一个名为 `.*` 的通配符字段并输入 `auto` 让kumosearch自动检测字段的类型。这实际上支持使用**任何 RegEx 表达式**来定义字段名称。
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "name": "companies",  
+  "fields": [
+    {"name": ".*", "type": "auto" }
+  ]
+}
+```
+
+    </TabItem>
+</Tabs>
+
+当以这种方式定义 `.*` 字段时，文档中的所有字段都会被自动索引，以便进行**搜索和过滤**。
+
+#### 数据强制转换
+
+假设您已为索引表中的特定字段（或多个字段）（例如：`popularity_score`）设置了 `type: auto`，并将第一个文档发送为：
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "title": "A Brief History of Time",
+  "author": "Stephen Hawking",
+  "popularity_score": 4200
+}
+```
+
+    </TabItem>
+</Tabs>
+
+由于 `popularity_score` 具有 `type: auto`，数据类型将在内部自动设置为 `int64`。
+
+当下一个文档的 `popularity_score` 字段不是整数字段而是字符串时，例如：
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "title": "The Hunger Games",
+  "author": "Suzanne Collins",
+  "popularity_score": "4230"
+}
+```
+
+    </TabItem>
+</Tabs>
+
+默认情况下，kumosearch 会尝试将值强制转换为之前推断的类型。因此，在此示例中，由于第一个文档的 `popularity_score` 是整数数据类型，第二个文档的 `popularity_score` 字段将被强制转换为整数类型。
+
+然而，这并不总是有效 - 例如：假设该值有字母，它不能被强制为整数。在这种情况下，当 kumosearch 无法将字段值强制为先前推断的类型时，索引将失败并出现相应的错误。
+
+:::tip
+您可以使用 [dirty_values 参数](./documents.mdx#处理脏数据) 参数在写入时控制此默认强制行为。
+:::
+
+#### 通过自动检测 `schema`对字段进行分面
+
+[分面](./search_api.mdx#结果分面)操作未启用通配符字段（例如，`{"name": ".*" , ...}`），因为这会消耗大量内存，特别是对于大文本字段。但是，仍然可以显式定义特定字段（无论是否使用正则表达式名称）并设置 `facet: true`，以启用这些字段的分面功能。
+
+例如，当定义如下 `schema` 时：
+
+```json
+{
+  "name": "companies",
+  "fields": [
+    {
+      "name": ".*_facet",
+      "type": "auto",
+      "facet": true
+    }
+  ]
+}
+```
+
+这只会将文档中以 `_facet` 结尾的字段名称设置为分面。
+
+#### `Geopoint` 和自动检测 `schema`
+
+[geopoint 字段](#field-type) 需要显式类型定义，因为地理字段值表示为两个浮点数，我们无法区分纬度/经度定义和实际的浮点数组。
+
+#### 对除某些字段之外的所有字段建立索引
+
+如果想要对文档中除少数字段之外的所有字段建立索引，可以使用 `{"index": false, "optical": true}` 设置来排除字段。
+
+注意：目前不能将必填字段从索引中排除，因此应将其设置为可选。
+
+例如，如果您想索引所有字段（除了以 `description_` 开头的字段），您可以使用如下 `schema`：
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "name": "companies",  
+  "fields": [
+    {"name": ".*", "type": "auto" },
+    {"name": ".*_facet", "type": "auto", "facet": true },
+    {"name": "description_.*", "type": "auto", "index": false, "optional": true },
+    {"name": "country", "type": "string", "facet": true }
+  ]
+}
+```
+
+    </TabItem>
+</Tabs>
+
+:::tip 提示
+
+您可以将自动检测 `schema`与显式字段定义混合使用。
+
+如果某个字段有明确的定义（如上例中的 `country`），kumosearch 会优先选择该定义，而不是自动推断。
+
+当没有显式定义字段类型时，系统将根据第一个包含该字段的文档来确定该字段的类型。例如，如果您在文档中索引了一个名为 title 的字段，并且它的值是字符串，那么接下来包含 title 字段的文档也应保证该字段的值为字符串。
+
+:::
+
+### `schema`参数 {#schema-parameter}
+
+| 参数                    | 必选  | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+|:----------------------|:----|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| name                  | 是 | 要创建的索引表的名称。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| fields                | 是 | 希望用于 [搜索](./search_api.mdx#search-parameter)、[过滤](./search_api.mdx#筛选结果)、[分面](./search_api.mdx#结果分面)、[分组](./search_api.mdx#group-result) 和 [排序](./search_api.mdx#结果排序) 的字段。 对于每个字段，必须至少指定它的 `name` 和 [`type`](#field-type) 例如： ```{"name": "title", "type" : "string", "facet": false, "index": true}``` `name` 可以是一个简单的字符串，如 `"name": "score"`。或者，也可以使用正则表达式来指定与模式匹配的字段名称。例如：如果想指定所有以 `score_` 开头的字段都是整数，可以将 `name` 设置为 `"name": "score_.*"`。<p/>**将字段声明为可选**可以通过设置`"Optional": true`将字段声明为可选。<p/>**将字段声明为分面**可以通过设置 `"facet": true` 字段将字段声明为分面。 分面字段会逐字索引，无需任何标记化或预处理。例如，如果您正在构建产品搜索，可以将“颜色”和“品牌”定义为分面字段。一旦在 `schema` 中启用了分面字段，就可以在 [facet_by 搜索参数](./search_api.mdx#结果分面) 中使用它。<p/>**将字段声明为未索引**您可以通过设置 `"index": false` 将字段设置为未索引（即无法搜索/排序/过滤/分面）。这在[自动检测 scheme](#auto-detect-schema)需要[从索引中排除某些字段](#对除某些字段之外的所有字段建立索引)时非常有用。<p/>**防止字段存储在磁盘上**： 通过设置 `"store": false` 确保在将文档保存到磁盘之前从文档中删除字段值。**配置特定于语言的分词器：**kumosearch 使用的默认分词器适用于大多数语言，尤其是那些用空格分隔单词的语言。但是，根据用户的反馈，我们添加了以下语言的区域设置特定自定义。您可以通过在字段定义中设置名为 `locale` 的字段来启用字段的这些自定义。例如：`“{name: 'title', type: 'string', locale: 'zh'}”` 将为名为 `title` 的字段启用中文区域设置自定义。 以下是支持自定义的所有语言列表：<ul><li>`ja` - 日语</li><li>`zh` - 中文</li><li>`ko` -韩语</li><li>`th` - 泰语</li><li>`el` - 希腊语</li><li>`ru` - 俄语</li><li>`sr` - 塞尔维亚语/西里尔文</li><li>`uk` - 乌克兰语</li><li>`be` - 白俄罗斯语</li> <li> 对于所有其他语言，您无需设置 `locale` 字段 </li></ul> |
+| token_separators      | 否  | 用于将文本分割成单个单词的符号或特殊字符列表，此外包括空格和换行符。 例如，您可以将 `-`（连字符）添加到此列表中，以使像 `non-stick` 这样的单词在连字符上拆分并索引为两个单独的单词。 阅读[开发手册](../../kmsearch/tips-for-searching-common-types-of-data.mdx)，了解有关如何使用此设置的更多示例。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| symbols_to_index      | 否  | 要索引的符号或特殊字符的列表。 例如，您可以将 `+` 添加到此列表中，以使单词 `c++` 可逐字索引。 阅读[开发手册](../../kmsearch/tips-for-searching-common-types-of-data.mdx)，了解有关如何使用此设置的更多示例。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 
+| default_sorting_field | 否  | `int32 / float` 字段的名称，用于确定搜索过程中未提供 `sort_by` 子句时搜索结果的排名顺序。 该字段必须能够表示某种受欢迎度。例如，在产品搜索应用中，可以将 `num_reviews` 字段定义为 `default_sorting_field`，以默认对评论最多的产品进行排名。此外，当搜索查询中的某个词与多个词匹配时（在前缀搜索或处理拼写错误时），此参数用于对这类匹配记录进行排序。 例如，搜索 `ap`时，将匹配包含 `apple`、`apply`、`apart`、`apron` 或其他以 `ap` 开头的单词。此外，搜索 `jofn` 将匹配包含 `john`、`joan`以及索引表中存在 1 个拼写错误的所有类似变体的记录。 出于性能原因，kumosearch 默认情况下仅考虑前 4 个前缀或拼写错误变体(`4`可使用 [max_candidates](./search_api.mdx#ranking-and-sorting-parameters) 搜索参数调整，默认为 `4`)。 如果索引表schema中未指定 `default_sorting_field`，则最前排序将使用匹配记录数最多的前缀或拼写错误变体。 如果每条记录中有一个名为 `popularity` 的字段，并且希望使用该字段的值来排序，则可以将该字段设置为 `default_sorting_field`。这样，kumosearch 将根据该`popularity`字段的值来确定最受欢迎的前 `max_candidates` 项。当用户输入更多字符时，搜索将进一步细化，以始终将最受欢迎的前缀排在最前面。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+
+### 字段参数 {#field-parameters}
+
+| 参数   | 必选 | 描述                                               |
+|:------------|:---------|:--------------------------------------------------------------------|
+| name        | 是     | 字段名称                                                               |
+| type        | 是      | 字段的数据类型（有关类型列表，请参阅下面的部分）                                            |
+| facet       | 否       | 启用字段的分面功能。默认值：`false`                                                |
+| optional    | 否       | 当设置为`true`时，该字段可以包含空值`NULL`、空字符串` `或缺失值。默认值：`false`                           |
+| index       | 否       | 当设置为`false`时，该字段不会在任何内存索引中建立索引（例如搜索/排序/过滤/分面）。  默认值：`true` |
+| store       | 否       | 当设置为`false`时，字段值将不会存储在磁盘上。  默认值：`true`                             |
+| sort        | 否       | 当设置为`true`时，该字段将是可排序的。  默认值：数字类型为`true`         |
+| infix       | 否       | 当设置为`true`时，可以使用中缀搜索字段值。  会产生大量内存开销。默认值为 `false`                      |
+| locale      | 否       | 用于配置语言特定的分词处理，例如 `jp` 代表日语。默认值：`en`                    |
+| num_dim     | 否       | 将其设置为非零值可将`float[]`类型的字段视为向量字段                                     |
+| vec_dist    | 否       | 用于向量搜索的距离度量。默认值：`cosin`。您还可以使用`ip`进行内积                                |
+| reference   | 否       | 另一个索引表中应链接到此索引表以便可以在查询期间连接的字段的名称                                     |
+| range_index | 否       | 启用针对数字字段的范围过滤而优化的索引（例如`ranking：> 3.5`）。默认值：`false`                      |
+| stem        | 否       | 在内存中索引之前对值进行词干处理。默认值： `false`                                       |
+
+### 字段类型 {#field-type}
+
+kumosearch 允许您索引以下类型的字段：
+
+| 类型    | 描述                                                                 |
+|:-------------|:-----------------------------------|
+| `string`     | 字符串值                                                               |
+| `string[]`   | 字符串数组                                                              |
+| `int32`      | 最大整数值 2,147,483,647                                                |
+| `int32[]`    | `int32` 数组                                                         |
+| `int64`      | 大于 2,147,483,647 的整数值                                              |
+| `int64[]`    | `int64` 数组                                                         |
+| `float`      | 浮点数/小数                                                             |
+| `float[]`    | 浮点数/小数数组                                                           |
+| `bool`       | `true` or `false`                                                  |
+| `bool[]`     | 布尔数组                                                               |
+| `geopoint`   | 纬度和经度指定为`[lat, lng]`。更多信息请阅读[此处](./geosearch.mdx)                     |
+| `geopoint[]` | 纬度和经度数组指定为`[[lat1, lng1], [lat2, lng2]]`。更多信息请阅读[此处](./geosearch.mdx) |
+| `object`     | 嵌套对象。更多信息请阅读[此处](#常见数据类型索引注意事项)                           |
+| `object[]`   | 嵌套对象数组。更多信息请阅读[此处](#常见数据类型索引注意事项)                |
+| `string*`    | 自动将值转换为`string`或`string[]`的特殊类型                                    |
+| `image`      | 指示用于[图像搜索](./image-search.mdx)的base64编码字符串的特殊类型                |
+| `auto`       | 自动尝试根据添加到索引表中的文档推断数据类型的特殊类型。更多信息请参阅[自动检测 schema](#auto-detect-schema)   |
+
+### 克隆索引表 `schema`
+
+以下是如何克隆现有索引表的 `schema` （不复制文档）、覆盖设置和同义词。
+
+```shell
+curl -k "http://localhost:8868/collections?src_name=existing_coll" -X POST -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+        "name": "new_coll"
+      }'
+```
+
+上面的 API 调用将创建一个名为 `new_coll` 的新索引表，其中包含 `existing_coll` 的 `schema` 、覆盖和同义词。 `existing_coll` 索引表中的实际文档不会被复制，因此这主要用于从现有参考 `schema` 创建新索引表。
+
+:::tip
+以这种方式克隆索引表**不会**复制数据。
+:::
+
+### 将元数据添加到 `schema`
+
+可以在创建索引表时将**元数据**对象填充到 `schema` 中，记录有关索引表的详细信息，例如创建时间和创建者等。
+
+```json
+{
+  "name": "docs",
+  "enable_nested_fields": true,
+  "fields": [
+    {
+      "name": "title",
+      "type": "string",
+      "facet": true
+    }
+  ],
+  "metadata": {
+    "batch_job": 325,
+    "indexed_from": "2023-04-20T00:00:00.000Z"
+  }
+}
+```
+
+**元数据**对象中的字段将在 `GET /collections` 端点中保留并返回。
+
+### 常见数据类型索引注意事项
+
+以下是如何使用上表中的基本字段类型对其他常见类型的数据进行索引：
+
+- [嵌套字段/对象](#indexing-nested-fields)
+- [日期](#index-date)
+- [其他类型](#索引其他类型的数据)
+
+#### 索引嵌套字段 {#indexing-nested-fields}
+
+kumosearch 支持索引嵌套对象（和对象数组）。首先必须通过 `schema` 属性 `enable_nested_fields` 和数据类型 `object` 或 `object[]` 在索引表级别启用嵌套字段：
+
+```shell{4,6-7}
+curl -k "http://localhost:8868/collections" -X POST -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+        "name": "docs", 
+        "enable_nested_fields": true,
+        "fields": [
+          {"name": "person", "type": "object"},
+          {"name": "details", "type": "object[]"}
+        ]
+      }'
+```
+
+现在，当搜索对象字段名称时，将自动搜索所有子字段。使用 `.` 来引用特定的子字段，例如 `person.last_name` 或 `person.school.name`。
+
+还可以索引嵌套对象中的特定子字段。例如，文档如下所示：
+
+```json{7}
+{
+  "id": 1,
+  "name": "Jack",
+  "address": {
+    "line_1": "111 1st Street",
+    "city": "Alpha",
+    "zip": "98765"
+  }
+}
+```
+
+假设只想对 `address` 嵌套对象中的 `zip` 字段进行索引，而不对 `line_1` 等其他字段进行索引，可以在 `schema` 中指定这一点，如下所示：
+
+```shell{7}
+curl -k "http://localhost:8868/collections" -X POST -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+        "name": "docs", 
+        "enable_nested_fields": true,
+        "fields": [
+          {"name": "name", "type": "string"},
+          {"name": "address.zip", "type": "string"}
+        ]
+      }'
+```
+
+要索引对象数组中的特定字段，需要指定**数组数据类型**。例如，文档如下所示：
+
+```json{8,13}
+{
+  "id": 1,
+  "name": "Jack",
+  "addresses": [
+    {
+      "line_1": "111 1st Street",
+      "city": "Alpha",
+      "zip": "98765"
+    },
+    {
+      "line_1": "222 2nd Street",
+      "city": "Zeta",
+      "zip": "45678"
+    }
+  ]
+}
+```
+
+假设只想索引 `addresses` 对象数组中每个地址对象内的 `zip` 字段，而不索引其他字段，可以在 `schema` 中指定这一点，如下所示：
+
+```shell{7}
+curl -k "http://localhost:8868/collections" -X POST -H "Content-Type: application/json" \
+      -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" -d '{
+        "name": "docs", 
+        "enable_nested_fields": true,
+        "fields": [
+          {"name": "name", "type": "string"},
+          {"name": "addresses.zip", "type": "string[]"}
+        ]
+      }'
+```
+
+:::warning Note
+
+如果嵌套层次结构的不同级别的嵌套字段存在重叠定义，则更广泛的定义将优先于子字段的定义。
+:::
+
+**通过展平索引嵌套对象**
+
+您还可以在将数据发送到 kumosearch 之前将对象和对象数组展平为最优先级的字段。例如，以下嵌套对象：
+
+```json
+{
+  "nested_field": {
+    "field1": "value1",
+    "field2": ["value2", "value3", "value4"],
+    "field3": {
+      "fieldA": "valueA",
+      "fieldB": ["valueB", "valueC", "valueD"]
+    }
+  }
+}  
+```
+
+在将其索引到 kumosearch 之前，需要展平为：
+
+```json
+{
+  "nested_field.field1": "value1",
+  "nested_field.field2":  ["value2", "value3", "value4"],
+  "nested_field.field3.fieldA": "valueA",
+  "nested_field.field3.fieldB": ["valueB", "valueC", "valueD"]
+}
+```
+
+为了简化遍历结果中的数据，您可能希望将嵌套字段的扁平化和非扁平化版本发送到 kumosearch，并且仅将展平键设置为索引表 `schema` 中的索引，用于搜索/过滤/分面。在解析结果时，可以使用嵌套版本。
+
+#### 索引日期 {#index-date}
+
+日期需要转换为 `Unix 时间戳` 并在 kumosearch 中存储为 `int64` 字段。大多数语言都有库可以帮助完成此转换。
+
+然后，将能够使用 `<`、`>` 等数字运算符来过滤特定日期之前、之后或之间的记录。
+
+#### 索引其他类型的数据
+
+请阅读我们的开发手册，了解如何索引其他常见类型的数据，例如电子邮件、电话号码、SKU、型号等，请点击[此处](../../kmsearch/tips-for-searching-common-types-of-data.mdx)。
+
+## 检索索引表
+
+根据索引表的名称检索其详细信息。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+client.collections('companies').retrieve()
+```
+
+      </TabItem>
+
+    <TabItem value="Python" label="Python">
+
+```py
+client.collections['companies'].retrieve()
+```
+
+    </TabItem>
+      <TabItem value="Shell" label="Shell">
+
+```bash
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+     -X GET \
+    "http://localhost:8868/collections/companies"
+```
+
+      </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+  "name": "companies",
+  "num_documents": 1250,
+  "fields": [
+    {"name": "company_name", "type": "string"},
+    {"name": "num_employees", "type": "int32"},
+    {"name": "country", "type": "string", "facet": true}
+  ],
+  "default_sorting_field": "num_employees"
+}
+```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+`GET ${KUMOSEARCH_HOST}/collections/:collection`
+
+## 列出所有索引表
+
+返回所有索引表的摘要，按创建日期排序，最新的索引表首先出现。
+
+注意：默认情况下，返回所有索引表，但可以使用 `offset` 和 `limit` 参数对索引表列表进行分页。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+```js
+client.collections().retrieve()
+```
+
+      </TabItem>
+      <TabItem value="Python" label="Python">
+
+```py
+client.collections.retrieve()
+```
+
+      </TabItem>
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+    "http://localhost:8868/collections"
+```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+      <TabItem value="json" label="json">
+
+```json
+[
+  {
+    "num_documents": 1250,
+    "name": "companies",
+    "fields": [
+      {"name": "company_name", "type": "string"},
+      {"name": "num_employees", "type": "int32"},
+      {"name": "country", "type": "string", "facet": true}
+    ],
+    "default_sorting_field": "num_employees"
+  },
+  {
+    "num_documents": 1250,
+    "name": "ceos",
+    "fields": [
+      {"name": "company_name", "type": "string"},
+      {"name": "full_name", "type": "string"},
+      {"name": "from_year", "type": "int32"}
+    ],
+    "default_sorting_field": "from_year"
+  }
+]
+```
+
+      </TabItem>
+</Tabs>
+
+**定义**
+`GET ${KUMOSEARCH_HOST}/collections`
+
+## 删除索引表
+
+永久删除索引表。此操作无法撤消。对于大型索引表，这可能会影响读取延迟。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+```js
+client.collections('companies').delete()
+```
+
+      </TabItem>
+
+      <TabItem value="Python" label="Python">
+
+```py
+client.collections['companies'].delete()
+```
+
+      </TabItem>
+
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+     -X DELETE \
+    "http://localhost:8868/collections/companies"
+```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+      <TabItem value="json" label="json">
+```json
+{
+  "name": "companies",
+  "num_documents": 1250,
+  "fields": [
+    {"name": "company_name", "type": "string"},
+    {"name": "num_employees", "type": "int32"},
+    {"name": "country", "type": "string", "facet": true}
+  ],
+  "default_sorting_field": "num_employees"
+}
+```
+
+      </TabItem>
+</Tabs>
+
+删除索引表时，我们会执行磁盘压缩操作，以回收索引表使用的磁盘空间。如果您需要删除大量索引表，可以通过 `compact_store` 参数禁用此压缩操作，以提高删除操作的性能。您仍然可以通过 [API](./cluster-operations.mdx#压缩磁盘数据库) 进行完整的数据库压缩。
+
+**定义**
+`DELETE ${KUMOSEARCH_HOST}/collections/:collection`
+
+## 更新或更改索引表
+
+kumosearch 支持原地向索引表 `schema` 添加或删除字段。
+
+:::tip
+kumosearch 支持更新除 `id` 字段之外的所有字段（它是 kumosearch 中的特殊字段）。
+:::
+
+让我们看看如何将新的 `company_category` 字段添加到 `companies` 索引表中，并删除现有的 `num_employees` 字段。
+
+<Tabs>
+      <TabItem value="JavaScript" label="JavaScript">
+
+```js
+update_schema = {
+  "fields":[
+    {"name":"num_employees", "drop": true},
+    {"name":"company_category", "type":"string"}
+  ]
+}
+client.collections('companies').update(update_schema)
+```
+
+      </TabItem>
+
+    <TabItem value="Python" label="Python">
+
+```py
+update_schema = {
+  'fields': [    
+    {
+      'name'  :  'num_employees',
+      'drop'  :  True
+    },
+    {
+      'name'  :  'company_category',
+      'type'  :  'string'
+    }
+  ]
+}
+client.collections['companies'].update(update_schema)
+```
+
+    </TabItem>
+
+    <TabItem value="Shell" label="Shell">
+
+```bash
+curl "http://localhost:8868/collections/companies" \
+       -X PATCH \
+       -H "Content-Type: application/json" \
+       -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+       -d '{
+         "fields": [
+           {"name": "num_employees", "drop": true },
+           {"name": "company_category", "type": "string" }           
+         ]
+       }'
+```
+
+    </TabItem>
+</Tabs>
+
+**响应示例**
+
+<Tabs>
+    <TabItem value="json" label="json">
+
+```json
+{
+   "fields": [
+      {
+         "drop": true,
+         "name": "num_employees"
+      },
+      {
+         "name": "company_category",
+         "facet": false,
+         "index": true,
+         "infix": false,
+         "locale": "",
+         "optional": false,
+         "sort": false,
+         "type": "string"
+      }
+   ]
+}
+```
+
+    </TabItem>
+</Tabs>
+
+**定义**
+`PATCH ${KUMOSEARCH_HOST}/collections/:collection`
+
+:::warning
+ `schema` 更新操作是同步**阻塞**操作。
+
+更新过程中，所有对该特定索引表的写入操作将等待 `schema` 更新完成。因此，我们建议一次更新一个字段，特别是对于大型集合，并尽量在非高峰时段进行。
+
+读取操作将照常进行，不会阻塞。
+
+或者，您还可以使用 [别名功能](#使用别名) 进行零停机 `schema` 更改。
+:::
+
+更新操作包括初始验证步骤，评估磁盘上的记录以确保它们与 `schema` 更改兼容。例如，有一个字符串字段 `A`，该字段已存在于磁盘上的文档中，但不是 `schema` 的一部分。如果尝试通过添加类型为整数的字段 `A` 来更新索引表`schema`，验证步骤将拒绝此更改，因为它与已有数据类型不兼容。
+
+如果验证成功，实际的 `schema` 更改将完成，并且记录将根据请求的更改进行索引/重新索引/删除。API 调用后，过程即完成（确保使用较大的客户端超时值）。由于更新的阻塞性质，建议在非高峰时段进行更改。或者，还可以使用 [别名功能](#使用别名) 进行零停机 `schema` 更改。
+
+### 修改现有字段
+
+由于 kumosearch 目前仅支持添加/删除字段，因此对现有字段的任何修改都应该表示为删除+添加操作。除 `id` 字段外，所有字段都可以修改。
+
+例如，要将 `facet` 属性添加到 `company_category` 字段，我们将在同一更改集中删除+添加操作：
+
+```bash
+curl "http://localhost:8868/collections/companies" \
+       -X PATCH \
+       -H "Content-Type: application/json" \
+       -H "X-KUMOSEARCH-API-KEY: ${KUMOSEARCH_API_KEY}" \
+       -d '{
+         "fields": [
+           {"name": "company_category", "drop": true },
+           {"name": "company_category", "type": "string", "facet": true }   
+         ]
+       }'
+```
+
+### 使用别名
+
+如果您需要进行零停机 `schema` 更改，可以使用更新的 `schema` 完全重新创建索引表，并使用[索引表别名](./collection-alias.mdx) 功能进行切换：
+
+假设有一个名为 `movies_jan_1` 的索引表，想要更改其 `schema` 。
+
+1. 首先[创建一个别名](./collection-alias.mdx#创建或更新别名) 指向原索引表。例如：创建一个名为 `movies` 的别名，指向 `movies_jan_1`。在应用程序中使用此索引表别名来搜索/索引索引表中的文档。
+2. 使用更新的索引表 `schema` 创建**新**带时间戳的索引表。例如：`movies_feb_1`。
+3. 在程序中，临时并行写入旧索引表和新索引表 - 本质上是双重写入。例如：将写入发送到 `movies_jan_1` 索引表和新的 `movies_feb_1` 索引表。
+4. 现在，将主数据库中的数据更新插入到新索引表中。例如 `movies_feb_1`。
+5. [更新索引表别名](./collection-alias.mdx#创建或更新别名) ，使其指向新索引表。例如：更新 `movies` 指向 `movies_feb_1`。
+6. 停止程序向旧索引表发送写入，并[删除旧索引表](./collection-alias.mdx#删除别名)，在示例中为 `movies_jan_1`。
+
+更新别名后，任何搜索/索引操作都将转到新索引表（例如：`movies_feb_1`），无需进行任何额外的程序端更改。
+
+### 动态字段添加
+
+如果需要动态向 `schema` 添加新字段，建议在创建索引表时使用[自动检测 schema](#auto-detect-schema)。可以定义 RegEx 正则表达式的字段名称，当包含新字段名称的文档进来时，新字段将自动添加到 `schema` 中。

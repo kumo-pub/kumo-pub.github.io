@@ -1,0 +1,232 @@
+---
+date: 01/10/2024
+---
+# 教程： 将修补程序应用于依赖项的源代码
+
+了解如何开发补丁并将其应用到 kmpkg 端口文件中的库。
+
+## 初始错误日志
+
+首先，尝试构建：
+
+```shell
+PS D:\src\kmpkg> kmpkg install libpng:x64-uwp --editable
+Computing installation plan...
+The following packages will be built and installed:
+    libpng[core]:x64-uwp
+Starting package 1/1: libpng:x64-uwp
+Building package libpng[core]:x64-uwp...
+-- Using cached D:/src/kmpkg/downloads/glennrp-libpng-v1.6.37.tar.gz
+-- Extracting source D:/src/kmpkg/downloads/glennrp-libpng-v1.6.37.tar.gz
+-- Using source at D:/src/kmpkg/buildtrees/libpng/src/v1.6.37-c993153cdf
+-- Configuring x64-uwp
+-- Building x64-uwp-rel
+CMake Error at scripts/cmake/execute_required_process.cmake:14 (message):
+  Command failed: C:/Program Files/CMake/bin/cmake.exe;--build;.;--config;Release
+
+  Working Directory: D:/src/kmpkg/buildtrees/libpng/x64-uwp-rel
+
+  See logs for more information:
+
+      D:\src\kmpkg\buildtrees\libpng\build-x64-uwp-rel-out.log
+      D:\src\kmpkg\buildtrees\libpng\build-x64-uwp-rel-err.log
+
+Call Stack (most recent call first):
+  scripts/cmake/kmpkg_build_cmake.cmake:3 (execute_required_process)
+  ports/libpng/portfile.cmake:22 (kmpkg_build_cmake)
+  scripts/ports.cmake:84 (include)
+
+
+Error: build command failed
+```
+
+接下来，查看上面的日志（build-xxx-out.log 和 build-xxx-err.log）。
+
+```console
+// build-x64-uwp-rel-out.log
+...
+"D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\ALL_BUILD.vcxproj" (default target) (1) ->
+"D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\png.vcxproj" (default target) (3) ->
+(ClCompile target) -> 
+  D:\src\kmpkg\buildtrees\libpng\src\v1.6.37-c993153cdf\pngerror.c(775): warning C4013: 'ExitProcess' undefined; assuming extern returning int [D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\png.vcxproj]
+
+
+"D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\ALL_BUILD.vcxproj" (default target) (1) ->
+"D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\png.vcxproj" (default target) (3) ->
+(Link target) -> 
+  pngerror.obj : error LNK2019: unresolved external symbol _ExitProcess referenced in function _png_longjmp [D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\png.vcxproj]
+  D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\Release\libpng16.dll : fatal error LNK1120: 1 unresolved externals [D:\src\kmpkg\buildtrees\libpng\x64-uwp-rel\png.vcxproj]
+
+    1 Warning(s)
+    2 Error(s)
+
+Time Elapsed 00:00:04.19
+```
+
+## 识别有问题的代码
+
+此外，查看周围的环境也很有用：
+
+```c
+/* buildtrees\libpng\src\v1.6.37-c993153cdf\pngerror.c:769 */
+    /* If control reaches this point, png_longjmp() must not return. The only
+    * choice is to terminate the whole process (or maybe the thread); to do
+    * this the ANSI-C abort() function is used unless a different method is
+    * implemented by overriding the default configuration setting for
+    * PNG_ABORT().
+    */
+    PNG_ABORT();
+```
+
+递归搜索`PNG_ABORT`揭示了定义：
+
+```powershell
+PS D:\src\kmpkg\buildtrees\libpng\src\v1.6.37-c993153cdf> findstr /snipl "PNG_ABORT" *
+CHANGES:701:  Added PNG_SETJMP_SUPPORTED, PNG_SETJMP_NOT_SUPPORTED, and PNG_ABORT() macros
+libpng-manual.txt:432:errors will result in a call to PNG_ABORT() which defaults to abort().
+libpng-manual.txt:434:You can #define PNG_ABORT() to a function that does something
+libpng-manual.txt:2753:errors will result in a call to PNG_ABORT() which defaults to abort().
+libpng-manual.txt:2755:You can #define PNG_ABORT() to a function that does something
+libpng-manual.txt:4226:PNG_NO_SETJMP, in which case it is handled via PNG_ABORT()),
+libpng.3:942:errors will result in a call to PNG_ABORT() which defaults to abort().
+libpng.3:944:You can #define PNG_ABORT() to a function that does something
+libpng.3:3263:errors will result in a call to PNG_ABORT() which defaults to abort().
+libpng.3:3265:You can #define PNG_ABORT() to a function that does something
+libpng.3:4736:PNG_NO_SETJMP, in which case it is handled via PNG_ABORT()),
+png.h:994: * will use it; otherwise it will call PNG_ABORT().  This function was
+pngerror.c:773:    * PNG_ABORT().
+pngerror.c:775:   PNG_ABORT();
+pngpriv.h:459:#ifndef PNG_ABORT
+pngpriv.h:461:#    define PNG_ABORT() ExitProcess(0)
+pngpriv.h:463:#    define PNG_ABORT() abort()
+```
+
+这已经给了我们一些很好的线索，但完整的定义讲述了完整的故事。
+
+```c
+/* buildtrees\libpng\src\v1.6.37-c993153cdf\pngpriv.h:459 */
+#ifndef PNG_ABORT
+#  ifdef _WINDOWS_
+#    define PNG_ABORT() ExitProcess(0)
+#  else
+#    define PNG_ABORT() abort()
+#  endif
+#endif
+```
+
+`abort()` 是标准 CRT 调用，当然可以在 UWP 中使用，因此我们只需要说服 libpng 与平台更加无关。
+实现这一目标的最简单、最可靠的方法是修补代码；虽然在这种特殊情况下，我们可以传入编译器标志来覆盖 `PNG_ABORT`，
+因为这是一个私有标头，但一般来说，尽可能避免添加更多所需的编译器开关会更可靠（特别是当它尚未公开为CMake 选项）。
+
+## 修补代码以提高兼容性
+
+我们建议使用 git 创建补丁文件，因为您已经安装了它。
+
+```powershell
+PS D:\src\kmpkg\buildtrees\libpng\src\v1.6.37-c993153cdf> git init .
+Initialized empty Git repository in D:/src/kmpkg/buildtrees/libpng/src/v1.6.37-c993153cdf/.git/
+
+PS D:\src\kmpkg\buildtrees\libpng\src\v1.6.37-c993153cdf> git add .
+warning: LF will be replaced by CRLF in ANNOUNCE.
+The file will have its original line endings in your working directory.
+...
+
+PS D:\src\kmpkg\buildtrees\libpng\src\v1.6.37-c993153cdf> git commit -m "temp"
+[master (root-commit) 68f253f] temp
+ 422 files changed, 167717 insertions(+)
+...
+```
+
+现在我们可以修改“pngpriv.h”以在任何地方使用“abort()”。
+
+```c
+/* buildtrees\libpng\src\v1.6.37-c993153cdf\pngpriv.h:459 */
+#ifndef PNG_ABORT
+#  define PNG_ABORT() abort()
+#endif
+```
+
+`git diff` 的输出已经是补丁格式了，所以我们只需要将补丁保存到 `ports/libpng` 目录中即可。
+
+```shell
+PS buildtrees\libpng\src\v1.6.37-c993153cdf> git diff --ignore-space-at-eol | out-file -enc ascii ..\..\..\..\ports\libpng\use-abort-on-all-platforms.patch
+```
+
+最后，我们需要在提取源代码后应用补丁。
+
+```cmake
+# ports\libpng\portfile.cmake
+...
+kmpkg_extract_source_archive_ex(
+  OUT_SOURCE_PATH SOURCE_PATH
+  ARCHIVE ${ARCHIVE}
+  PATCHES 
+    "use-abort-on-all-platforms.patch"
+)
+
+kmpkg_cmake_configure(
+...
+```
+
+## 确认
+
+为了完全确保它可以从头开始工作，我们需要删除包并重建它：
+
+```shell
+PS D:\src\kmpkg> kmpkg remove libpng:x64-uwp
+Package libpng:x64-uwp was successfully removed
+```
+
+现在我们尝试全新的、从头开始的安装。
+
+```powershell
+PS D:\src\kmpkg> kmpkg install libpng:x64-uwp
+Computing installation plan...
+The following packages will be built and installed:
+    libpng[core]:x64-uwp
+Starting package 1/1: libpng:x64-uwp
+Building package libpng[core]:x64-uwp...
+Could not locate cached archive: C:\Users\me\AppData\Local\kmpkg/archives\f4\f44b54f818f78b9a4ccd34b3666f566f94286850.zip
+-- Using cached D:/src/kmpkg/downloads/glennrp-libpng-v1.6.37.tar.gz
+-- Extracting source D:/src/kmpkg/downloads/glennrp-libpng-v1.6.37.tar.gz
+-- Applying patch use_abort.patch
+-- Applying patch cmake.patch
+-- Applying patch pkgconfig.patch
+-- Applying patch pkgconfig.2.patch
+-- Using source at D:/src/kmpkg/buildtrees/libpng/src/v1.6.37-10db9f58e4.clean
+-- Configuring x64-uwp
+-- Building x64-uwp-dbg
+-- Building x64-uwp-rel
+-- Fixing pkgconfig file: D:/src/kmpkg/packages/libpng_x64-uwp/lib/pkgconfig/libpng.pc
+-- Fixing pkgconfig file: D:/src/kmpkg/packages/libpng_x64-uwp/lib/pkgconfig/libpng16.pc
+-- Fixing pkgconfig file: D:/src/kmpkg/packages/libpng_x64-uwp/debug/lib/pkgconfig/libpng.pc
+-- Fixing pkgconfig file: D:/src/kmpkg/packages/libpng_x64-uwp/debug/lib/pkgconfig/libpng16.pc
+-- Installing: D:/src/kmpkg/packages/libpng_x64-uwp/share/libpng/copyright
+-- Performing post-build validation
+-- Performing post-build validation done
+Stored binary cache: C:\Users\me\AppData\Local\kmpkg/archives\f4\f44b54f818f78b9a4ccd34b3666f566f94286850.zip
+Building package libpng[core]:x64-uwp... done
+Installing package libpng[core]:x64-uwp...
+Installing package libpng[core]:x64-uwp... done
+Elapsed time for package libpng:x64-uwp: 11.94 s
+
+Total elapsed time: 11.95 s
+
+The package libpng:x64-uwp provides CMake targets:
+
+    find_package(libpng CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE png)
+```
+
+最后，要完全提交并发布更改，我们需要在“kmpkg.json”中更改端口版本，并将补丁文件添加到源代码管理中，然后发出拉取请求！
+
+```json
+{
+  "name": "libpng",
+  "version": "1.6.37",
+  "port-version": 1,
+  "dependencies": [
+    "zlib"
+  ]
+}
+```

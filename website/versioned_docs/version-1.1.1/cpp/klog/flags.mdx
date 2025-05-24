@@ -1,0 +1,80 @@
+# 配置日志
+
+有几个标志影响 `log` 的输出行为。
+
+## 使用`Flags`配置日志输出
+
+以下标志是最常用的：
+
+`logtostderr` (`bool`, default=`false`)
+
+:   Log messages to `stderr` instead of logfiles.
+
+### `stderr_threshold` {#stderr_threshold}
+
+* `int`类型， 默认 = 2, 即`ERROR`。
+除了以下内容之外，还将等于或高于此级别的日志消息复制到`stderr`
+日志文件。日志级别`INFO`、`WARNING`、`ERROR`的数值和`FATAL`分别是 0、1、2 和 3。
+* 支持动态更新
+
+### `min_log_level` {#min_log_level}
+
+* `int`，默认=0，即`INFO`
+
+* 记录等于或高于此级别的消息。再次，日志级别的数字
+级别`INFO`、`WARNING`、`ERROR`和`FATAL`分别为 0、1、2 和 3，
+分别。
+
+* 支持动态更新
+
+### `log_with_prefix` {#log_with_prefix}
+
+* `bool`类型， 默认=true
+* 将日志前缀添加到每个日志行的开头
+* 支持动态更新
+
+### `verbosity` {#verbosity}
+
+* `int`, 默认=0，即**不输出详细日志**
+* 显示 `m <= this` 的所有 `VLOG(m)` 消息。可由`vlog_module` 覆盖。
+* 支持动态更新
+
+### `vlog_module` {#vlog_module}
+
+* `string` 默认=""， 即**不输出详细日志**
+* 每个模块的日志详细级别。参数是 `<模块名称>=<日志级别>` 的逗号分隔列表。 `<module name>` 是一个
+glob 模式，与文件名库匹配（即名称忽略 `.cc/.h./-inl.h`）。
+不带斜杠的模式仅匹配文件名部分，否则匹配工作空间根目录下的整个文件路径（仍然没有 `.cc/.h./-inl.h`）。glob 模式中的 `?` 和 `*` 分别匹配任何单个字符或字符序列，包括斜杠。`<log level>` 覆盖 `--verbosity` 给出的任何值。
+
+### `backtrace_log_at` {#backtrace_log_at}
+
+* `string` 默认=""， 即**不输出堆栈日志**
+* 在 `file:linenum` 处触发日志时，打印堆栈日志。
+* 支持动态更新
+
+### `log_type` {#log_type}
+
+日志初始化时使用的参数。
+* `int`类型，默认=0
+* LogSinkType对应的日志类型：
+    * 0：控制台日志
+    * 1：每日日志文件
+    * 2：每小时日志文件
+    * 3：轮换日志文件
+* **不支持动态更新**
+
+## 以编程方式修改标志
+
+您还可以通过修改全局变量来修改程序中的标志值`FLAGS_*`。大多数设置在更新`FLAGS_*`后立即开始工作。
+与目标文件相关的标志除外。
+
+
+！！！示例“在运行时设置‘日志级别’”
+    ``` cpp
+    LOG(INFO) << "file";
+    // Most flags work immediately after updating values.
+    turbo::set_flag(&FLAGS_min_log_level,static_cast<int>(turbo::LogSeverity::kWarning));
+    LOG(INFO) << "should not display";
+    turbo::set_flag(&FLAGS_min_log_level,static_cast<int>(turbo::LogSeverity::kInfo));
+    LOG(INFO) << "should display";
+    ```

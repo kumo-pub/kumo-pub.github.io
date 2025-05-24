@@ -1,0 +1,529 @@
+---
+date: 7/16/2024
+---
+# kmpkg.json 参考
+
+kmpkg.json 文件格式的参考文档。
+
+有关将清单与 kmpkg 一起使用的概述，请参阅[清单
+模式](../concepts/manifest-mode.mdx)。
+
+清单是严格的 [JSON](https://www.json.org) 文档。它们不能包含 C++ 风格的注释 (`//`) 或尾随逗号。但是，您可以使用以`$`开头的字段名称在
+任何具有明确定义的键集的对象中编写注释。任何允许用户定义键（例如`features`）的对象中都不允许使用这些注释字段。
+
+最新的 JSON 架构可在 [`https://gitee.com/kumo-pub/kmpkg-tool/raw/master/docs/kmpkg.schema.json`](https://gitee.com/kumo-pub/kmpkg-tool/raw/master/docs/kmpkg.schema.json)。支持
+JSON 架构的 IDE（例如 Visual Studio 和 Visual Studio Code）可以使用此文件提供自动完成和语法检查。对于大多数 IDE，您应该将 `kmpkg.json` 中的 `"$schema"` 设置为此 URL。
+
+## Example
+
+```json
+{
+  "$schema": "https://gitee.com/kumo-pub/kmpkg-tool/raw/master/docs/kmpkg.schema.json",
+  "dependencies": [
+    "boost-system",
+    {
+      "name": "cpprestsdk",
+      "default-features": false
+    },
+    "libxml2",
+    "yajl"
+  ]
+}
+```
+
+此示例演示了使用`boost-system`、`cpprestsdk`、`libxml2`和`yajl`的应用程序的清单。该示例还包含`$schema`引用，以实现更好的 IDE 验证和自动完成。
+
+## 顶级字段
+
+| 名称 | 必需 | 类型   | 描述 |
+|------|----------|--------|-------------|
+| [builtin-baseline](#builtin-baseline) | 否 | string | 构建为顶级时要使用的版本引脚 |
+| [default-features](#default-features) | 否 | [功能对象][][] | 要求列为 on-by-default 的[功能](../concepts/features.mdx) |
+| [dependencies](#dependencies) | 否 | [依赖项][][] | 构建和使用此项目所需的依赖项列表 |
+| [description](#description) | Libraries | string or string[] | 项目说明 |
+| [documentation](#documentation) | 否 | string | 上游项目文档的 URI |
+| [features](#features) | 否 | string: [功能对象](#feature) | 对项目用户提供的可选[功能](../concepts/features.mdx) |
+| [homepage](#homepage) | 否      | string | 上游项目主页的 URI |
+| [license](#license) | 否      | string or null | SPDX 许可证表达式 |
+| [maintainers](#maintainers) | 否      | string or string[] | 包文件的维护人员 |
+| [name](#name) | Libraries      | string | 项目名 |
+| [overrides](#overrides) | 否 | Override[] | 构建为顶级时要使用的版本引脚 |
+| [port-version](#port-version) | 否 | integer | 端口文件修订 |
+| [supports](#supports) | 否 | [平台表达式][] |    支持的平台和版本配置 |
+| [version version-semver version-date version-string](#version) | Libraries | string | 上游版本信息 |
+
+### `"builtin-baseline"` {#builtin-baseline}
+
+用于在默认注册表中指定版本解析的“基线”的快捷方式。一个字符串。可选，仅由顶级项目使用。
+
+该字段表示 [kmpkg](https://gitee.com/kumo-pub/kmpkg) 的提交，
+它为您的清单提供全局最低版本信息。对于使用版本控制而不指定 [`"default-registry"`](kmpkg-configuration-json.mdx#default-registry)
+的顶级清单文件来说，这是必需的。它与定义默认注册表具有相同的语义：
+
+```json
+{
+  "default-registry": {
+    "kind": "builtin",
+    "baseline": "<value>"
+  }
+}
+```
+
+有关更多语义详细信息，请参阅 [版本控制](../users/versioning.mdx#baselines) 和 [使用注册表](../consume/git-registries.mdx)。
+
+### `"default-features"` {#default-features}
+
+无需额外定制即可实现合理行为所需的一组功能。
+
+如果出现以下情况，则会自动选择默认功能：
+
+1. 端口的端口到端口依赖性具有 [`"default-features": true`](#dependency-default-features) -- 默认值。
+2. 顶级清单不具有 [`"default-features": false`](#dependency-default-features) 的端口依赖项。
+
+默认功能处理为顶级项目可能不知道的传递依赖项提供“默认”配置的特定情况。其他人使用的端口几乎应该始终使用 `"default-features": false` 作为其依赖项。
+
+您可以使用 [功能对象][] 定义特定于平台的默认功能：
+
+```json
+{
+  "name": "my-port",
+  "default-features": [
+    "png",
+    {
+      "name": "winssl",
+      "platform": "windows"
+    }
+  ]
+}
+```
+
+
+有关功能的更多信息，请参阅 [`"features"`](#features)。
+
+### `"description"` {#description}
+
+端口的描述。字符串或字符串数组。对于库是必需的，对于顶级项目是可选的。
+
+这用于帮助用户发现库作为 [`search`](../commands/search.mdx) 或 `find` 命令的一部分，并了解库的用途。
+
+### `"dependencies"` {#dependencies}
+
+项目所需的依赖项列表。 [依赖项][依赖项]的数组。可选。
+
+该字段列出了构建和使用您的库或应用程序所需的所有依赖项。
+
+#### 端口依赖性示例
+
+```json
+"dependencies": [
+  {
+    "name": "arrow",
+    "default-features": false,
+    "features": [
+      "json",
+      {
+        "name": "mimalloc",
+        "platform": "windows"
+      }
+    ]
+  },
+  "boost-asio",
+  "openssl",
+  {
+    "name": "picosha2",
+    "platform": "!windows"
+  }
+]
+```
+
+### `"documentation"` {#documentation}
+
+上游项目文档的 URI。一个字符串。可选。
+
+### `"features"` {#features}
+
+[功能](../concepts/features.mdx) 可供项目用户使用。 [特征对象](#feature) 的名称映射。可选。
+
+功能是布尔标志，可向构建添加额外的行为和依赖项。有关功能的更多信息，请参阅[清单概念文档](../concepts/features.mdx)。
+
+### `"homepage"` {#homepage}
+
+项目主页的 URI。一个字符串。可选。
+
+### `"license"` {#license}
+
+项目的 SPDX 简短许可证表达式。字符串或空值。可选。
+
+`"license"` 应该是 [SPDX 3.19 许可证表达式](https://spdx.org/licenses/) 或者应该是 `null` 以指示用户必须读取已部署的 `/share/<port>/版权`文件。不支持 DocumentRef。
+
+:::info
+> kmpkg 注册表中为每个软件包提供的许可信息代表了 `Kumo` 对许可要求的最佳理解。然而，该信息可能不是确定的。建议用户验证他们打算使用的每个软件包的确切许可要求，因为他们最终有责任确保遵守适用的许可。
+:::
+
+#### 许可证字符串示例
+
+- `MIT`
+- `LGPL-2.1-only AND BSD-2-Clause`
+- `GPL-2.0-or-later WITH Bison-exception-2.2`
+
+#### EBNF
+
+kmpkg 使用以下 [EBNF](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form) 来解析许可证字段：
+
+```text
+idchar = ? regex /[-.a-zA-Z0-9]/ ?
+idstring = ( idchar ), { idchar } ;
+
+(* note that unrecognized license and license exception IDs will be warned against *)
+license-id = idstring ;
+license-exception-id = idstring ;
+(* note that DocumentRefs are unsupported by this implementation *)
+license-ref = "LicenseRef-", idstring ;
+
+with = [ whitespace ], "WITH", [ whitespace ] ;
+and = [ whitespace ], "AND", [ whitespace ] ;
+or = [ whitespace ], "OR", [ whitespace ] ;
+
+simple-expression = [ whitespace ], (
+  | license-id
+  | license-id, "+"
+  | license-ref
+  ), [ whitespace ] ;
+
+(* the following are split up from compound-expression to make precedence obvious *)
+parenthesized-expression =
+  | simple-expression
+  | [ whitespace ], "(", or-expression, ")", [ whitespace ] ;
+
+with-expression =
+  | parenthesized-expression
+  | simple-expression, with, license-exception-id, [ whitespace ] ;
+
+(* note: "a AND b OR c" gets parsed as "(a AND b) OR c" *)
+and-expression = with-expression, { and, with-expression } ;
+or-expression = and-expression, { or, and-exression } ;
+
+license-expression = or-expression ;
+```
+
+### `"maintainers"` {#maintainers}
+
+包维护人员列表。 一个字符串或一组字符串。 可选。
+
+建议使用`姓名<电子邮件>`的格式。
+
+### `"name"` {#name}
+
+项目名称。一个字符串。对于库是必需的，对于顶级项目是可选的。
+
+名称必须是小写 ASCII 字母、数字或连字符 (`-`)。它不能以连字符开头或结尾。鼓励库将其组织或框架名称作为前缀，例如`msft-`或`boost-`，以帮助用户查找和描述关联的库。
+
+例如，正式名称为`Boost.Asio`的库可能会被命名为`boost-asio`。
+
+### `"overrides"` {#overrides}
+
+用于特定依赖项的确切版本引脚。 Override 对象的数组。可选。
+
+会忽略转换清单（即依赖项）中的 `"overrides"`。 仅使用顶级项目定义的替代。
+
+
+| 名称 | 必需 | 类型   | 说明 |
+|------|----------|--------|-------------|
+| name | 是      | string | 端口名称 |
+| [version](#version) | 是 | string | 要固定的上游版本信息。 |
+| [version-semver version-date version-string](#version) | 是 | string | `version` 命名特定方案的已弃用替代方法。 |
+| [port-version](#port-version) | 否 | integer | 要固定的端口文件修订。 已弃用，支持将其置于版本本身中。 |
+
+`port-version` 应在 `version` 中指定为`#N`后缀。例如， `"version": "1.2.3#7"` 命名版本 `1.2.3`，端口版本 `7`。
+
+另请参阅 [版本控制](../users/versioning.mdx#overrides) 了解更多语义细节。
+
+#### 版本覆盖示例
+
+```json
+  "overrides": [
+    {
+      "name": "arrow", "version": "1.2.3#7"
+    },
+    {
+      "name": "openssl", "version": "1.1.1h#3"
+    }
+  ]
+```
+
+### `"port-version"` {#port-version}
+
+版本后缀用于区分打包文件的修订版本。一个整数。默认为`0`。
+
+每当发布新版本的端口且不更改上游源版本时，应递增“端口版本”。当上游源版本更改时，[版本字段](#version) 应更改，并且`port-version`应重置为`0`（或删除）。
+
+有关更多详细信息，请参阅 [版本控制](../users/versioning.mdx#version-schemes)。
+
+###  `"supports"` {#supports}
+
+支持的平台和构建配置。 [平台表达式][]。可选。
+
+该字段记录了项目预计不会在某些平台配置上成功构建或运行。
+
+例如，如果您的库不支持 Linux 构建，您可以使用 `"supports": "!linux"`。
+
+### `"kmpkg-configuration"`
+
+允许在`kmpkg.json”`件中嵌入 kmpkg 配置属性。 `kmpkg-configuration`属性中的所有内容都被视为在`kmpkg-configuration.json`文件中定义。有关更多详细信息，请参阅 [`kmpkg-configuration.json`](../reference/kmpkg-configuration-json.mdx#registries) 文档。
+
+不允许在`kmpkg.json`中定义`kmpkg-configuration`，同时还具有`kmpkg-configuration.json`文件，这将导致 kmpkg 命令终止并显示错误消息。
+
+#### 嵌入式`kmpkg-configuration`示例
+
+```json
+{
+  "name": "test",
+  "version": "1.0.0",
+  "dependencies": [ "beison", "zlib" ],
+  "kmpkg-configuration": {
+    "registries": [
+      {
+        "kind": "git",
+        "baseline": "768f6a3ad9f9b6c4c2ff390137690cf26e3c3453",
+        "repository": "https://gitee.com/kumo-pub/kmpkg-docs",
+        "reference": "kmpkg-registry",
+        "packages": [ "beicode", "beison" ]
+      }
+    ],
+    "overlay-ports": [ "./my-ports/fmt", 
+                       "./team-ports"
+    ]
+  }
+```
+
+### `"version"`, `"version-semver"`, `"version-date"`, `"version-string"` {#version}
+
+上游项目的版本。一个字符串。对于库是必需的，对于顶级项目是可选的。
+
+一份清单最多只能包含一个版本字段。每个版本字段对应不同的版本控制方案：
+
+- `"version"` - 放宽 [语义版本 2.0.0][]，允许多于或少于 3 个主要数字。示例：`1.2.3.4.10-alpha1`
+- `"version-semver"` - 严格[语义版本 2.0.0][]。示例：`2.0.1-rc5`
+- `"version-date"` - 格式为 `YYYY-MM-DD` 的日期，带有可选的尾随点分隔数字序列。用于没有数字版本的软件包（例如，Live-at-HEAD）。示例：`2022-12-09.314562`
+- `"version-string"` - 任意字符串。用于没有可订购版本的软件包。这应该很少使用，但是在引入其他版本字段之前创建的所有端口都使用此方案。
+
+有关更多详细信息，请参阅 [版本控制](../users/versioning.mdx#version-schemes)。
+
+[语义版本 2.0.0]  https://semver.org/#semantic-versioning-specification-semver
+
+## 依赖字段 {#dependency}
+
+每个依赖项都是一个字符串或具有以下字段的对象：
+
+| 名称 | 必需 | 类型   | 描述 |
+|------|----------|--------|-------------|
+| [default-features](#dependency-default-features) | 否 | bool | 要求列为 `on-by-default` 的功能 |
+| [features](#dependency-features) | 否 | [功能对象][][] | 要求的其他功能列表 |
+| [host](#dependency-host) | 否 | bool | 需要主机的依赖项而不是目标 |
+| [name](#dependency-name) | 是      | string | 依赖项的名称 |
+| [platform](#dependency-platform) | 否 | [平台表达式][] |哪个平台可以使用依赖项的条件标准 |
+| [version>=](#dependency-version-gt) | 否 | string | 所需的最低版本。 端口版本使用 `#N` 后缀标识，例如，`1.2.3#7` 会命名端口版本 `7`。 |
+
+字符串被解释为将 _name_ 定义为字符串值的对象。
+
+[依赖项]  #dependency
+
+### [依赖项][]: `"default-features"` {#dependency-default-features}
+
+一个布尔值，指示项目依赖于依赖项的`默认启用`功能。默认为`true`。
+
+在大多数情况下，应将其定义为`false`，并且应明确依赖任何所需的功能。
+
+### [依赖项][]: `"features"` {#dependency-features}
+
+要求的其他功能列表。 一组功能对象。 可选。
+
+[功能对象][][]是一个具有以下字段的对象：
+- `name` - 功能的名称。一个字符串。必需的。
+- `platform` - 限制需要该功能的平台的[平台表达式][]。选修的。
+
+一个简单的字符串也是一个有效的`Feature Object`，相当于`{ "name": "<feature-name>" }`。
+
+例如，
+
+```json
+{
+  "name": "ffmpeg",
+  "default-features": false,
+  "features": [
+    "mp3lame",
+    {
+      "name": "avisynthplus",
+      "platform": "windows"
+    }  
+  ]
+}
+```
+
+使用支持 mp3 编码的“ffmpeg”库。仅在 Windows 上，还启用了“avisynthplus”支持。
+
+### [依赖项][]: `"host"` {#dependency-host}
+
+一个布尔值，指示必须为 [主机三元组](../users/host-dependencies.mdx) 而不是当前端口的三元组构建依赖关系。默认为 `false`。
+
+任何提供应在构建期间“执行”的工具或脚本的依赖项（例如构建系统、代码生成器或帮助程序）都应标记为`"host”：true`。这可以在目标不可执行的情况下实现正确的交叉编译——例如为`“arm64-android”`进行编译时。
+
+有关详细信息，请参阅[主机依赖项](../users/host-dependencies.mdx)。
+
+### [依赖项][]: `"name"` {#dependency-name}
+
+依赖项的名称。 一个字符串。 必需。
+
+与项目的 [`"name"`](#name) 属性遵循相同限制。
+
+### [依赖项][]: `"platform"` {#dependency-platform}
+
+限制需要依赖项的平台的表达式。 A [平台表达式][]。选修的。
+
+如果表达式与当前配置不匹配，则不会使用依赖项。例如，如果依赖项具有 `"platform": "!windows"`，则仅在面向非 Windows 系统时才需要它。
+
+### [依赖项][]: `"version>="` {#dependency-version-gt}
+
+对依赖项的最小版本约束。
+
+该字段指定依赖项的最低版本，可以选择使用如果需要，`#N` 后缀还可以指定最低端口版本。
+
+有关版本控制语义的更多信息，请参阅[版本控制](../users/versioning.mdx#version)。
+
+## 功能字段 {#feature}
+
+每个功能都是一个具有以下字段的对象：
+
+| 名称 | 必需 | 类型   | 说明 |
+|------|----------|--------|-------------|
+| [description](#feature-description) | 是      | string | 功能的说明 |
+| [dependencies](#feature-dependencies) | 否 | [依赖项][][] | 依赖项列表 |
+| [supports](#feature-supports) | 否 | [平台表达式][] | 哪些平台和配置支持此功能的条件标准 |
+| [license](#feature-license) | 否 | string or null | SPDX 许可证表达式 |
+
+请查看[清单模式](../concepts/features.mdx)文档，从概念层面了解功能概述。
+
+[功能对象]: #feature
+
+### 包含功能的示例端口
+
+```json
+{
+  "features": {
+    "cbor": {
+      "description": "The CBOR backend",
+      "dependencies": [
+        {
+          "$explanation": [
+            "This is how you tell kmpkg that the cbor feature depends on the json feature of this package"
+          ],
+          "name": "libdb",
+          "default-features": false,
+          "features": [ "json" ]
+        }
+      ]
+    },
+    "csv": {
+      "description": "The CSV backend",
+      "dependencies": [
+        "fast-cpp-csv-parser"
+      ]
+    },
+    "json": {
+      "description": "The JSON backend",
+      "dependencies": [
+        "jsoncons"
+      ]
+    }
+  }
+}
+```
+
+### [功能对象][]: `"dependencies"` {#feature-dependencies}
+
+[功能](../concepts/features.mdx) 所需的依赖项列表。 [依赖项][依赖项]的数组。选修的。
+
+此字段列出了构建和使用该功能所需的任何其他依赖项。
+
+### [功能对象][]: `"description"` {#feature-description}
+
+[功能](../concepts/features.mdx) 的描述。字符串或字符串数组。必需的。
+
+这用于帮助用户发现作为 [`search`](../commands/search.mdx) 或 `find` 命令一部分的功能，并了解该功能的用途。
+
+### [功能对象][]: `"supports"` {#feature-supports}
+
+[feature](../concepts/features.mdx) 支持的平台和构建配置。 A [平台表达式][]。选修的。
+
+该字段记录了该功能将成功构建和运行的平台配置。
+
+### [功能对象][]: `"license"` {#feature-license}
+
+该功能的 SPDX 短许可证表达。字符串或空值。选修的。
+如果未提供，则许可证与顶级 [许可证](#license) 字段中指定的许可证相同。
+
+:::info
+kmpkg 注册表中为每个包提供的许可信息代表了 Kumo 对许可要求的最佳理解。然而，该信息可能不是确定的。建议用户验证他们打算使用的每个软件包的确切许可要求，因为他们最终有责任确保遵守适用的许可。
+:::
+
+## 平台表达式 {#platform-expression}
+
+平台表达式是一个 JSON 字符串，它描述何时需要依赖项或何时需要构建库或功能。
+
+表达式是由原始标识符、逻辑运算符和分组构建的：
+
+- `!<expr>`, `not <expr>` - 求反
+- `<expr>|<expr>`, `<expr>,<expr>` - 逻辑 `OR`（虽然保留关键字 `or`，但在平台表达式中无效）
+- `<expr>&<expr>`, `<expr> and <expr>` - 逻辑 `AND`
+- `(<expr>)` - 分组优先
+
+以下标识符是根据 [三元组设置](../users/triplets.mdx) 和构建配置定义的：
+
+| 标识符 | 三元组条件 |
+|------------|-------------------|
+| `x64` | `KMPKG_TARGET_ARCHITECTURE` == `"x64"` |
+| `x86` | `KMPKG_TARGET_ARCHITECTURE` == `"x86"` |
+| `arm` | `KMPKG_TARGET_ARCHITECTURE` == `"arm"` or `KMPKG_TARGET_ARCHITECTURE` == `"arm64"` |
+| `arm32` | `KMPKG_TARGET_ARCHITECTURE` == `"arm"` |
+| `arm64` | `KMPKG_TARGET_ARCHITECTURE` == `"arm64"` |
+| `arm64ec` | `KMPKG_TARGET_ARCHITECTURE` == `"arm64ec"` |
+| `wasm32` | `KMPKG_TARGET_ARCHITECTURE` == `"wasm32"` |
+| `mips64` | `KMPKG_TARGET_ARCHITECTURE` == `"mips64"` |
+| `windows` | `KMPKG_CMAKE_SYSTEM_NAME` == `""` or `KMPKG_CMAKE_SYSTEM_NAME` == `"WindowsStore"` or `KMPKG_CMAKE_SYSTEM_NAME` == `"MinGW"` |
+| `mingw` | `KMPKG_CMAKE_SYSTEM_NAME` == `"MinGW"` |
+| `uwp` | `KMPKG_CMAKE_SYSTEM_NAME` == `"WindowsStore"` |
+| `xbox` | `KMPKG_CMAKE_SYSTEM_NAME` == `""` and `XBOX_CONSOLE_TARGET` is defined. |
+| `linux` | `KMPKG_CMAKE_SYSTEM_NAME` == `"Linux"` |
+| `osx` | `KMPKG_CMAKE_SYSTEM_NAME` == `"Darwin"` |
+| `ios` | `KMPKG_CMAKE_SYSTEM_NAME` == `"iOS"` |
+| `freebsd` | `KMPKG_CMAKE_SYSTEM_NAME` == `"FreeBSD"` |
+| `openbsd` | `KMPKG_CMAKE_SYSTEM_NAME` == `"OpenBSD"` |
+| `android` | `KMPKG_CMAKE_SYSTEM_NAME` == `"Android"` |
+| `emscripten` | `KMPKG_CMAKE_SYSTEM_NAME` == `"Emscripten"` |
+| `qnx` | `KMPKG_CMAKE_SYSTEM_NAME` == `"QNX"` |
+| `vxworks` | `KMPKG_CMAKE_SYSTEM_NAME` == `"VxWorks"` |
+| `static` | `KMPKG_LIBRARY_LINKAGE` == `"static"` |
+| `staticcrt` | `KMPKG_CRT_LINKAGE` == `"static"` |
+| `native` | `TARGET_TRIPLET` == `HOST_TRIPLET` |
+
+### 平台表达式示例
+
+- **在非 Windows 上，需要 `picosha2` 才能进行 sha256，但在 Windows (BCrypt) 会从 OS 中获取**
+
+```json
+{
+  "name": "picosha2",
+  "platform": "!windows"
+}
+```
+
+- **在 arm64 Windows 和 amd64 Linux 上需要 zlib**
+
+```json
+{
+  "name": "zlib",
+  "platform": "(windows & arm64) | (linux & x64)"
+}
+```
+
+[平台表达式]: #platform-expression

@@ -1,0 +1,131 @@
+---
+date: 01/10/2024
+---
+
+# 教程：使用 Git 将包发布到私有 kmpkg 注册表
+
+在本教程中，我们将向您展示如何创建基于 Git 的私有注册表以及如何在所述注册表中发布包。
+
+您可以使用 Git 创建自己的私有包注册表，以便通过 kmpkg 使用。私人的如果您想使用私有库或想要进行非公开修改，注册表是理想的选择
+到现有的包。您可以完全控制软件包的版本和内容，因此对于可以放入私人注册表中的内容实际上没有任何限制。
+
+在本教程中，我们将展示如何：
+
+* [使用 Git 创建 kmpkg 注册表](#create-a-kmpkg-registry-using-git)
+* [创建注册表布局](#create-the-registry-layout)
+* [将端口添加到注册表](#add-ports-to-the-registry)
+* [更新版本数据库](#update-the-versions-database)
+
+## 先决条件
+
+* kmpkg
+* Git
+* A terminal
+
+## 1 - 使用 Git 创建 kmpkg 注册表 {#create-a-kmpkg-registry-using-git}
+
+kmpkg 基于 Git 的注册表是具有 kmpkg 理解的特定布局的 Git 存储库。
+
+初始化 Git 注册表：
+
+```Console
+mkdir kmpkg-registry
+cd kmpkg-registry
+git init
+```
+
+## 2 - 创建注册表布局 {#create-the-registry-layout}
+
+基于 Git 的 kmpkg 注册表需要以下内容：
+
+* 名为`ports`的文件夹，用于包含注册表的端口，
+* 名为`versions`的文件夹，用于包含版本数据库，
+* `versions`文件夹中名为`baseline.json`的文件。
+
+您的存储库可以包含您想要的任何其他文件，例如：脚本、许可证文件、`README.md`
+文件、文档等
+
+1 - 创建`ports`和`versions`文件夹：
+
+```Console
+mkdir ports
+mkdir versions
+```
+
+2 - 在`versions`文件夹中创建一个名为`baseline.json`的文件，其中包含以下内容：
+
+```json
+{
+  "default": {}
+}
+```
+
+最小有效的`baseline.json`文件应包含上述内容。阅读 [版本控制文档](../users/versioning.mdx) 了解有关 `baseline.json` 文件和版本的更多信息
+数据库。
+
+3 - 将您的更改提交到存储库
+
+```Console
+git add versions/baseline.json
+git commit -m "Initial commit"
+```
+
+或者，如果您设置了远程 Git 存储库，那么这是推送更改的好时机。
+
+```Console
+git remote add origin https://example.com/kmpkg-registry.git
+git push --set-upstream origin HEAD
+```
+
+## 3 - 将端口添加到注册表 {#add-ports-to-the-registry}
+
+将所有包端口复制到注册表中的`ports`文件夹中。每个端口必须有自己的
+至少包含一个`kmpkg.json`文件和一个`portfile.cmake`文件的目录。了解更多关于
+在[打包 Gitee 存储库](../examples/packaging-gitee-repos.mdx) 教程中创建端口。
+
+```Console
+git add ports/.
+git commit -m "Add registry ports"
+```
+
+## 4 - 更新版本数据库 {#update-the-versions-database}
+
+注册表中的每个端口都必须有对应的版本文件。版本文件是由生成的`kmpkg x-add-version` 命令。此命令还会更新每个端口的基线条目
+`versions/baseline.json`。
+
+要一次更新所有端口的版本数据库，请运行：
+
+```Console
+kmpkg --x-builtin-ports-root=./ports --x-builtin-registry-versions-dir=./versions x-add-version --all --verbose
+```
+
+`--x-builtin-ports-root` 和 `--x-builtin-registry-versions-dir` 是重定向选项。通常，“x-add-version”命令在 kmpkg 的内置注册表上运行；但通过使用
+重定向选项，可以在本地 Git 注册表上使用该命令。
+
+`--all` 选项使 kmpkg 扫描 `ports` 目录以查找所有可用端口并更新它们一下子。最后，“--verbose”选项使命令打印它执行的每个操作
+标准输出，您可以通过删除此选项来抑制输出。
+
+`x-add-version` 要求所有端口更改都已提交到注册表的 Git存储库。阅读 [`x-add-version` 命令] 文档以了解更多信息。
+
+当所有输出看起来正确时，运行：
+
+```Console
+git add .
+git commit -m "Update versions database"
+```
+
+如果您有远程 Git 存储库，请不要忘记推送更改：
+
+```Console
+git push
+```
+
+## 后续步骤
+
+就是这样！您已经设置了自己的基于 Git 的私有注册表以与 kmpkg 一起使用。
+
+以下是接下来要尝试的一些其他任务：
+
+* [从私有注册表安装依赖项](../consume/git-registries.mdx)
+* [使用私有 Git 存储库向注册表进行身份验证](../users/authentication.mdx)
+

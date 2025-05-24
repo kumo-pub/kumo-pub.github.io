@@ -1,0 +1,1594 @@
+# unicode
+
+
+## 使用 (CMake) {#usage}
+
+```
+cmake --preset=default
+cmake --build build
+cd build
+ctest .
+```
+
+## 示例 {#example}
+
+```cpp
+#include <iostream>
+#include <memory>
+
+#include <vamos/vamos.h>
+
+int main(int argc, char *argv[]) {
+  const char *source = "1234";
+  // 4 == strlen(source)
+  bool validutf8 = vamos::validate_utf8(source, 4);
+  if (validutf8) {
+    std::cout << "valid UTF-8" << std::endl;
+  } else {
+    std::cerr << "invalid UTF-8" << std::endl;
+    return EXIT_FAILURE;
+  }
+  // We need a buffer of size where to write the UTF-16LE code units.
+  size_t expected_utf16words = vamos::utf16_length_from_utf8(source, 4);
+  std::unique_ptr<char16_t[]> utf16_output{new char16_t[expected_utf16words]};
+  // convert to UTF-16LE
+  size_t utf16words =
+      vamos::convert_utf8_to_utf16le(source, 4, utf16_output.get());
+  std::cout << "wrote " << utf16words << " UTF-16LE code units." << std::endl;
+  // It wrote utf16words * sizeof(char16_t) bytes.
+  bool validutf16 = vamos::validate_utf16le(utf16_output.get(), utf16words);
+  if (validutf16) {
+    std::cout << "valid UTF-16LE" << std::endl;
+  } else {
+    std::cerr << "invalid UTF-16LE" << std::endl;
+    return EXIT_FAILURE;
+  }
+  // convert it back:
+  // We need a buffer of size where to write the UTF-8 code units.
+  size_t expected_utf8words =
+      vamos::utf8_length_from_utf16le(utf16_output.get(), utf16words);
+  std::unique_ptr<char[]> utf8_output{new char[expected_utf8words]};
+  // convert to UTF-8
+  size_t utf8words = vamos::convert_utf16le_to_utf8(
+      utf16_output.get(), utf16words, utf8_output.get());
+  std::cout << "wrote " << utf8words << " UTF-8 code units." << std::endl;
+  std::string final_string(utf8_output.get(), utf8words);
+  std::cout << final_string << std::endl;
+  if (final_string != source) {
+    std::cerr << "bad conversion" << std::endl;
+    return EXIT_FAILURE;
+  } else {
+    std::cerr << "perfect round trip" << std::endl;
+  }
+  return EXIT_SUCCESS;
+}
+```
+
+## 输入/输出代理
+
+### InputSpan
+
+
+在vamos中，提供了`InputSpan`容器。
+```cpp
+    template<typename T, typename = void>
+    class InputSpan;
+```
+
+`InputSpan` 重载使用 `turbo::span` 来处理 UTF-16 和 UTF-32。对于 latin1、UTF-8、
+`binary`（base64 函数使用），任何具有 `.size()` 和
+`.data()` 并返回指向字节类型的指针的内容都将被接受为
+span。这使得可以直接将 `std::string`、`std::string_view`、
+`std::vector`、`std::array` 和 `std::span` 传递给函数。允许在 `api` 中使用
+所有字节类型（而不是仅使用 `std::span<char>`）的原因是为了
+能够轻松地与用户可能拥有的任何数据进行交互，而无需
+进行强制转换。
+
+`vamos::InputSpan<T>`是个代理`span`类，可代理
+
+- `std::vector<T>`
+- `std::basic_string<T>`
+- `std::basic_string_view<T>`
+- `turbo::span<T>`
+- 自定义类型
+对于任何类型容器 `Container`，必须具备如下条件：
+- 具备`Container::value_type`
+- 具备`const Container::value_type* Container::data() const`
+- 具备`Container::size() const`
+- `Container::value_type`必须是整形或者`char`, `char16_t`,`char32_t`
+
+如果是自定义或者`stl`容器必须满足以上条件。
+
+| sizeof(Container::value_type) | 转换后类型      |
+|-------------------------------|------------|
+| `8`                             | `char`     |
+| `16`                            | `char16_t` |
+| `32`                            | `char32_t` |
+
+### OutputSpan
+```cpp
+template<typename T, typename = void>
+class OutputSpan;
+```
+
+`vamos::OutputSpan<T>`是个代理`span`类，可代理
+
+- `std::vector<T>`
+- `std::basic_string<T>`
+- `std::basic_string_view<T>`
+- `turbo::span<T>`
+- 自定义类型
+对于任何类型容器 `Container`，必须具备如下条件：
+- 具备`Container::value_type`
+- 具备`Container::value_type* Container::data()`
+- 具备`Container::size() const`
+- `Container::value_type`必须是整形或者`char`, `char16_t`,`char32_t`
+
+如果是自定义或者`stl`容器必须满足以上条件。
+
+| sizeof(Container::value_type) | 转换后类型      |
+|-------------------------------|------------|
+| `8`                             | `char`     |
+| `16`                            | `char16_t` |
+| `32`                            | `char32_t` |
+
+## 接口 {#api}
+
+我们的 `API` 由一些非分配函数组成。它们通常以指针和长度作为参数，
+有时以指向输出缓冲区的指针作为参数。用户负责内存分配。
+
+我们使用三种类型的数据指针类型：
+- `char*` 用于 UTF-8 或不确定的 Unicode 格式，
+- `char16_t*` 用于 UTF-16（UTF-16LE 和 UTF-16BE），
+- `char32_t*` 用于 UTF-32。UTF-32 主要用于内部使用，而不是数据交换。
+因此，除非另有说明，否则 `char32_t` 指的是本机类型，通常是 UTF-32LE，因为如今几乎所有系统都是小端的。
+
+概括地说，我们将 `char`、`char16_t` 和 `char32_t` 称为 *代码单元*。一个 *字符* 可以使用多个 *代码单元*：UTF-8 中有 1 到 4 个代码单元，UTF-16LE 和 UTF-16BE 中有 1 到 2 个代码单元。
+
+我们的函数和声明都在 `vamos` 命名空间中。因此，您应该根据需要在我们的函数
+和类型前加上 `vamos::`。
+
+```cpp
+std::vector<char> data{1, 2, 3, 4, 5};
+auto cpp11 = vamos::autodetect_encoding(data.data(), data.size());
+auto cppspan = vamos::autodetect_encoding(data);
+```
+
+我们有基本函数来检测输入的类型。它们返回由以下“枚举”定义的整数。
+
+```cpp
+enum encoding_type {
+        UTF8 = 1,       // BOM 0xef 0xbb 0xbf
+        UTF16_LE = 2,   // BOM 0xff 0xfe
+        UTF16_BE = 4,   // BOM 0xfe 0xff
+        UTF32_LE = 8,   // BOM 0xff 0xfe 0x00 0x00
+        UTF32_BE = 16,  // BOM 0x00 0x00 0xfe 0xff
+
+        unspecified = 0
+};
+```
+
+```cpp
+
+/**
+* 自动检测输入的编码，建议使用单一编码。
+* 例如，该函数可能返回 vamos::encoding_type::UTF8、
+* vamos::encoding_type::UTF16_LE、vamos::encoding_type::UTF16_BE 或
+* vamos::encoding_type::UTF32_LE。
+*
+* @param input 要分析的字符串。
+* @param length 字符串的长度（以字节为单位）。
+* @return 检测到的编码类型
+*/
+vamos_warn_unused vamos::encoding_type autodetect_encoding(const char *input, size_t length) noexcept;
+
+/**
+* 一次性自动检测输入的可能编码。
+* 例如，如果输入可能是 UTF-16LE 或 UTF-8，此函数将返回
+* 值 (vamos::encoding_type::UTF8 | vamos::encoding_type::UTF16_LE)。
+*
+* 被每个实现覆盖。
+*
+* @param input 要分析的字符串。
+* @param length 字符串的长度（以字节为单位）。
+* @return 检测到的编码类型
+*/
+vamos_warn_unused int detect_encodings(const char *input, size_t length) noexcept;
+```
+
+
+
+对于验证和转码，我们还提供了在发生错误时停止并返回结果结构（由两个字段组成）的函数：
+```cpp
+struct result {
+  /// 参见“struct error_code”。
+  error_code error;
+  /// 如果发生错误，则以代码单元为单位指示输入中错误的位置。
+  size_t count;
+  /// 如果成功，则表示验证/写入的代码单元数。
+};
+```
+出现错误时，`error`字段表示遇到的错误类型，`count`字段表示错误在输入中的位置（以代码单元为单位）或验证/写入的字符数。
+我们报告与 `Latin1`、`UTF-8`、`UTF-16` 和 `UTF-32` 编码相关的六种错误类型：
+
+```cpp
+enum error_code {
+    SUCCESS = 0,
+    /// 任何字节的标头位都必须少于 5 个。
+    HEADER_BITS,
+    /// 前导字节后面必须跟有 N-1 个连续字节，
+    /// 其中 N 是 UTF-8 字符长度 这也是输入被截断时出现的错误。
+    TOO_SHORT,
+    /// 我们有太多连续的连续字节，或者字符串以连续字节开头。
+    TOO_LONG,
+    /// 解码后的字符对于双字节字符必须在 U+7F 以上，对于三字节字符必须在 U+7FF 以上，对于四字节字符必须在 U+FFFF 以上。
+    OVERLONG,
+    /// 解码后的字符必须小于或等于 U+10FFFF，对于 ASCII 小于或等于 U+7F，或者对于 Latin1 小于等于 U+FF
+    TOO_LARGE,
+    /// 解码后的字符不能是 U+D800...DFFF (UTF-8 或 UTF-32) 或者高代理后面必须跟着低代理，且低代理前面必须跟着高代理 (UTF-16) 或者根本就没有代理 (Latin1)
+    SURROGATE,
+    /// 发现一个不能成为有效 base64 字符串一部分的字符。这可能包括放错位置的填充字符 ('=')。
+    INVALID_BASE64_CHARACTER,
+    /// base64 输入以单个字符终止，不包括填充 (=)。
+    BASE64_INPUT_REMAINDER,
+    /// base64 输入以非零填充位终止。
+    BASE64_EXTRA_BITS,
+    /// 提供的缓冲区太小。
+    OUTPUT_BUFFER_TOO_SMALL,
+    /// 与验证/转码无关。
+    OTHER
+};
+
+```
+成功时，`error` 字段将设置为 `SUCCESS`，而 `position` 字段则表示验证函数验证的代码单元数或转码函数输出格式中写入的代码单元数。
+
+- 在 `ASCII`、`Latin1` 和 `UTF-8` 中，代码单元占用 `8` 位（它们是字节）；
+- 在 `UTF-16LE` 和 `UTF-16BE` 中，代码单元占用 `16` 位；
+- 在 `UTF-32` 中，代码单元占用 `32` 位。
+
+一般来说，报告错误的函数总是在遇到错误后很快停止，因此在输入早期发生错误的输入上可能会更快。
+返回布尔值的函数表示是否遇到错误
+旨在用于*乐观设置*---当我们预计输入几乎总是正确时。
+
+您可以使用报告错误的函数来指示问题发生的位置，如下所示：
+
+```cpp
+  std::string bad_ascii = "\x20\x20\x20\x20\x20\xff\x20\x20\x20";
+  vamos::result res = implementation.validate_ascii_with_errors(bad_ascii.data(), bad_ascii.size());
+  if(res.error != vamos::error_code::SUCCESS) {
+    std::cerr << "error at index " << res.count << std::endl;
+  }
+```
+
+或者如下：
+
+```cpp
+    std::string bad_utf8 = "\xc3\xa9\xc3\xa9\x20\xff\xc3\xa9";
+    vamos::result res = implementation.validate_utf8_with_errors(bad_utf8.data(), bad_utf8.size());
+    if(res.error != vamos::error_code::SUCCESS) {
+        std::cerr << "error at index " << res.count << std::endl;
+    }
+    res = implementation.validate_utf8_with_errors(bad_utf8.data(), res.count);
+    // 在这种情况下将会成功
+    if(res.error == vamos::error_code::SUCCESS) {
+        std::cerr << "we have " << res.count << "valid bytes" << std::endl;
+    }
+```
+
+
+我们有快速验证功能。
+
+```cpp
+/**
+* 验证 ASCII 字符串。
+*
+* 由每个实现覆盖。
+*
+* @param buf 要验证的 ASCII 字符串。
+* @param len 字符串的长度（以字节为单位）。
+* @return true 当且仅当字符串是有效的 ASCII 时。
+*/
+vamos_warn_unused bool validate_ascii(const char *buf, size_t len) noexcept;
+
+/**
+* 验证 ASCII 字符串并在出错时停止。
+*
+* 由每个实现覆盖。
+*
+* @param buf 要验证的 ASCII 字符串。
+* @param len 字符串的长度（以字节为单位）。
+* @return 结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含错误代码和错误的位置
+*（在输入中的代码单元中）（如果有），或者如果成功则返回验证的代码单元数。
+*/
+vamos_warn_unused result validate_ascii_with_errors(const char *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-8 字符串。当您期望
+* 输入几乎总是有效时，此函数可能是最佳选择。否则，请考虑使用
+* validate_utf8_with_errors。
+*
+* 被每个实现覆盖。
+*
+* @param buf 要验证的 UTF-8 字符串。
+* @param len 字符串的长度（以字节为单位）。
+* @return true 当且仅当字符串是有效的 UTF-8 时。
+*/
+vamos_warn_unused bool validate_utf8(const char *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-8 字符串并在出现错误时停止。当预计错误会提前发生时，它可能比
+* validate_utf8 更快。
+*
+* 由每个实现覆盖。
+*
+* @param buf 要验证的 UTF-8 字符串。
+* @param len 字符串的长度（以字节为单位）。
+* @return 结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含错误代码和错误的位置（如果有）
+* 错误（在输入中的代码单元中）或验证的代码单元数（如果成功）。
+*/
+vamos_warn_unused result validate_utf8_with_errors(const char *buf, size_t len) noexcept;
+
+/**
+* 使用本机字节序；验证 UTF-16 字符串。
+* 如果您希望输入几乎总是有效，则此函数可能是最佳选择。
+* 否则，请考虑使用validate_utf16_with_errors。
+*
+* 被每个实现覆盖。
+*
+* 此函数不支持 BOM。
+*
+* @param buf 要验证的 UTF-16 字符串。
+* @param len 以 2 字节代码单元 (char16_t) 的数量表示的字符串长度。
+* @return 当且仅当字符串是有效的 UTF-16 时才返回 true。
+*/
+vamos_warn_unused bool validate_utf16(const char16_t *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-16LE 字符串。如果您希望
+* 输入几乎总是有效，则此函数可能是最佳选择。否则，请考虑使用
+* validate_utf16le_with_errors。
+*
+* 被每个实现覆盖。
+*
+* 此函数不支持 BOM。
+*
+* @param buf 要验证的 UTF-16LE 字符串。
+* @param len 以 2 字节代码单元 (char16_t) 为单位的字符串长度。
+* @return 当且仅当字符串是有效的 UTF-16LE 时才返回 true。
+*/
+vamos_warn_unused bool validate_utf16le(const char16_t *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-16BE 字符串。如果您希望
+* 输入几乎总是有效，则此函数可能是最佳选择。否则，请考虑使用
+* validate_utf16be_with_errors。
+*
+* 被每个实现覆盖。
+*
+* 此函数不支持 BOM。
+*
+* @param buf 要验证的 UTF-16BE 字符串。
+* @param len 以 2 字节代码单元 (char16_t) 为单位的字符串长度。
+* @return 当且仅当字符串是有效的 UTF-16BE 时才返回 true。
+*/
+vamos_warn_unused bool validate_utf16be(const char16_t *buf, size_t len) noexcept;
+
+/**
+* 使用本机字节序；验证 UTF-16 字符串并在出错时停止。
+* 当预计错误会提前发生时，它可能比validate_utf16更快。
+*
+* 被每个实现覆盖。
+*
+* 此函数不识别 BOM。
+*
+* @param buf 要验证的 UTF-16 字符串。
+* @param len 字符串的长度，以 2 字节代码单元 (char16_t) 的数量表示。
+* @return 一个结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含错误代码和
+* 错误的位置（以代码单元为单位的输入）（如果有）或验证的代码单元数量（如果成功）。
+*/
+vamos_warn_unused result validate_utf16_with_errors(const char16_t *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-16LE 字符串并在出现错误时停止。当预计错误会提前发生时，它可能比
+* validate_utf16le 更快。
+*
+* 被每个实现覆盖。
+*
+* 此函数不具备 BOM 感知能力。
+*
+* @param buf 要验证的 UTF-16LE 字符串。
+* @param len 以 2 字节代码单元 (char16_t) 的数量表示的字符串长度。
+* @return 一个结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含错误代码和错误的位置（以代码单元为单位的输入）（如果有），或验证的代码单元数量（如果成功）。
+*/
+vamos_warn_unused result validate_utf16le_with_errors(const char16_t *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-16BE 字符串并在出现错误时停止。当预计错误会提前发生时，它可能比
+* validate_utf16be 更快。
+*
+* 被每个实现覆盖。
+*
+* 此函数不具备 BOM 感知能力。
+*
+* @param buf 要验证的 UTF-16BE 字符串。
+* @param len 以 2 字节代码单元 (char16_t) 的数量表示的字符串长度。
+* @return 带有错误代码和错误位置（在输入中的代码单元中）（如果有）或验证的代码单元数量（如果成功）的结果对结构（vamos::result 类型）。
+*/
+vamos_warn_unused result validate_utf16be_with_errors(const char16_t *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-32 字符串。
+*
+* 由每个实现覆盖。
+*
+* 此函数不识别 BOM。
+*
+* @param buf 要验证的 UTF-32 字符串。
+* @param len 字符串的长度（以 4 字节代码单元 (char32_t) 的数量表示）。
+* @return 当且仅当字符串是有效的 UTF-32 时才返回 true。
+*/
+vamos_warn_unused bool validate_utf32(const char32_t *buf, size_t len) noexcept;
+
+/**
+* 验证 UTF-32 字符串并在出错时停止。
+*
+* 由每个实现覆盖。
+*
+* 此函数不识别 BOM。
+*
+* @param buf 要验证的 UTF-32 字符串。
+* @param len 字符串的长度，以 4 字节代码单元 (char32_t) 的数量表示。
+* @return 一个结果对结构（vamos::result 类型，包含两个字段 error 和 count），其中包含错误代码和
+* 错误的位置（以代码单元为单位输入）（如果有）或验证的代码单元数量（如果成功）。
+*/
+vamos_warn_unused result validate_utf32_with_errors(const char32_t *buf, size_t len) noexcept;
+
+```
+
+给定一个有效的 `UTF-8` 或 `UTF-16` 输入，您可以使用
+快速函数计算 Unicode 字符的数量。对于 `UTF-32`，由于每个字符
+需要 `4` 个字节，因此不需要函数。对于 `Latin1` 也是如此：一个字节始终等于一个字符。
+
+```cpp
+/**
+* 计算字符串中的代码点（字符）数量，假设
+* 字符串有效。
+*
+* 此函数假设输入字符串是有效的 UTF-16（本机字节序）。
+* 可以传递无效的 UTF-16 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要处理的 UTF-16 字符串
+* @param length 字符串的长度（以 2 字节代码单元 (char16_t) 为单位）
+* @return 代码点数量
+*/
+vamos_warn_unused size_t count_utf16(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算字符串中的代码点（字符）数量，假设
+* 字符串有效。
+*
+* 此函数假设输入字符串是有效的 UTF-16LE。
+* 可以传递无效的 UTF-16 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要处理的 UTF-16LE 字符串
+* @param length 字符串的长度（以 2 字节代码单元 (char16_t) 为单位）
+* @return 代码点数量
+*/
+vamos_warn_unused size_t count_utf16le(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算字符串中的代码点（字符）数量，假设
+* 字符串有效。
+*
+* 此函数假设输入字符串是有效的 UTF-16BE。
+* 可以传递无效的 UTF-16 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要处理的 UTF-16BE 字符串
+* @param length 字符串的长度（以 2 字节代码单元 (char16_t) 为单位）
+* @return 代码点数量
+*/
+vamos_warn_unused size_t count_utf16be(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算字符串中的代码点（字符）数量，假设
+* 字符串有效。
+*
+* 此函数假设输入字符串是有效的 UTF-8。
+* 可以传递无效的 UTF-8 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* @param 输入要处理的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 代码点数量
+*/
+vamos_warn_unused size_t count_utf8(const char * input, size_t length) noexcept;
+
+```
+
+在对输入进行转码之前，您需要分配足够的内存来接收结果。
+我们有快速函数来扫描输入并计算输出的大小。这些函数
+快速且无需验证。
+
+
+
+```cpp
+
+/**
+* 返回此 Latin1 字符串在 UTF-8 格式下所需的字节数。
+*
+* @param 输入要转换的 Latin1 字符串
+* @param length 字符串字节的长度
+* @return 将 Latin1 字符串编码为 UTF-8 所需的字节数
+*/
+vamos_warn_unused size_t utf8_length_from_latin1(const char * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-8 字符串在 Latin1 格式下所需的字节数。
+*
+* 此函数不验证输入。传递无效的 UTF-8 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 将 UTF-8 字符串编码为 Latin1 所需的字节数
+*/
+vamos_warn_unused size_t latin1_length_from_utf8(const char * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-16 字符串在 Latin1 格式下所需的字节数。
+*
+* @param length 字符串的长度（以 Latin1 代码单元 (char) 为单位）
+* @return 将 UTF-16 字符串编码为 Latin1 所需的字符串的长度（以 Latin1 代码单元 (char) 为单位）
+*/
+vamos_warn_unused size_t latin1_length_from_utf16(size_t length) noexcept;
+
+/**
+* 计算此 UTF-16LE/BE 字符串在 Latin1 格式下所需的字节数。
+*
+* 此函数不验证输入。传递无效的 UTF-16 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @return 将 UTF-16LE 字符串编码为 Latin1 所需的字节数
+*/
+vamos_warn_unused size_t latin1_length_from_utf16(size_t length) noexcept;
+
+/**
+* 计算此 UTF-32 字符串在 Latin1 格式下所需的字节数。
+*
+* 此函数不验证输入。传递无效的 UTF-32 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param length 字符串的长度（以 4 字节代码单元 (char32_t) 为单位）
+* @return 将 UTF-32 字符串编码为 Latin1 所需的字节数
+*/
+vamos_warn_unused size_t latin1_length_from_utf32(size_t length) noexcept;
+
+/**
+* 计算此 UTF-8 字符串在 UTF-16 格式下需要的 2 字节代码单元数。
+*
+* 此函数不验证输入。传递无效的 UTF-8 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* @param input 要处理的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 将 UTF-8 字符串编码为 UTF-16 所需的 char16_t 代码单元数
+*/
+vamos_warn_unused size_t utf16_length_from_utf8(const char * input, size_t length) noexcept;
+
+
+/**
+* 计算此 UTF-8 字符串在 UTF-32 格式下需要的 4 字节代码单元数。
+*
+* 此函数相当于 count_utf8
+*
+* 此函数不验证输入。可以传递无效的 UTF-8 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要处理的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 将 UTF-8 字符串编码为 UTF-32 所需的 char32_t 代码单元数
+*/
+vamos_warn_unused size_t utf32_length_from_utf8(const char * input, size_t length) noexcept;
+
+/**
+* 使用本机字节序；计算此 UTF-16
+* 字符串在 UTF-8 格式下需要的字节数。
+*
+* 此函数不验证输入。可以传递无效的 UTF-16 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* @param 输入要转换的 UTF-16 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @return 将 UTF-16LE 字符串编码为 UTF-8 所需的字节数
+*/
+vamos_warn_unused size_t utf8_length_from_utf16(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-16LE 字符串在 UTF-8 格式下需要的字节数。
+*
+* 此函数不验证输入。传递无效的 UTF-16 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* @param 输入要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @return 将 UTF-16LE 字符串编码为 UTF-8 所需的字节数
+*/
+vamos_warn_unused size_t utf8_length_from_utf16le(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-16BE 字符串在 UTF-8 格式下需要的字节数。
+*
+* 此函数不验证输入。传递无效的 UTF-16 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* @param 输入要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @return 将 UTF-16BE 字符串编码为 UTF-8 所需的字节数
+*/
+vamos_warn_unused size_t utf8_length_from_utf16be(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-32 字符串在 UTF-8 格式下需要的字节数。
+*
+* 此函数不验证输入。传递无效的 UTF-32 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* @param 输入要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @return 将 UTF-32 字符串编码为 UTF-8 所需的字节数
+*/
+vamos_warn_unused size_t utf8_length_from_utf32(const char32_t * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-32 字符串在 UTF-16 格式下需要的双字节代码单元数。
+*
+* 此函数不验证输入。传递无效的 UTF-32 字符串是可以接受的，但在这种情况下
+* 结果由实现定义。
+*
+* @param 输入要转换的 UTF-32 字符串
+* @param length 字符串的长度（以 4 字节代码单元 (char32_t) 表示）
+* @return 将 UTF-32 字符串编码为 UTF-16 所需的字节数
+*/
+vamos_warn_unused size_t utf16_length_from_utf32(const char32_t * input, size_t length) noexcept;
+
+/**
+* 计算此 Latin1 字符串在 UTF-16 格式下所需的代码单元数。
+*
+* @param length 字符串的长度（以 Latin1 代码单元 (char) 为单位）
+* @return 将 Latin1 字符串编码为 UTF-16 所需的字符串的长度（以 2 字节代码单元 (char16_t) 为单位）
+*/
+vamos_warn_unused size_t utf16_length_from_latin1(size_t length) noexcept;
+
+/**
+* 使用本机字节序；计算此 UTF-16
+* 字符串在 UTF-32 格式下需要的字节数。
+*
+* 此函数相当于 count_utf16。
+*
+* 此函数不验证输入。可以传递无效的 UTF-16 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要转换的 UTF-16 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @return 将 UTF-16LE 字符串编码为 UTF-32 所需的字节数
+*/
+vamos_warn_unused size_t utf32_length_from_utf16(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-16LE 字符串在 UTF-32 格式下需要的字节数。
+*
+* 此函数相当于 count_utf16le。
+*
+* 此函数不验证输入。可以传递无效的 UTF-16 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @return 将 UTF-16LE 字符串编码为 UTF-32 所需的字节数
+*/
+vamos_warn_unused size_t utf32_length_from_utf16le(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算此 UTF-16BE 字符串在 UTF-32 格式下需要的字节数。
+*
+* 此函数相当于 count_utf16be。
+*
+* 此函数不验证输入。可以传递无效的 UTF-16 字符串，但在这种情况下
+* 结果由实现定义。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @return 将 UTF-16BE 字符串编码为 UTF-32 所需的字节数
+*/
+vamos_warn_unused size_t utf32_length_from_utf16be(const char16_t * input, size_t length) noexcept;
+
+/**
+* 计算此 Latin1 字符串在 UTF-32 格式下所需的字节数。
+*
+* @param length 字符串的长度（以 Latin1 代码单元 (char) 为单位）
+* @return 将 Latin1 字符串编码为 UTF-32 所需的字符串的长度（以 4 字节代码单元 (char32_t) 为单位）
+*/
+vamos_warn_unused size_t utf32_length_from_latin1(size_t length) noexcept;
+```
+
+
+
+我们有 `Latin1`、`UTF-8`、`UTF-16` 和 `UTF-32` 之间的广泛转换。它们假设您已为输入分配了足够的内存。
+最简单的转换函数输出一个表示输入大小的整数，值为零表示错误（例如，`convert_utf8_to_utf16le`）。它们非常适合您期望输入大多数时间都有效的场景。
+
+
+
+```cpp
+/**
+* 将 Latin1 字符串转换为 UTF8 字符串。
+*
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 Latin1 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf8_output 指向可保存转换结果的缓冲区的指针
+* @return 写入的字符数；如果无法转换，则返回 0
+*/
+vamos_warn_unused size_t convert_latin1_to_utf8(const char * input, size_t length, char* utf8_output) noexcept;
+
+/**
+* 将 Latin1 字符串转换为 UTF8 字符串，并限制输出。
+*
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 Latin1 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf8_output 指向可保存转换结果的缓冲区的指针
+* @param utf8_len 最大输出长度
+* @return 写入的字符数；如果无法转换，则返回 0
+*/
+vamos_warn_unused size_t convert_latin1_to_utf8_safe(const char * input, size_t length, char* utf8_output, size_t utf8_len) noexcept;
+
+/**
+* 使用本机字节序，将 Latin1 字符串转换为 UTF-16 字符串。
+*
+* @param 输入要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char16_t 数量。
+*/
+vamos_warn_unused size_t convert_latin1_to_utf16(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将可能的 Latin1 字符串转换为 UTF-16LE 字符串。
+*
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 Latin1 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char16_t 数量；如果无法转换，则返回 0
+*/
+vamos_warn_unused size_t convert_latin1_to_utf16le(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将 Latin1 字符串转换为 UTF-16BE 字符串。
+*
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 Latin1 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char16_t 数量；如果无法转换，则返回 0
+*/
+vamos_warn_unused size_t convert_latin1_to_utf16be(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将 Latin1 字符串转换为 UTF-32 字符串。
+*
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 Latin1 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char32_t 数量；如果无法转换，则返回 0
+*/
+vamos_warn_unused size_t convert_latin1_to_utf32(const char * input, size_t length, char32_t* utf32_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-8 字符串转换为 Latin1 字符串。
+* 如果字符串无法表示为 Latin1，则返回错误
+* 代码。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param latin1_output 指向可保存转换结果的缓冲区的指针
+* @return 写入的字符数；如果输入不是有效的 UTF-8 字符串或无法表示为 Latin1，则返回 0
+*/
+vamos_warn_unused size_t convert_utf8_to_latin1(const char * input, size_t length, char* latin1_output) noexcept;
+
+/**
+* 使用本机字节序；将可能损坏的 UTF-8 字符串转换为 UTF-16 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char16_t 数量；如果输入不是有效的 UTF-8 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf8_to_utf16(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将可能损坏的 UTF-8 字符串转换为 UTF-16LE 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char16_t 数量；如果输入不是有效的 UTF-8 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf8_to_utf16le(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将可能损坏的 UTF-8 字符串转换为 UTF-16BE 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char16_t 数量；如果输入不是有效的 UTF-8 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf8_to_utf16be(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将可能损坏的 UTF-8 字符串转换为 UTF-32 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的 char32_t 数量；如果输入不是有效的 UTF-8 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf8_to_utf32(const char * input, size_t length, char32_t* utf32_output) noexcept;
+
+
+/**
+* 使用本机字节序，将可能损坏的 UTF-16 字符串转换为 Latin1 字符串。
+* 如果字符串无法表示为 Latin1，则返回错误
+*。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param latin1_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16 字符串或无法表示为 Latin1，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16_to_latin1(const char16_t * input, size_t length, char* latin1_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16LE 字符串转换为 Latin1 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param latin1_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16LE 字符串或无法表示为 Latin1，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16le_to_latin1(const char16_t * input, size_t length, char* latin1_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16BE 字符串转换为 Latin1 字符串。
+* 如果字符串无法表示为 Latin1，则返回错误
+*。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param latin1_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16BE 字符串或无法表示为 Latin1，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16be_to_latin1(const char16_t * input, size_t length, char* latin1_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16LE 字符串转换为 UTF-8 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf8_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16LE 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16le_to_utf8(const char16_t * input, size_t length, char* utf8_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16BE 字符串转换为 UTF-8 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf8_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16LE 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16be_to_utf8(const char16_t * input, size_t length, char* utf8_buffer) noexcept;
+
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 Latin1 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 字符串的长度（以 4 字节代码单元 (char32_t) 为单位）
+* @param latin1_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-32 字符串或无法表示为 Latin1，则返回 0
+*/
+vamos_warn_unused size_t convert_utf32_to_latin1(const char32_t * input, size_t length, char* latin1_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 UTF-8 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @param utf8_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-32 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf32_to_utf8(const char32_t * input, size_t length, char* utf8_buffer) noexcept;
+
+/**
+* 使用本机字节序；将可能损坏的 UTF-32 字符串转换为 UTF-16 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 字符串的长度（以 4 字节代码单元 (char32_t) 为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-32 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf32_to_utf16(const char32_t * input, size_t length, char16_t* utf16_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 UTF-16LE 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-32 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf32_to_utf16le(const char32_t * input, size_t length, char16_t* utf16_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 UTF-16BE 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-32 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf32_to_utf16be(const char32_t * input, size_t length, char16_t* utf16_buffer) noexcept;
+
+/**
+* 使用本机字节序；将可能损坏的 UTF-16 字符串转换为 UTF-32 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16LE 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16_to_utf32(const char16_t * input, size_t length, char32_t* utf32_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16LE 字符串转换为 UTF-32 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16LE 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16le_to_utf32(const char16_t * input, size_t length, char32_t* utf32_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16BE 字符串转换为 UTF-32 字符串。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 写入的代码单元数；如果输入不是有效的 UTF-16LE 字符串，则返回 0
+*/
+vamos_warn_unused size_t convert_utf16be_to_utf32(const char16_t * input, size_t length, char32_t* utf32_buffer) noexcept;
+```
+
+在某些情况下，您需要对 `UTF-8` 或 `UTF-16` 输入进行转码，但您可能有一个截断的字符串，这意味着最后一
+个字符可能不完整。在这种情况下，我们建议修剪输入的末尾，以免遇到错误。
+
+```cpp
+
+/**
+* 给定一个有效的 UTF-8 字符串，该字符串的最后一个字符可能被截断，
+* 此函数检查字符串的结尾。如果最后一个字符被截断（或部分截断），
+* 则返回较短的长度（短 1 到 3 个字节），以便短 UTF-8
+* 字符串仅包含完整字符。如果没有截断字符，
+* 返回原始长度。
+*
+* 此函数假定输入字符串是有效的 UTF-8，但可能被截断。
+*
+* @param input 要处理的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 字符串的长度（以字节为单位），可能短 1 到 3 个字节
+*/
+vamos_warn_unused size_t trim_partial_utf8(const char *input, size_t length);
+
+/**
+* 给定一个有效的 UTF-16BE 字符串，该字符串的最后一个字符可能被截断，
+* 此函数检查字符串的结尾。如果最后一个字符被截断（或部分截断），
+* 则返回较短的长度（短 1 个单位），以便短 UTF-16BE
+* 字符串仅包含完整字符。如果没有截断字符，
+* 返回原始长度。
+*
+* 此函数假定输入字符串是有效的 UTF-16BE，但可能被截断。
+*
+* @param input 要处理的 UTF-16BE 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 字符串的长度（以字节为单位），可能短 1 个单位
+*/
+vamos_warn_unused size_t trim_partial_utf16be(const char16_t* input, size_t length);
+
+/**
+* 给定一个有效的 UTF-16LE 字符串，该字符串的最后一个字符可能被截断，
+* 此函数检查字符串的结尾。如果最后一个字符被截断（或部分截断），
+* 则返回较短的长度（短 1 个单位），以便短 UTF-16LE
+* 字符串仅包含完整字符。如果没有截断字符，
+* 返回原始长度。
+*
+* 此函数假定输入字符串是有效的 UTF-16LE，但可能被截断。
+*
+* @param 输入要处理的 UTF-16LE 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 字符串的长度（以单位为单位），可能短 1 个单位
+*/
+vamos_warn_unused size_t trim_partial_utf16le(const char16_t* input, size_t length);
+
+
+/**
+* 给定一个有效的 UTF-16 字符串，该字符串的最后一个字符可能被截断，
+* 此函数检查字符串的结尾。如果最后一个字符被截断（或部分截断），
+* 则返回较短的长度（短 1 个单位），以便短 UTF-16
+* 字符串仅包含完整字符。如果没有截断字符，
+* 返回原始长度。
+*
+* 此函数假定输入字符串是有效的 UTF-16，但可能被截断。
+* 我们使用本机字节序。
+*
+* @param 输入要处理的 UTF-16 字符串
+* @param length 字符串的长度（以字节为单位）
+* @return 字符串的长度（以单位为单位），可能短 1 个单位
+*/
+vamos_warn_unused size_t trim_partial_utf16(const char16_t* input, size_t length);
+```
+
+您可以使用这些 `trim_` 函数逐段解码输入，如以下示例所示。首先，您需要分两步解码 `UTF-8` 字符串：
+
+```cpp
+  const char unicode[] = "\xc3\xa9\x63ole d'\xc3\xa9t\xc3\xa9";
+  /// 假设您只想解码该字符串的开头。
+  size_t length = 10;
+  /// 选择 10 个字节是有问题的，因为我们可能会最终处于
+  /// 代码点的中间。但我们可以倒退到上一个代码点。
+  length = vamos::trim_partial_utf8(unicode, length);
+    /// 现在我们可以安全地转码了
+  size_t budget_utf16 = vamos::utf16_length_from_utf8(unicode, length);
+  std::unique_ptr<char16_t[]> utf16{new char16_t[budget_utf16]};
+  size_t utf16words =
+      vamos::convert_utf8_to_utf16le(unicode, length, utf16.get());
+  /// 然后我们可以转码下一批
+  const char * next = unicode + length;
+  size_t next_length = sizeof(unicode) - length;
+  size_t next_budget_utf16 = vamos::utf16_length_from_utf8(next, next_length);
+  std::unique_ptr<char16_t[]> next_utf16{new char16_t[next_budget_utf16]};
+  size_t next_utf16words =
+      vamos::convert_utf8_to_utf16le(next, next_length, next_utf16.get());
+```
+
+您可以对 `UTF-16` 使用相同的方法：
+
+```cpp
+    /// 我们有三个代理对序列（UTF-16）。
+    const char16_t unicode[] = u"\x3cd8\x10df\x3cd8\x10df\x3cd8\x10df";
+    /// 假设您只想解码该字符串的开头。
+    size_t length = 3;
+    /// 选择 3 个单位是有问题的，因为我们可能会最终处于代理对的中间。但我们可以倒回到上一个代码点。
+    length = vamos::trim_partial_utf16(unicode, length);
+    /// 现在我们可以安全地转码了
+    size_t budget_utf8 = vamos::utf8_length_from_utf16(unicode, length);
+    std::unique_ptr<char[]> utf8{new char[budget_utf8]};
+    size_t utf8words =
+      vamos::convert_utf16_to_utf8(unicode, length, utf8.get());
+    /// 然后我们可以转码下一批
+    const char16_t * next = unicode + length;
+    size_t next_length = 6 - length;
+    size_t next_budget_utf8 = vamos::utf8_length_from_utf16(next, next_length);
+    std::unique_ptr<char[]> next_utf8{new char[next_budget_utf8]};
+    size_t next_utf8words =
+      vamos::convert_utf16_to_utf8(next, next_length, next_utf8.get());
+```
+
+
+我们有更高级的转换函数，它们输出一个 `vamos::result` 结构，其中指示错误类型和 `count` 条目（例如
+`convert_utf8_to_utf16le_with_errors`）。当您预计输入中可能存在需要进一步调查的错误时，它们非常
+适合。`count` 字段包含输入中错误的位置（以代码单元为单位），如果有错误，否则包含写入的代码单元数。您可以按如下方式使用这些函数：
+
+```cpp
+  /// 此 UTF-8 字符串在索引 5 处有一个坏字节
+  std::string bad_utf8 = "\xc3\xa9\xc3\xa9\x20\xff\xc3\xa9";
+  size_t budget_utf16 = vamos::utf16_length_from_utf8(bad_utf8.data(), bad_utf8.size());
+  std::unique_ptr<char16_t[]> utf16{new char16_t[budget_utf16]};
+  vamos::result res = vamos::convert_utf8_to_utf16_with_errors(bad_utf8.data(), bad_utf8.size(), utf16.get());
+  if(res.error != vamos::error_code::SUCCESS) {
+    std::cerr << "error at index " << res.count << std::endl;
+  }
+  /// 以下将会成功
+  res = vamos::convert_utf8_to_utf16_with_errors(bad_utf8.data(), res.count, utf16.get());
+  if(res.error == vamos::error_code::SUCCESS) {
+    std::cerr << "we have transcoded " << res.count << " characters" << std::endl;
+  }
+```
+
+我们有几个转码函数返回“vamos::error”结果：
+
+```cpp
+/**
+* 将可能损坏的 UTF-8 字符串转换为 Latin1 字符串并出现错误。
+* 如果字符串无法表示为 Latin1，则返回错误
+* 代码。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param latin1_output 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）
+* 以及错误的位置（以代码单元为单位输入）（如果有）或验证的代码单元数（如果成功）。
+*/
+vamos_warn_unused result convert_utf8_to_latin1_with_errors(const char * input, size_t length, char* latin1_output) noexcept;
+
+/**
+* 将可能损坏的 UTF-16LE 字符串转换为 Latin1 字符串。
+* 如果字符串不能表示为 Latin1，则返回错误
+*。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param latin1_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（类型为 vamos::result，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的字符数（如果成功）。
+*/
+vamos_warn_unused result convert_utf16le_to_latin1_with_errors(const char16_t * input, size_t length, char* latin1_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16BE 字符串转换为 Latin1 字符串。
+* 如果字符串不能表示为 Latin1，则返回错误
+*。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param latin1_buffer 指向可保存转换结果的缓冲区的指针
+* @return 一个结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含
+* 错误代码和错误的位置（以代码单元为单位的输入）（如果有），或写入的字符数（如果成功）。
+*/
+vamos_warn_unused result convert_utf16be_to_latin1_with_errors(const char16_t * input, size_t length, char* latin1_buffer) noexcept;
+
+/**
+* 使用本机字节序，将可能损坏的 UTF-16 字符串转换为 Latin1 字符串。
+* 如果字符串不能表示为 Latin1，则返回错误
+*。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param latin1_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（类型为 vamos::result，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的字符数（如果成功）。
+*/
+vamos_warn_unused result convert_utf16_to_latin1_with_errors(const char16_t * input, size_t length, char* latin1_buffer) noexcept;
+
+
+/**
+* 使用本机字节序；将可能损坏的 UTF-8 字符串转换为 UTF-16
+* 字符串并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含错误代码和错误的位置（以代码单元为单位的输入）（如果有），或成功时写入的 char16_t 的数量。
+*/
+vamos_warn_unused result convert_utf8_to_utf16_with_errors(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将可能损坏的 UTF-8 字符串转换为 UTF-16LE 字符串，并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）
+* 以及错误的位置（以代码单元为单位输入）（如果有），或成功时写入的 char16_t 数量。
+*/
+vamos_warn_unused result convert_utf8_to_utf16le_with_errors(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将可能损坏的 UTF-8 字符串转换为 UTF-16BE 字符串，并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 一个结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含
+* 错误代码和错误的位置（以代码单元为单位的输入）（如果有），或者如果成功则写入的 char16_t 数量。
+*/
+vamos_warn_unused result convert_utf8_to_utf16be_with_errors(const char * input, size_t length, char16_t* utf16_output) noexcept;
+
+/**
+* 将可能损坏的 UTF-8 字符串转换为 UTF-32 字符串，并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* @param input 要转换的 UTF-8 字符串
+* @param length 字符串的长度（以字节为单位）
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 一个结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含错误代码和
+* 错误的位置（以代码单元为单位输入）（如果有）或写入的 char32_t 数量（如果成功）。
+*/
+vamos_warn_unused result convert_utf8_to_utf32_with_errors(const char * input, size_t length, char32_t* utf32_output) noexcept;
+
+
+/**
+* 将可能损坏的 UTF-16LE 字符串转换为 UTF-8 字符串并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf8_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）以及错误代码和错误位置（以代码单元为单位的输入）（如果有）或写入的字符数（如果成功）。
+*/
+vamos_warn_unused result convert_utf16le_to_utf8_with_errors(const char16_t * input, size_t length, char* utf8_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16BE 字符串转换为 UTF-8 字符串，并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf8_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（类型为 vamos::result，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的字符数（如果成功）。
+*/
+vamos_warn_unused result convert_utf16be_to_utf8_with_errors(const char16_t * input, size_t length, char* utf8_buffer) noexcept;
+
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 Latin1 字符串，并在出现错误时停止。
+* 如果字符串不能表示为 Latin1，则返回错误。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 字符串的长度（以 4 字节代码单元 (char32_t) 为单位）
+* @param latin1_buffer 指向可以保存转换结果的缓冲区的指针
+* @return 一个结果对结构（类型为 vamos::result，包含两个字段 error 和 count），其中包含错误代码和
+* 错误的位置（以代码单元为单位输入）（如果有），或者如果成功则写入的字符数。
+*/
+vamos_warn_unused result convert_utf32_to_latin1_with_errors(const char32_t * input, size_t length, char* latin1_buffer) noexcept;
+
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 UTF-8 字符串，并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不具备 BOM 感知能力。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @param utf8_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的字符数（如果成功）。
+*/
+vamos_warn_unused result convert_utf32_to_utf8_with_errors(const char32_t * input, size_t length, char* utf8_buffer) noexcept;
+
+/**
+* 使用本机字节序；将可能损坏的 UTF-32 字符串转换为 UTF-16
+* 字符串并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的 char16_t 数量（如果成功）。
+*/
+vamos_warn_unused result convert_utf32_to_utf16_with_errors(const char32_t * input, size_t length, char16_t* utf16_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 UTF-16LE 字符串并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不具备 BOM 感知能力。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的 char16_t 数量（如果成功）。
+*/
+vamos_warn_unused result convert_utf32_to_utf16le_with_errors(const char32_t * input, size_t length, char16_t* utf16_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-32 字符串转换为 UTF-16BE 字符串并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不具备 BOM 感知能力。
+*
+* @param input 要转换的 UTF-32 字符串
+* @param length 以 4 字节代码单元 (char32_t) 为单位的字符串长度
+* @param utf16_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）以及错误代码和错误位置（以代码单元为单位的输入）（如果有）或写入的 char16_t 数量（如果成功）。
+*/
+vamos_warn_unused result convert_utf32_to_utf16be_with_errors(const char32_t * input, size_t length, char16_t* utf16_buffer) noexcept;
+
+/**
+* 使用本机字节序；将可能损坏的 UTF-16 字符串转换为
+* UTF-32 字符串并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的 char32_t 数量（如果成功）。
+*/
+vamos_warn_unused result convert_utf16_to_utf32_with_errors(const char16_t * input, size_t length, char32_t* utf32_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16LE 字符串转换为 UTF-32 字符串并在出错时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不支持 BOM。
+*
+* @param input 要转换的 UTF-16LE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）和
+* 错误的位置（以代码单元为单位的输入）（如果有）或写入的 char32_t 数量（如果成功）。
+*/
+vamos_warn_unused result convert_utf16le_to_utf32_with_errors(const char16_t * input, size_t length, char32_t* utf32_buffer) noexcept;
+
+/**
+* 将可能损坏的 UTF-16BE 字符串转换为 UTF-32 字符串并在出现错误时停止。
+*
+* 在转换过程中，还会对输入字符串进行验证。
+* 此函数适用于处理来自不受信任来源的输入。
+*
+* 此函数不具备 BOM 感知能力。
+*
+* @param input 要转换的 UTF-16BE 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param utf32_buffer 指向可保存转换结果的缓冲区的指针
+* @return 带有错误代码的结果对结构（vamos::result 类型，包含两个字段 error 和 count）以及错误代码和错误位置（以代码单元为单位的输入）（如果有）或写入的 char32_t 数量（如果成功）。
+*/
+vamos_warn_unused result convert_utf16be_to_utf32_with_errors(const char16_t * input, size_t length, char32_t* utf32_buffer) noexcept;
+
+```
+
+如果您有 `UTF-16` 输入，您可以使用快速函数更改其字节顺序。
+
+```cpp
+/**
+* 更改输入的字节序。可用于从 UTF-16LE 转换为 UTF-16BE 或
+* 从 UTF-16BE 转换为 UTF-16LE。
+*
+* 此函数不验证输入。
+*
+* 此函数不支持 BOM。
+*
+* @param 输入要处理的 UTF-16 字符串
+* @param length 以 2 字节代码单元 (char16_t) 为单位的字符串长度
+* @param output 指向可保存转换结果的缓冲区的指针
+*/
+void change_endianness_utf16(const char16_t * input, size_t length, char16_t * output) noexcept;
+
+```
+
+
+## 手动实施选择
+
+在为 x64 处理器编译 library 时，我们为每个函数构建了多个实现。在运行时，会自动选择最佳实现。高级
+用户可能希望选择特定的实现，从而绕过我们的运行时检测。这样做是可能的，甚至相对方便。以下 C++ 程序检查所有可用的实现，并选择一个作为默认实现：
+
+```cpp
+#include <vamos/vamos.h>
+#include <cstdlib>
+#include <iostream>
+#include <string>
+
+int main() {
+  // This is just a demonstration, not actual testing required.
+  std::string source = "La vie est belle.";
+  std::string chosen_implementation;
+  for (auto &implementation : vamos::get_available_implementations()) {
+    if (!implementation->supported_by_runtime_system()) {
+      continue;
+    }
+    bool validutf8 = implementation->validate_utf8(source.c_str(), source.size());
+    if (!validutf8) {
+      return EXIT_FAILURE;
+    }
+    std::cout << implementation->name() << ": " << implementation->description()
+              << std::endl;
+    chosen_implementation = implementation->name();
+  }
+  auto my_implementation =
+      vamos::get_available_implementations()[chosen_implementation];
+  if (!my_implementation) {
+    return EXIT_FAILURE;
+  }
+  if (!my_implementation->supported_by_runtime_system()) {
+    return EXIT_FAILURE;
+  }
+  vamos::get_active_implementation() = my_implementation;
+  bool validutf8 = vamos::validate_utf8(source.c_str(), source.size());
+  if (!validutf8) {
+    return EXIT_FAILURE;
+  }
+  if (vamos::get_active_implementation()->name() != chosen_implementation) {
+    return EXIT_FAILURE;
+  }
+  std::cout << "I have manually selected: " << vamos::get_active_implementation()->name() << std::endl;
+  return EXIT_SUCCESS;
+}
+```
+
+## 线程安全
+
+我们在构建 vamos 时就考虑到了线程安全。vamos 库始终是单线程的。
+CPU 检测在第一次尝试解析时运行，并切换到适合您 CPU 的最快解析器，它是透明且线程安全的。我们的运行时调度基于在主线
+程开始时实例化的全局对象，并可能在主线程结束时被丢弃。如果您有多个线程在运行，并且一些线程在主线程清理资源时使用该库，您
+可能会遇到问题。如果您预计会出现此类问题，您可以考虑使用 [std::quick_exit](https://en.cppreference.com/w/cpp/utility/program/quick_exit)。
+
+## 引用
+
+* Robert Clausecker、Daniel Lemire，[使用 AVX-512 指令转码 Unicode 字符](https://arxiv.org/abs/2212.05098)，软件：实践与经验 53 (12)，2023 年。
+* Daniel Lemire、Wojciech Muła，[使用 SIMD 指令每秒转码数十亿个 Unicode 字符](https://arxiv.org/abs/2109.10433)，软件：实践与经验 52 (2)，2022 年。
+* John Keiser、Daniel Lemire，[以少于每字节一条指令验证 UTF-8](https://arxiv.org/abs/2010.03090)，软件：实践与经验 51 (5)，2021 年。
+* Wojciech Muła、Daniel Lemire，[Base64 编码和解码速度几乎与内存速度相同copy](https://arxiv.org/abs/1910.05109)，软件：实践与经验 50 (2)，2020 年。
+* Wojciech Muła、Daniel Lemire，[使用 AVX2 指令实现更快的 Base64 编码和解码](https://arxiv.org/abs/1704.00605)，ACM Transactions on the Web 12 (3)，2018 年。

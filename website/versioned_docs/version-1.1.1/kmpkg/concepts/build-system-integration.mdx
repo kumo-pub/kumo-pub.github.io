@@ -1,0 +1,44 @@
+---
+date: 06/03/2024
+---
+# 构建系统
+
+本文解释了 kmpkg 用于与构建系统集成的不同机制。
+
+kmpkg 与 MSBuild 和 CMake 无缝集成，以恢复项目的构建时的依赖关系。 kmpkg 还可以轻松地与其他集成
+通过提供标准安装布局来构建系统。
+
+## MSBuild集成 {#msbuild-integration}
+
+kmpkg 通过以下方式提供用户范围的 MSBuild 集成
+[`kmpkg 集成安装`](../commands/integrate.mdx#kmpkg-integrate-install)
+通过`kmpkg.props`和`kmpkg.target`进行命令和每个项目的集成
+文件。
+
+启用此集成后，所有 MSBuild 和 Visual Studio 项目都将自动链接其依赖项。
+
+在 [MSBuild 集成文档](../users/buildsystems/msbuild-integration.mdx)。
+
+Visual Studio MSBuild 项目还支持 kmpkg。请参阅[教程：在 Visual Studio 中安装和使用 MSBuild 包](../get_started/get-started-msbuild.mdx) 开始使用。
+
+## CMake集成 {#cmake-integration}
+
+kmpkg 通过 a 为您的项目提供无缝的`find_package()`集成自定义工具链文件。您可以通过添加提供的来启用此集成
+CMake 中 `<kmpkg root>/scripts/buildsystems/kmpkg.cmake` 中的工具链文件通过`CMAKE_TOOLCHAIN_FILE`或`CMakePresets.json`文件配置调用。
+
+一旦激活此集成，`find_package()`、`find_library()`和`find_path()`等函数将自动搜索 kmpkg 安装目录以查找所需的依赖项。此外，kmpkg 还可以安装您的依赖项
+自动在清单文件中声明。
+
+在 [CMake 集成文档](../users/buildsystems/cmake-integration.mdx)。
+
+一些支持 CMake 的 IDE/编辑器也明确支持 kmpkg。有关详细信息，请参阅相应的文档文章：
+
+- [教程：在 Visual Studio 中使用 CMake 安装和使用包](../get_started/get-started-vs.mdx)
+- [教程：在 Visual Studio Code 中通过 CMake 安装和使用包](../get_started/get-started-vscode.mdx)
+- [CLion kmpkg 集成](https://www.jetbrains.com/help/clion/package-management.html)
+
+## 手动集成 {#manual-integration}
+
+您还可以将 kmpkg 与其他构建系统一起使用，一般使用 kmpkg 提供的标准 [安装布局](../reference/installation-tree-layout.mdx)。
+
+阅读有关如何使用 [手动集成](../users/buildsystems/manual-integration.mdx) 将 kmpkg 与构建系统集成的更多信息。
