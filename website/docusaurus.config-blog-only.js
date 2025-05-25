@@ -54,7 +54,7 @@ export default {
       title: 'Docusaurus',
       logo: {
         alt: 'Docusaurus Logo',
-        src: 'img/docusaurus.svg',
+        src: 'img/favicon.png',
         srcDark: 'img/docusaurus_keytar.svg',
       },
     },
