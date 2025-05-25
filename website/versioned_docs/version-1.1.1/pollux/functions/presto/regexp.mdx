@@ -2,126 +2,99 @@
 # Regular Expression Functions
 
 
-Regular expression functions use RE2 as the regex engine. RE2 is fast, but
-supports only a subset of PCRE syntax and in particular does not support
-backtracking and associated features (e.g. back references).
-See https://github.com/google/re2/wiki/Syntax for more information.
+正则表达式函数使用 RE2 作为正则表达式引擎。RE2 速度很快，但仅支持 PCRE 语法的子集，尤其不支持
+回溯及其相关功能（例如反向引用）。更多信息请参阅 https://github.com/google/re2/wiki/Syntax。
 
-Compiling regular expressions is CPU intensive. Hence, each function is
-limited to 20 different expressions per instance and thread of execution.
+编译正则表达式会占用大量 CPU 资源。因此，每个函数每个实例和每个执行线程最多只能处理 20 个不同的表达式。
 
 ```cpp
     like(string, pattern) -> boolean
               like(string, pattern, escape) -> boolean
 
-    Evaluates if the ``string`` matches the ``pattern``. Patterns can contain
-    regular characters as well as wildcards. Wildcard characters can be escaped
-    using the single character specified for the ``escape`` parameter. Only ASCII
-    characters are supported for the ``escape`` parameter. Matching is case sensitive.
+    评估“string”是否与“pattern”匹配。模式可以包含
+    正则字符和通配符。可以使用“escape”参数指定的单个字符对通配符进行转义。“escape”参数仅支持 ASCII 字符。匹配区分大小写。
 
-    Note: The wildcard '%' represents 0, 1 or multiple characters and the
-    wildcard '_' represents exactly one character.
+    注意：通配符“%”表示 0 个、1 个或多个字符，而通配符“_”表示一个字符。
 
-    Note: Each function instance allow for a maximum of 20 regular expressions to
-    be compiled per thread of execution. Not all patterns require
-    compilation of regular expressions. Patterns 'hello', 'hello%', '_hello__%',
-    '%hello', '%__hello_', '%hello%' where 'hello', 'pollux' contains only regular
-    characters and '_' wildcards are evaluated without using regular expressions,
-    and constant pattern '%hello%pollux%' where 'hello', 'pollux' contains only regular
-    characters(not contains '_' '#' wildcards) is evaluated with substrings-searching.
-    Only those patterns that require the compilation of regular expressions are
-    counted towards the limit.
+    注意：每个函数实例允许每个执行线程最多编译 20 个正则表达式。并非所有模式都需要编译正则表达式。模式 'hello'、'hello%'、'_hello__%'、
+    '%hello'、'%__hello_'、'%hello%'，其中 'hello'、'pollux' 仅包含正则字符和 '_' 通配符，无需使用正则表达式进行求值；
+    常量模式 '%hello%pollux%'，其中 'hello'、'pollux' 仅包含正则字符（不包含 '_' 和 '#' 通配符），则使用子字符串搜索进行求值。
+    只有那些需要编译正则表达式的模式才会被计入限制。
 
-        SELECT like('abc', '%b%'); -- true
-        SELECT like('a_c', '%#_%', '#'); -- true
+    SELECT like('abc', '%b%'); -- true
+    SELECT like('a_c', '%#_%', '#'); -- true
 ```
 ```cpp
     regexp_extract(string, pattern) -> varchar
 
-    Returns the first substring matched by the regular expression ``pattern``
-    in ``string``::
+    返回正则表达式“pattern”在“string”中匹配的第一个子字符串
 
-        SELECT regexp_extract('1a 2b 14m', '\d+'); -- 1
+    SELECT regexp_extract('1a 2b 14m', '\d+'); -- 1
 ```
 ```cpp
     regexp_extract(string, pattern, group) -> varchar
-    :noindex:
 
     Finds the first occurrence of the regular expression ``pattern`` in
-    ``string`` and returns the capturing group number ``group``::
+    ``string`` and returns the capturing group number ``group``
 
-        SELECT regexp_extract('1a 2b 14m', '(\d+)([a-z]+)', 2); -- 'a'
+    SELECT regexp_extract('1a 2b 14m', '(\d+)([a-z]+)', 2); -- 'a'
 ```
 ```cpp
     regexp_extract_all(string, pattern) -> array(varchar):
 
-    Returns the substring(s) matched by the regular expression ``pattern``
-    in ``string``::
+    返回正则表达式“pattern”在“string”中匹配的子字符串
 
-        SELECT regexp_extract_all('1a 2b 14m', '\d+'); -- [1, 2, 14]
+    SELECT regexp_extract_all('1a 2b 14m', '\d+'); -- [1, 2, 14]
 ```
 ```cpp
     regexp_extract_all(string, pattern, group) -> array(varchar):
-    :noindex:
 
-    Finds all occurrences of the regular expression ``pattern`` in
-    ``string`` and returns the capturing group number ``group``::
+    查找正则表达式 ``pattern`` 在 ``string`` 中出现的所有位置，并返回捕获组编号 ``group``
 
-        SELECT regexp_extract_all('1a 2b 14m', '(\d+)([a-z]+)', 2); -- ['a', 'b', 'm']
+    SELECT regexp_extract_all('1a 2b 14m', '(\d+)([a-z]+)', 2); -- ['a', 'b', 'm']
 ```
 ```cpp
     regexp_like(string, pattern) -> boolean
 
-    Evaluates the regular expression ``pattern`` and determines if it is
-    contained within ``string``.
+    评估正则表达式“pattern”并确定它是否包含在“string”中。
 
-    This function is similar to the ``LIKE`` operator, except that the
-    pattern only needs to be contained within ``string``, rather than
-    needing to match all of ``string``. In other words, this performs a
-    *contains* operation rather than a *match* operation. You can match
-    the entire string by anchoring the pattern using ``^`` and ``$``::
+    此函数类似于“LIKE”运算符，不同之处在于，
+    模式只需包含在“string”中，而不需要匹配整个“string”。换句话说，它执行的是
+    *包含*操作，而不是*匹配*操作。您可以使用“^”和“$”来锚定模式，从而匹配整个字符串
 
-        SELECT regexp_like('1a 2b 14m', '\d+b'); -- true
+    SELECT regexp_like('1a 2b 14m', '\d+b'); -- true
 ```
 ```cpp
     regexp_replace(string, pattern) -> varchar
 
-    Removes every instance of the substring matched by the regular expression
-    ``pattern`` from ``string``::
+    从“string”中删除所有与正则表达式“pattern”匹配的子字符串实例：
 
-        SELECT regexp_replace('1a 2b 14m', '\d+[ab] '); -- '14m'
+    SELECT regexp_replace('1a 2b 14m', '\d+[ab] '); -- '14m'
 ```
 ```cpp
     regexp_replace(string, pattern, replacement) -> varchar
     :noindex:
 
-    Replaces every instance of the substring matched by the regular expression
-    ``pattern`` in ``string`` with ``replacement``. Capturing groups can be referenced in
-    ``replacement`` using ``$g`` for a numbered group or ``${name}`` for a named group. A
-    dollar sign (``$``) may be included in the replacement by escaping it with a
-    backslash (``\$``). If a backslash(``\``) is followed by any character other
-    than a digit or another backslash(``\``) in the replacement, the preceding
-    backslash(``\``) will be ignored::
+    将“string”中与正则表达式“pattern”匹配的所有子字符串替换为“replacement”。捕获组可以在“replacement”中引
+    用，使用“$g”表示编号组，使用“${name}”表示命名组。美元符号（“$”）可以通过使用反斜杠（“\$”）进行转义来包含
+    在替换中。如果反斜杠（“\”）后跟除数字或其他反斜杠（“\”）以外的任何字符，则前面的反斜杠（“\”）将被忽略：
 
-        SELECT regexp_replace('1a 2b 14m', '(\d+)([ab]) ', '3c$2 '); -- '3ca 3cb 14m'
-        SELECT regexp_replace('[{}]', '\}\]', '\}'); -- '[{}'
+    SELECT regexp_replace('1a 2b 14m', '(\d+)([ab]) ', '3c$2 '); -- '3ca 3cb 14m'
+    SELECT regexp_replace('[{}]', '\}\]', '\}'); -- '[{}'
 ```
 ```cpp
     regexp_replace(string, pattern, function) -> varchar
 
-    Replaces every instance of the substring matched by the regular expression
-    ``pattern`` in ``string`` using ``function``. The lambda expression
-    ``function`` is invoked for each match with the capturing groups passed as an
-    array. Capturing group numbers start at 1; there is no group for the entire match
-    (if you need this, surround the entire expression with parenthesis). ::
+    使用“function”替换“string”中与正则表达式“pattern”匹配的每个子字符串实例。lambda 表
+    达式“function”会针对每个匹配项调用，并将捕获组作为数组传递。捕获组编号从 1 开始；没有针对整个匹
+    配项的组（如果需要，请用括号将整个表达式括起来）。
 
-        SELECT regexp_replace('new york', '(\w)(\w*)', x -> upper(x[1]) || lower(x[2])); --'New York'
+    SELECT regexp_replace('new york', '(\w)(\w*)', x -> upper(x[1]) || lower(x[2])); --'New York'
 ```
 ```cpp
     regexp_split(string, pattern) -> array(varchar):
 
-    Splits ``string`` using the regular expression ``pattern`` and returns an
-    array. Trailing empty strings are preserved::
+    使用正则表达式“pattern”拆分“string”并返回一个数组。尾随的空字符串将被保留：
 
-        SELECT regexp_split('1a 2b 14m', '\s*[a-z]+\s*'); -- [1, 2, 14, ]
+    SELECT regexp_split('1a 2b 14m', '\s*[a-z]+\s*'); -- [1, 2, 14, ]
 ```

@@ -3,16 +3,16 @@
 
 ## Introduction
 
-The URL extraction functions extract components from HTTP URLs (or any valid URIs conforming to `RFC 3986 <https://tools.ietf.org/html/rfc3986.html>`_). The following syntax is supported:
+URL 提取函数可从 HTTP URL（或任何符合 [RFC 3986](https://tools.ietf.org/html/rfc3986.html) 的有效 URI）中提取组件。支持以下语法：
 
 ```bash
 
     [protocol:][//host[:port]][path][?query][#fragment]
 ```
 
-The extracted components do not contain URI syntax separators such as ``:`` , ``?`` and ``#``.
+提取的组件不包含 URI 语法分隔符，例如“:”、“?”和“#”。
 
-Consider for example the below URI:
+例如，请考虑以下 URI：
 
 ```text
 
@@ -28,8 +28,8 @@ Consider for example the below URI:
 Invalid URI's
 -------------
 
-Well formed URI's should not contain ascii whitespace. `Percent-encoded URI's <https://www.rfc-editor.org/rfc/rfc3986#section-2.1>`_ should be followed by two hexadecimal
-digits after the percent character "%". All the url extract functions will return null when passed an invalid uri.
+格式正确的 URI 不应包含 ASCII 空格。[百分号编码的 URI](https://www.rfc-editor.org/rfc/rfc3986#section-2.1) 应在百分
+号`%`后跟两位十六进制数字。所有 URL 提取函数在传递无效 URI 时都将返回 null。
 
 ```text
 
@@ -49,37 +49,39 @@ Extraction Functions
 ```cpp
     url_extract_fragment(url) -> varchar
 
-    Returns the fragment identifier from ``url``.
+    从“url”返回片段标识符。
 ```
 ```cpp
     url_extract_host(url) -> varchar
 
-    Returns the host from ``url``.
+    从“url”返回主机。
 ```
 ```cpp
     url_extract_parameter(url, name) -> varchar
 
-    Returns the value of the first query string parameter named ``name`` from ``url``. Parameter extraction is handled in the typical manner as specified by `RFC 1866#section-8.2.1 <https://tools.ietf.org/html/rfc1866.html#section-8.2.1>`_.
+    返回“url”中第一个名为“name”的查询字符串参数的值。
+    参数提取将按照[RFC 1866 第 8.2.1 节](https://tools.ietf.org/html/rfc1866.html#section-8.2.1)
+    中规定的典型方式进行处理。
 ```
 ```cpp
     url_extract_path(url) -> varchar
 
-    Returns the path from ``url``.
+    返回“url”的路径。
 ```
 ```cpp
     url_extract_port(url) -> bigint
 
-    Returns the port number from ``url``. Returns NULL if port is missing.
+    返回“url”的端口号。如果端口缺失，则返回 NULL。
 ```
 ```cpp
     url_extract_protocol(url) -> varchar
 
-    Returns the protocol from ``url``.
+    从“url”返回协议。
 ```
 ```cpp
     url_extract_query(url) -> varchar
 
-    Returns the query string from ``url``.
+    从“url”返回查询字符串。
 ```
 Encoding Functions
 ------------------
@@ -87,19 +89,16 @@ Encoding Functions
 ```cpp
     url_encode(value) -> varchar
 
-    Escapes ``value`` by encoding it so that it can be safely included in
-    URL query parameter names and values:
+    通过编码对“value”进行转义，以便将其安全地包含在 URL 查询参数名称和值中：
 
-    * Alphanumeric characters are not encoded.
-    * The characters ``.``, ``-``, ``*`` and ``_`` are not encoded.
-    * The ASCII space character is encoded as ``+``.
-    * All other characters are converted to UTF-8 and the bytes are encoded
-      as the string ``%XX`` where ``XX`` is the uppercase hexadecimal
-      value of the UTF-8 byte.
+    * 字母数字字符不进行编码。
+    * 字符“.”、“-”、“*”和“_”不进行编码。
+    * ASCII 空格字符编码为“+”。
+    * 所有其他字符均转换为 UTF-8 编码，字节编码为字符串“%XX”，其中“XX”是 UTF-8 字节的大写十六进制值。
 ```
 ```cpp
     url_decode(value) -> varchar
 
-    Unescapes the URL encoded ``value``.
-    This function is the inverse of :func:`url_encode`.
+    取消转义 URL 编码的“值”。
+    此函数与 `url_encode` 函数相反。
 ```

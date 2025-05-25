@@ -919,7 +919,8 @@
             "pollux/functions/presto/url",
             "pollux/functions/presto/string",
             "pollux/functions/presto/decimal",
-            "pollux/functions/presto/datetime"
+            "pollux/functions/presto/datetime",
+            "pollux/functions/presto/regexp"
           ]
         },
         {

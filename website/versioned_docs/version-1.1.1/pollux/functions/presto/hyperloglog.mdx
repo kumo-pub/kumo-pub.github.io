@@ -1,31 +1,24 @@
 # HyperLogLog Functions
 
-Pollux implements the Presto's :func:`approx_distinct` function using the
-`HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ data structure.
+Pollux 使用 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) 数据结构
+实现了 Presto 的 `approx_distinct` 函数。
 
 ## Data Structures
 
 
-Like Presto, Pollux implements HyperLogLog data sketches as a set of 32-bit
-buckets which store a *maximum hash*. They can be stored sparsely (as a map
-from bucket ID to bucket), or densely (as a contiguous memory block). The
-HyperLogLog data structure starts as the sparse representation, switching to
-dense when it is more efficient.
+与 Presto 类似，Pollux 将 HyperLogLog 数据草图实现为一组 32 位存储桶，用于存储*最大哈希值*。它们可以稀
+疏存储（作为从存储桶 ID 到存储桶的映射），也可以密集存储（作为连续的内存块）。HyperLogLog 数据结构最初采
+用稀疏表示，当效率更高时，会切换到密集表示。
 
 ## Serialization
 
 
-Data sketches can be serialized to and deserialized from ``varbinary``. This
-allows them to be stored for later use.  Combined with the ability to merge
-multiple sketches, this allows one to calculate :func:`approx_distinct` of the
-elements of a partition of a query, then for the entirety of a query with very
-little cost.
+数据草图可以序列化为“varbinary”并从“varbinary”反序列化。这样，它们就可以存储起来以供日后使用。结合合并多个草图的
+功能，这允许以极低的成本计算查询分区元素的:func:`approx_distinct`，然后计算整个查询的:func:`approx_distinct`。
 
-For example, calculating the ``HyperLogLog`` for daily unique users will allow
-weekly or monthly unique users to be calculated incrementally by combining the
-dailies. This is similar to computing weekly revenue by summing daily revenue.
+例如，计算每日独立用户数的“HyperLogLog”将允许通过合并每日数据来逐步计算每周或每月独立用户数。这类似于通过汇总每日收入来计算每周收入。
 
-Serialization format is compatible (actually, identical) to Presto's.
+序列化格式与 Presto 的序列化格式兼容（实际上完全相同）。
 
 ## Functions
 
@@ -33,45 +26,35 @@ Serialization format is compatible (actually, identical) to Presto's.
 ```cpp
     approx_set(x) -> HyperLogLog
 
-    Returns the ``HyperLogLog`` sketch of the input data set of ``x``.
-    The value of the maximum standard error is defaulted to ``0.01625``.
-    This data sketch underlies :func:`approx_distinct` and can be stored and
-    used later by calling ``cardinality()``.
+    返回输入数据集“x”的“HyperLogLog”草图。
+    最大标准误差值默认为“0.01625”。
+    此数据草图是`approx_distinct`函数的基础，可以存储并稍后通过调用``cardinality()``使用。
 ```
 ```cpp
     approx_set(x, e) -> HyperLogLog
-   :noindex:
 
-    Returns the ``HyperLogLog`` sketch of the input data set of ``x``, with
-    a maximum standard error of ``e``. The current implementation of this
-    function requires that ``e`` be in the range of ``[0.0040625, 0.26000]``.
-    This data sketch underlies :func:`approx_distinct` and can be stored and
-    used later by calling ``cardinality()``.
+    返回输入数据集“x”的“HyperLogLog”草图，其最大标准误差为“e”。此函数的当前实现要
+    求“e”在“[0.0040625, 0.26000]”范围内。此数据草图是:func:`approx_distinct`函数的基
+    础，可以存储并在以后通过调用``cardinality()``使用。
 ```
 ```cpp
     cardinality(hll) -> bigint
-    :noindex:
 
-    This will perform :func:`approx_distinct` on the data summarized by the
-    ``hll`` HyperLogLog data sketch.
+    这将对“hll” HyperLogLog 数据概要所汇总的数据执行“approx_distinct”。
 ```
 ```cpp
     empty_approx_set() -> HyperLogLog
 
-    Returns an empty ``HyperLogLog``.
-    The value of the maximum standard error is defaulted to ``0.01625``.
+    傳回一個空的HyperLogLo」。最大標準誤差的值預設為“0.01625”。
 ```
 ```cpp
     empty_approx_set(e) -> HyperLogLog
-   :noindex:
 
-    Returns an empty ``HyperLogLog`` with a maximum standard error of ``e``.
-    The current implementation of this function requires that ``e`` be in
-    the range of ``[0.0040625, 0.26000]``.
+    傳回一個空的“HyperLogLog”，其最大標準誤差為“e”。此函數的目前實作要求“e”位於
+    範圍為「[0.0040625, 0.26000]」。
 ```
 ```cpp
     merge(HyperLogLog) -> HyperLogLog
 
-    Returns the ``HyperLogLog`` of the aggregate union of the individual ``hll``
-    HyperLogLog structures.
+    傳回各個“hll”的聚合並集的“HyperLogLog”HyperLogLog 結構。
 ```

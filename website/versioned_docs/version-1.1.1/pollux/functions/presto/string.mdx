@@ -4,366 +4,325 @@ String Functions
 
 :::info
 
-    These functions assume that the input strings contain valid UTF-8 encoded
-    Unicode code points. There are no explicit checks for valid UTF-8 and
-    the functions may return incorrect results on invalid UTF-8.
+这些函数假定输入字符串包含有效的 UTF-8 编码的 Unicode 码位。它们没有明确检查 UTF-8 编码是否有效，并且如果 UTF-8 编码无效，
+函数可能会返回错误的结果。
 
-    Additionally, the functions operate on Unicode code points and not user
-    visible *characters* (or *grapheme clusters*).  Some languages combine
-    multiple code points into a single user-perceived *character*, the basic
-    unit of a writing system for a language, but the functions will treat each
-    code point as a separate unit.
-
-    The :func:`lower` and :func:`upper` functions do not perform
-    locale-sensitive, context-sensitive, or one-to-many mappings required for
-    some languages. Specifically, this will return incorrect results for
-    Lithuanian, Turkish and Azeri.
+此外，这些函数操作的是 Unicode 码位，而不是用户可见的字符（或字素簇）。某些语言会将多个码位组合成一个用户感知的字符，即语言书写系统的基本单位，
+但这些函数会将每个码位视为一个单独的单位。`lower` 和 `upper` 函数不执行某些语言所需的语言区域敏感、上下文敏感或一对多映射。具体来说，
+这会对立陶宛语、土耳其语和阿塞拜疆语返回错误的结果。
 :::
 
 ```cpp
     chr(n) -> varchar
 
-    Returns the Unicode code point ``n`` as a single character string.
+    将 Unicode 代码点“n”作为单个字符串返回。
 ```
 ```cpp
     codepoint(string) -> integer
 
-    Returns the Unicode code point of the only character of ``string``.
+    返回“字符串”唯一字符的 Unicode 代码点。
 ```
 ```cpp
     concat(string1, ..., stringN) -> varchar
 
-    Returns the concatenation of ``string1``, ``string2``, ``...``, ``stringN``.
-    This function provides the same functionality as the
-    SQL-standard concatenation operator (``||``).
+    返回“string1”、“string2”、“...”、“stringN”的串联结果。
+    此函数提供与 SQL 标准串联运算符（“||”）相同的功能。
 ```
 ```cpp
     ends_with(string, substring) -> boolean
 
-    Returns whether ``string`` ends_with with ``substring``.
+    返回“string”是否以“substring”结尾。
 ```
 ```cpp
     from_utf8(binary) -> varchar
 
-    Decodes a UTF-8 encoded string from ``binary``. Invalid UTF-8 sequences
-    are replaced with the Unicode replacement character ``U+FFFD``. Each
-    invalid UTF-8 codepoint, including those of multi-byte long, is replaced
-    with one replacement character.
+    将“二进制”解码为 UTF-8 编码的字符串。无效的 UTF-8 序列将被替换为 Unicode 替换字符“U+FFFD”。每个
+    无效的 UTF-8 码位（包括多字节长度的码位）都将替换为一个替换字符。
 ```
 ```cpp
     from_utf8(binary, replace) -> varchar
-    :noindex:
 
-    Decodes a UTF-8 encoded string from ``binary``. Invalid UTF-8 sequences are
-    replaced with `replace`. Each invalid UTF-8 codepoint, including those of
-    multi-byte long, is replaced with one replacement character. The `replace`
-    argument can be either Unicode code point (bigint), a single character or
-    empty string. When `replace` is an empty string invalid characters are
-    removed.
+    将“binary”解码为 UTF-8 编码字符串。无效的 UTF-8 序列将被替换为“replace”。每个无效的 UTF-8 码位（包
+    括多字节长度的码位）都将替换为一个替换字符。“replace”参数可以是 Unicode 码位 (bigint)、单个字符或空字
+    符串。当“replace”为空字符串时，无效字符将被删除。
 ```
 ```cpp
     hamming_distance(string1, string2) -> bigint
 
-    Returns the Hamming distance of ``string1`` and ``string2``,
-    i.e. the number of positions at which the corresponding characters are different.
-    Note that the two strings must have the same length.
+    返回“string1”和“string2”的汉明距离，即对应字符不同的位置数。
+    注意，两个字符串的长度必须相同。
 ```
 ```cpp
     length(string) -> bigint
 
-    Returns the length of ``string`` in characters.
+   返回“string”的字符长度。
 ```
 ```cpp
     levenshtein_distance(string_1, string_2) -> bigint
 
-    Returns the Levenshtein edit distance of 2 strings. I.e. the minimum number of single-character edits
-    (insertions, deletions or substitutions) needed to convert ``string_1`` to ``string_2``.
+     返回两个字符串的 Levenshtein 编辑距离。即，将“string_1”转换
+    为“string_2”所需的最小单字符编辑次数（插入、删除或替换）。
 ```
 ```cpp
     lower(string) -> varchar
 
-    Converts ``string`` to lowercase.
+    将“字符串”转换为小写。
 ```
 ```cpp
     lpad(string, size, padstring) -> varchar
 
-     Left pads ``string`` to ``size`` characters with ``padstring``. If
-     ``size`` is less than the length of ``string``, the result is truncated
-     to ``size`` characters. ``size`` must not be negative and ``padstring``
-     must be non-empty.
+    使用 ``padstring`` 将 ``string`` 左填充至 ``size`` 个字符。如果 ``size`` 小于
+    ``string`` 的长度，则结果将被截断至 ``size`` 个字符。``size`` 不能为负数，且 ``padstring`` 必须非空。
 ```
 ```cpp
     ltrim(string) -> varchar
 
-    Removes leading whitespace from string. See :func:`trim` for the set of
-    recognized whitespace characters.
+    删除字符串中的前导空格。请参阅:func:`trim`函数，了解可识别的空格字符集。
 ```
 ```cpp
     ltrim(string, chars) -> varchar
     :noindex:
 
-    Removes the longest substring containing only characters in ``chars`` from the beginning of the ``string``. ::
+    从 ``string`` 的开头删除仅包含 ``chars`` 中字符的最长子字符串。::
 
-        SELECT ltrim('test', 't'); -- est
-        SELECT ltrim('tetris', 'te'); -- ris
+    SELECT ltrim('test', 't'); -- est
+    SELECT ltrim('tetris', 'te'); -- ris
 ```
 ```cpp
     replaceFirst(string, search, replace) -> varchar
 
-    Removes the first instances of ``search`` with ``replace`` in ``string``.
+     删除“string”中第一个“search”和“replace”的匹配项。
 
-    If ``search`` is an empty string, inserts ``replace`` in front of ``string``.
+    如果“search”为空字符串，则在“string”前面插入“replace”。
 ```
 ```cpp
     replace(string, search) -> varchar
 
-    Removes all instances of ``search`` from ``string``.
+    从“string”中删除“search”的所有实例。
 ```
 ```cpp
     replace(string, search, replace) -> varchar
-    :noindex:
 
-    Replaces all instances of ``search`` with ``replace`` in ``string``.
+    将“string”中的所有“search”替换为“replace”。
 
-    If ``search`` is an empty string, inserts ``replace`` in front of every
-    character and at the end of the ``string``.
+    如果“search”为空字符串，则在每个字符前以及“string”的末尾插入“replace”。
+
 ```
 ```cpp
     reverse(string) -> varchar
-    :noindex:
 
-    Returns input string with characters in reverse order.
+    返回以相反顺序排列字符的输入字符串。
 ```
 ```cpp
     reverse(varbinary) -> varbinary
-    :noindex:
 
-    Returns input binary with bytes in reversed order.
+    返回以相反顺序排列字节的输入二进制文件。
 ```
 ```cpp
     rpad(string, size, padstring) -> varchar
 
-     Right pads ``string`` to ``size`` characters with ``padstring``. If
-     ``size`` is less than the length of ``string``, the result is truncated
-     to ``size`` characters. ``size`` must not be negative and ``padstring``
-     must be non-empty.
+    使用 ``padstring`` 将 ``string`` 右填充至 ``size`` 个字符。如果 ``size`` 小
+    于 ``string`` 的长度，则结果将被截断至 ``size`` 个字符。``size`` 不能为负数，且 ``padstring`` 必须非空。
 ```
 ```cpp
     rtrim(string) -> varchar
 
-    Removes trailing whitespace from string. See :func:`trim` for the set of
-    recognized whitespace characters.
+    删除字符串尾部的空格。请参阅:func:`trim`函数，了解可识别的空格字符集。
 ```
 ```cpp
     rtrim(string, chars) -> varchar
     :noindex:
 
-    Removes the longest substring containing only characters in ``chars`` from the end of the ``string``. ::
+    从 ``string`` 的末尾删除仅包含 ``chars`` 中字符的最长子字符串。
 
-        SELECT rtrim('test', 't'); -- tes
-        SELECT rtrim('test...', '.'); -- test
+    SELECT rtrim('test', 't'); -- tes
+    SELECT rtrim('test...', '.'); -- test
 ```
 ```cpp
     split(string, delimiter) -> array(string)
 
-    Splits ``string`` on ``delimiter`` and returns an array.
+    根据“分隔符”分割“字符串”并返回一个数组。
 ```
 ```cpp
     split(string, delimiter, limit) -> array(string)
-    :noindex:
 
-    Splits ``string`` on ``delimiter`` and returns an array of size at most ``limit``.
+    根据“delimiter”分隔“string”，并返回一个大小最多为“limit”的数组。
 
-    The last element in the array always contains everything left in the string.
-    ``limit`` must be a positive number.
+    数组的最后一个元素始终包含字符串中剩余的所有内容。
+    “limit”必须为正数。
 ```
 ```cpp
     split_part(string, delimiter, index) -> string
 
-    Splits ``string`` on ``delimiter`` and returns the part at index ``index``.
+    根据“delimiter”分隔“string”，并返回索引“index”处的部分。
 
-    Field indexes start with 1. If the index is larger than the number of fields,
-    then null is returned.
+    字段索引从 1 开始。如果索引大于字段数量，则返回 null。
 ```
 ```cpp
     split_to_map(string, entryDelimiter, keyValueDelimiter) -> map<varchar, varchar>
 
-    Splits ``string`` by ``entryDelimiter`` and ``keyValueDelimiter`` and returns a map.
-    ``entryDelimiter`` splits ``string`` into key-value pairs. ``keyValueDelimiter`` splits
-    each pair into key and value. Note that ``entryDelimiter`` and ``keyValueDelimiter`` are
-    interpreted literally, i.e., as full string matches.
+    使用 ``entryDelimiter`` 和 ``keyValueDelimiter`` 拆分 ``string`` 并返回一个 map。
+    ``entryDelimiter`` 将 ``string`` 拆分为键值对。``keyValueDelimiter`` 将
+    每对拆分为键和值。请注意，``entryDelimiter`` 和 ``keyValueDelimiter`` 将被逐字解释，即完整字符串匹配。
 
-    ``entryDelimiter`` and ``keyValueDelimiter`` must not be empty and must not be the same.
-    ``entryDelimiter`` is allowed to be the trailing character.
+    ``entryDelimiter`` 和 ``keyValueDelimiter`` 不能为空，且不能相同。
+    ``entryDelimiter`` 可以作为尾随字符。
 
-    Raises an error if there are duplicate keys.
+    如果存在重复的键，则会引发错误。
 ```
 ```cpp
     split_to_map(string, entryDelimiter, keyValueDelimiter, function(K,V1,V2,R)) -> map<varchar, varchar>
 
-    Splits ``string`` by ``entryDelimiter`` and ``keyValueDelimiter`` and returns a map.
-    ``entryDelimiter`` splits ``string`` into key-value pairs. ``keyValueDelimiter`` splits
-    each pair into key and value. Note that ``entryDelimiter`` and ``keyValueDelimiter`` are
-    interpreted literally, i.e., as full string matches.
+    使用 ``entryDelimiter`` 和 ``keyValueDelimiter`` 拆分 ``string`` 并返回一个 map。
+    ``entryDelimiter`` 将 ``string`` 拆分为键值对。``keyValueDelimiter`` 将
+    每对拆分为键和值。请注意，``entryDelimiter`` 和 ``keyValueDelimiter`` 会被逐字解释，即完整字符串匹配。
 
-    ``function(K,V1,V2,R)`` is used to decide whether to keep first or last value for
-    duplicate keys. (k, v1, v2) -> v1 keeps first value. (k, v1, v2) -> v2 keeps last
-    value. Arbitrary functions are not supported. ::
+    ``function(K,V1,V2,R)`` 用于决定对于重复的键，保留第一个值还是最后一个值。(k, v1, v2) -> v1 保留第
+    一个值。(k, v1, v2) -> v2 保留最后一个值。不支持任意函数。::
 
-        SELECT(split_to_map('a:1;b:2;a:3', ';', ':', (k, v1, v2) -> v1)); -- {"a": "1", "b": "2"}
-        SELECT(split_to_map('a:1;b:2;a:3', ';', ':', (k, v1, v2) -> v2)); -- {"a": "3", "b": "2"}
+    SELECT(split_to_map('a:1;b:2;a:3', ';', ':', (k, v1, v2) -> v1)); -- {"a": "1", "b": "2"}
+    SELECT(split_to_map('a:1;b:2;a:3', ';', ':', (k, v1, v2) -> v2)); -- {"a": "3", "b": "2"}
 ```
 ```cpp
     split_to_multimap(string, entryDelimiter, keyValueDelimiter) -> map<varchar, array<varchar>>
 
-    Splits ``string`` by ``entryDelimiter`` and ``keyValueDelimiter`` and returns a map containing an array of values for each unique key.
-    ``entryDelimiter`` splits ``string`` into key-value pairs. ``keyValueDelimiter`` splits each pair into key and value.
-    The values for each key will be in the same order as they appeared in ``string``.
+    使用“entryDelimiter”和“keyValueDelimiter”对“string”进行拆分，并返回一个包含每个唯一键对应的值数组的映射。
+    “entryDelimiter”将“string”拆分为键值对。“keyValueDelimiter”将每对拆分为键和值。
+    每个键的值将与其在“string”中出现的顺序相同。
 
-    Note that ``entryDelimiter`` and ``keyValueDelimiter`` are interpreted literally, i.e., as full string matches.
+    请注意，“entryDelimiter”和“keyValueDelimiter”将按字面意思解释，即完整的字符串匹配。
 ```
 ```cpp
     starts_with(string, substring) -> boolean
 
-    Returns whether ``string`` starts with ``substring``.
+    返回“string”是否以“substring”开头。
 ```
 ```cpp
     strpos(string, substring) -> bigint
 
-    Returns the starting position of the first instance of ``substring`` in
-    ``string``. Positions start with ``1``. If not found, ``0`` is returned.
+    返回“string”中第一个“substring”实例的起始位置。位置从“1”开始。如果未找到，则返回“0”。
 ```
 ```cpp
     strpos(string, substring, instance) -> bigint
-    :noindex:
 
-    Returns the position of the N-th ``instance`` of ``substring`` in ``string``.
-    ``instance`` must be a positive number.
-    Positions start with ``1``. If not found, ``0`` is returned.
-    It takes into account overlapping strings when counting occurrences. ::
+    返回“string”中“substring”的第 N 个“instance”的位置。
+    “instance”必须为正数。
+    位置从“1”开始。如果未找到，则返回“0”。
+    计算出现次数时会考虑重叠的字符串。::
 
-        SELECT strpos('aaa', 'aa', 2); -- 2
+    SELECT strpos('aaa', 'aa', 2); -- 2
 ```
 ```cpp
     strrpos(string, substring) -> bigint
 
-    Returns the starting position of the last instance of ``substring`` in
-    ``string``. Positions start with ``1``. If not found, ``0`` is returned.
+   返回“string”中最后一个“substring”的起始位置。位置从“1”开始。如果未找到，则返回“0”。
 ```
 ```cpp
     strrpos(string, substring, instance) -> bigint
-    :noindex:
 
-    Returns the position of the N-th ``instance`` of ``substring`` in ``string`` starting from the end of the string.
-    ``instance`` must be a positive number.
-    Positions start with ``1``. If not found, ``0`` is returned.
-    It takes into account overlapping strings when counting occurrences. ::
+   返回“string”中从字符串末尾开始第 N 个“substring”实例的位置。
+    “instance”必须为正数。位置从“1”开始。如果未找到，则返回“0”。
+    计算出现次数时会考虑重叠的字符串。
 
-        SELECT strrpos('aaa', 'aa', 2); -- 1
+    SELECT strrpos('aaa', 'aa', 2); -- 1
 ```
 ```cpp
     trail(string, N) -> varchar
 
-    Returns the last ``N`` characters of the input ``string`` up to at most the length of ``string``.
+    返回输入“string”的最后“N”个字符，最多为“string”的长度。
 ```
 ```cpp
     substr(string, start) -> varchar
 
-    Returns the rest of ``string`` from the starting position ``start``.
-    Positions start with ``1``. A negative starting position is interpreted
-    as being relative to the end of the string. Returns empty string if absolute
-    value of ``start`` is greater then length of the ``string``.
+    返回从起始位置“start”开始的“string”的剩余部分。
+    位置从“1”开始。负的起始位置被解释为相对于字符串末尾的位置。如果“start”的绝对
+    值大于“string”的长度，则返回空字符串。
 ```
 ```cpp
     substr(string, start, length) -> varchar
-    :noindex:
 
-    Returns a substring from ``string`` of length ``length`` from the starting
-    position ``start``. Positions start with ``1``. A negative starting
-    position is interpreted as being relative to the end of the string.
-    Returns empty string if absolute value of ``'start`` is greater then
-    length of the ``string``.
+   从起始位置“start”开始，返回长度为“length”的“string”子字符串。位置从“1”开始。负的起始位置被解释为相对于
+    字符串末尾的位置。如果“start”的绝对值大于“string”的长度，则返回空字符串。
 ```
 ```cpp
     trim(string) -> varchar
 
-    Removes starting and ending whitespaces from ``string``.
 
-    Recognized whitespace characters:
+    从“字符串”中删除开始和结束的空格。
+```
 
-    ======  =========================== ======  ===========================
-    Code    Description                 Code    Description
-    ======  =========================== ======  ===========================
-    9       TAB (horizontal tab)        U+1680  Ogham Space Mark
-    10      LF (NL line feed, new line) U+2000  En Quad
-    11      VT (vertical tab)           U+2001  Em Quad
-    12      FF (NP form feed, new page) U+2002  En Space
-    13      CR (carriage return)        U+2003  Em Space
-    28      FS (file separator)         U+2004  Three-Per-Em Space
-    29      GS (group separator)        U+2005  Four-Per-Em Space
-    30      RS (record separator)       U+2006  Four-Per-Em Space
-    31      US (unit separator)         U+2008  Punctuation Space
-    32      Space                       U+2009  Thin Space
-    _       _                           U+200a  Hair Space
-    _       _                           U+200a  Hair Space
-    _       _                           U+2028  Line Separator
-    _       _                           U+2029  Paragraph Separator
-    _       _                           U+205f  Medium Mathematical Space
-    _       _                           U+3000  Ideographic Space
-    ======  =========================== ======  ===========================
+可识别的空白字符：
+| Code | Description                     | Code    | Description                     |
+|------|---------------------------------|---------|---------------------------------|
+| 9    | TAB (horizontal tab)            | U+1680  | Ogham Space Mark                |
+| 10   | LF (NL line feed, new line)     | U+2000  | En Quad                         |
+| 11   | VT (vertical tab)               | U+2001  | Em Quad                         |
+| 12   | FF (NP form feed, new page)     | U+2002  | En Space                        |
+| 13   | CR (carriage return)            | U+2003  | Em Space                        |
+| 28   | FS (file separator)             | U+2004  | Three-Per-Em Space              |
+| 29   | GS (group separator)            | U+2005  | Four-Per-Em Space               |
+| 30   | RS (record separator)           | U+2006  | Six-Per-Em Space                |
+| 31   | US (unit separator)             | U+2008  | Punctuation Space               |
+| 32   | Space                           | U+2009  | Thin Space                      |
+| _    | _                               | U+200a  | Hair Space                      |
+| _    | _                               | U+2028  | Line Separator                  |
+| _    | _                               | U+2029  | Paragraph Separator             |
+| _    | _                               | U+205f  | Medium Mathematical Space       |
+| _    | _                               | U+3000  | Ideographic Space               |
+
 
 ```cpp
     trim(string, chars) -> varchar
-    :noindex:
 
-    Removes the longest substring containing only characters in ``chars`` from the beginning and end of the ``string``. ::
-
+    从“string”的开头和结尾删除仅包含“chars”中字符的最长子字符串。
+```
+```sql
         SELECT trim('test', 't'); -- es
         SELECT trim('.t.e.s.t.', '.t'); -- e.s
 ```
 ```cpp
     upper(string) -> varchar
 
-    Converts ``string`` to uppercase.
+   将“字符串”转换为大写。
 ```
 ```cpp
     word_stem(word) -> varchar
 
-    Returns the stem of ``word`` in the English language. If the ``word`` is not an English word,
-    the ``word`` in lowercase is returned.
+    返回“word”的英文词干。如果“word”不是英文单词，则返回小写的“word”。
 ```
 ```cpp
     word_stem(word, lang) -> varchar
 
-    Returns the stem of ``word`` in the ``lang`` language. This function supports the following languages:
-
-    =========== ================
-    lang        Language
-    =========== ================
-    ``ca``      ``Catalan``
-    ``da``      ``Danish``
-    ``de``      ``German``
-    ``en``      ``English``
-    ``es``      ``Spanish``
-    ``eu``      ``Basque``
-    ``fi``      ``Finnish``
-    ``fr``      ``French``
-    ``hu``      ``Hungarian``
-    ``hy``      ``Armenian``
-    ``ir``      ``Irish``
-    ``it``      ``Italian``
-    ``lt``      ``Lithuanian``
-    ``nl``      ``Dutch``
-    ``no``      ``Norwegian``
-    ``pt``      ``Portuguese``
-    ``ro``      ``Romanian``
-    ``ru``      ``Russian``
-    ``sv``      ``Swedish``
-    ``tr``      ``Turkish``
-    =========== ================
-
-    If the specified ``lang`` is not supported, this function throws a user error.
+    返回 ``lang`` 语言中 ``word`` 的词干。此函数支持以下语言：
 ```
+
+| lang   | Language      |
+|--------|---------------|
+| `ca`   | `Catalan`     |
+| `da`   | `Danish`      |
+| `de`   | `German`      |
+| `en`   | `English`     |
+| `es`   | `Spanish`     |
+| `eu`   | `Basque`      |
+| `fi`   | `Finnish`     |
+| `fr`   | `French`      |
+| `hu`   | `Hungarian`   |
+| `hy`   | `Armenian`    |
+| `ir`   | `Irish`       |
+| `it`   | `Italian`     |
+| `lt`   | `Lithuanian`  |
+| `nl`   | `Dutch`       |
+| `no`   | `Norwegian`   |
+| `pt`   | `Portuguese`  |
+| `ro`   | `Romanian`    |
+| `ru`   | `Russian`     |
+| `sv`   | `Swedish`     |
+| `tr`   | `Turkish`     |
+
+
+
+如果不支持指定的“lang”，则此函数将引发用户错误。
+
 
 ## Unicode Functions
 
@@ -371,31 +330,30 @@ String Functions
 ```cpp
     normalize(string) -> varchar
 
-    Transforms ``string`` with NFC normalization form.
+   使用 NFC 规范形式转换“字符串”。
 ```
 ```cpp
     normalize(string, form) -> varchar
 
-    Reference: https://unicode.org/reports/tr15/#Norm_Forms
-    Transforms ``string`` with the specified normalization form.
-    ``form`` must be be one of the following keywords:
-
-    ======== ===========
-    Form     Description
-    ======== ===========
-    ``NFD``  Canonical Decomposition
-    ``NFC``  Canonical Decomposition, followed by Canonical Composition
-    ``NFKD`` Compatibility Decomposition
-    ``NFKC`` Compatibility Decomposition, followed by Canonical Composition
-    ======== ===========
-
-    .. note::
-
-        This SQL-standard function has special syntax and requires
-        specifying ``form`` as a keyword, not as a string.
+    参考：https://unicode.org/reports/tr15/#Norm_Forms
+    使用指定的范式转换“string”。“form”必须是以下关键字之一：
 ```
+
+
+| Form   | Description                                              |
+|--------|----------------------------------------------------------|
+| `NFD`  | Canonical Decomposition                                  |
+| `NFC`  | Canonical Decomposition, followed by Canonical Composition |
+| `NFKD` | Compatibility Decomposition                              |
+| `NFKC` | Compatibility Decomposition, followed by Canonical Composition |
+
+
+:::info
+此 SQL 标准函数具有特殊语法，需要将“form”指定为关键字，而不是字符串。
+:::
+
 ```cpp
     to_utf8(string) -> varbinary
 
-    Encodes ``string`` into a UTF-8 varbinary representation.
+    将“string”编码为 UTF-8 varbinary 表示形式。
 ```

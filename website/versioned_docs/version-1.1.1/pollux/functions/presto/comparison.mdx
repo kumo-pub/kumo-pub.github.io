@@ -3,73 +3,61 @@
 ```cpp
     between(x, min, max) -> boolean
 
-    Returns true if x is within the specified [min, max] range
-    inclusive. Supports TINYINT, SMALLINT, INTEGER, BIGINT, DOUBLE,
-    REAL, VARCHAR, DATE types. The types of all arguments must be
-    the same.
+    如果 x 在指定的 [min, max] 范围内（含），则返回 true。支持 TINYINT、SMALLINT、INTEGER、BIGINT、DOUBLE、
+    REAL、VARCHAR、DATE 类型。所有参数的类型必须相同。
 ```
 ```cpp
     distinct_from(x, y) -> boolean
 
-    In SQL a ``NULL`` value signifies an unknown value, so any comparison
-    involving a ``NULL`` will produce NULL. The ``distinct_from`` treats
-    NULL as a known value and guarantees either a ``true`` or ``false``
-    outcome even in the presence of ``NULL`` input.
-    So ``distinct_from(NULL, NULL)`` returns ``false``, since a ``NULL``
-    value is not considered distinct from ``NULL``.
+    在 SQL 中，“NULL”值表示未知值，因此任何涉及“NULL”的比较都将返回 NULL。“distinct_from”将 NULL 视为已知
+    值，即使存在“NULL”输入，也保证结果为“true”或“false”。因此，“distinct_from(NULL, NULL)”返回“false”，因
+    为“NULL”值被认为与“NULL”没有区别。
 ```
 ```cpp
     eq(x, y) -> boolean
 
-    Returns true if x is equal to y. Supports all scalar types. The
-    types of x and y must be the same.
+    如果 x 等于 y，则返回 true。支持所有标量类型。x 和 y 的类型必须相同。
 ```
 ```cpp
     greatest(value1, value2, ..., valueN) -> [same as input]
 
-    Returns the largest of the provided values. Supports DOUBLE, BIGINT,
-    VARCHAR, TIMESTAMP, DATE input types. The types of all arguments must
-    be the same.
+    返回所提供值中的最大值。支持 DOUBLE、BIGINT、VARCHAR、TIMESTAMP、DATE
+    输入类型。所有参数的类型必须相同。
 ```
 ```cpp
     gt(x, y) -> boolean
 
-    Returns true if x is greater than y. Supports all scalar types. The
-    types of x and y must be the same.
+    如果 x 大于 y，则返回 true。支持所有标量类型。x 和 y 的类型必须相同。
 ```
 ```cpp
     gte(x, y) -> boolean
 
-    Returns true if x is greater than or equal to y. Supports all scalar
-    types. The types of x and y must be the same.
+    如果 x 大于或等于 y，则返回 true。支持所有标量类型。x 和 y 的类型必须相同。
 ```
 ```cpp
     is_null(x) -> boolean
 
-    Returns true if x is a null. Supports all types.
+    如果 x 为空，则返回 true。支持所有类型。
 ```
 ```cpp
     least(value1, value2, ..., valueN) -> [same as input]
 
-    Returns the smallest of the provided values. Supports DOUBLE, BIGINT,
-    VARCHAR, TIMESTAMP, DATE input types. The types of all arguments must
-    be the same.
+    返回所提供值中的最小值。支持 DOUBLE、BIGINT、VARCHAR、TIMESTAMP 和 DATE 输入类型。
+    所有参数的类型必须相同。
 ```
 ```cpp
     lt(x, y) -> boolean
 
-    Returns true if x is less than y. Supports all scalar types. The types
-    of x and y must be the same.
+    如果 x 小于 y，则返回 true。支持所有标量类型。x 和 y 的类型必须相同。
 ```
 ```cpp
     lte(x, y) -> boolean
 
-    Returns true if x is less than or equal to y. Supports all scalar types.
-    The types of x and y must be the same.
+    如果 x 小于或等于 y，则返回 true。支持所有标量类型。
+    x 和 y 的类型必须相同。
 ```
 ```cpp
     neq(x, y) -> boolean
 
-    Returns true if x is not equal to y. Supports all scalar types. The types
-    of x and y must be the same.
+    如果 x 不等于 y，则返回 true。支持所有标量类型。x 和 y 的类型必须相同。
 ```

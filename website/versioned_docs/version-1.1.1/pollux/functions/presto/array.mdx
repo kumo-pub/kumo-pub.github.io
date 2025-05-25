@@ -1,481 +1,457 @@
-=============================
-Array Functions
-=============================
+# Array Functions
 
 ```cpp
     all_match(array(T), function(T, boolean)) → boolean
 
-    Returns whether all elements of an array match the given predicate.
+    返回数组中所有元素是否都符合给定的谓词。
 
-        Returns true if all the elements match the predicate (a special case is when the array is empty);
-        Returns false if one or more elements don’t match;
-        Returns NULL if the predicate function returns NULL for one or more elements and true for all other elements.
-        Throws an exception if the predicate fails for one or more elements and returns true or NULL for the rest.
+    如果所有元素都符合谓词，则返回 true（数组为空时是特殊情况）；
+    如果一个或多个元素不匹配，则返回 false；
+    如果谓词函数对一个或多个元素返回 NULL，而对所有其他元素返回 true，则返回 NULL。
+    如果谓词函数对一个或多个元素失败，则抛出异常，对其余元素返回 true 或 NULL。
 ```
 ```cpp
     any_match(array(T), function(T, boolean)) → boolean
 
-    Returns whether at least one element of an array matches the given predicate.
+    返回数组中是否有至少一个元素与给定的谓词匹配。
 
-        Returns true if one or more elements match the predicate;
-        Returns false if none of the elements matches (a special case is when the array is empty);
-        Returns NULL if the predicate function returns NULL for one or more elements and false for all other elements.
-        Throws an exception if the predicate fails for one or more elements and returns false or NULL for the rest.
+    如果一个或多个元素与谓词匹配，则返回 true；
+    如果所有元素均不匹配（数组为空时是特殊情况），则返回 false；
+    如果谓词函数对一个或多个元素返回 NULL，而对所有其他元素返回 false，则返回 NULL。
+    如果谓词函数对一个或多个元素失败，则抛出异常，对其余元素返回 false 或 NULL。
 ```
 ```cpp
     none_match(array(T), function(T, boolean)) → boolean
 
-    Returns whether no elements of an array match the given predicate.
+    返回数组中所有元素是否与给定的谓词匹配。
 
-        Returns true if none of the elements matches the predicate (a special case is when the array is empty);
-        Returns false if one or more elements match;
-        Returns NULL if the predicate function returns NULL for one or more elements and false for all other elements.
-        Throws an exception if the predicate fails for one or more elements and returns false or NULL for the rest.
+    如果所有元素均不与谓词匹配（特殊情况是数组为空），则返回 true；
+    如果一个或多个元素匹配，则返回 false；
+    如果谓词函数对一个或多个元素返回 NULL，而对所有其他元素返回 false，则返回 NULL。
+    如果谓词函数对一个或多个元素失败，则抛出异常，对其余元素返回 false 或 NULL。
 ```
 ```cpp
     array_average(array(double)) -> double
 
-    Returns the average of all non-null elements of the array. If there are no non-null elements, returns null.
+    返回数组中所有非空元素的平均值。如果没有非空元素，则返回 null。
 ```
 ```cpp
     array_cum_sum(array(T)) -> array(T)
-    Returns the array whose elements are the cumulative sum of the input array, i.e. result[i] = input[1] + input[2] +
-    … + input[i]. If there there is null elements in the array, the cumulative sum at and after the element is null. ::
 
-        SELECT array_cum_sum(ARRAY [1, 2, 3]) -- array[1, 3, 6]
-        SELECT array_cum_sum(ARRAY [1, 2, null, 3]) -- array[1, 3, null, null]
+    返回一个数组，其元素为输入数组的累加和，即 result[i] = input[1] + input[2] + … + input[i]。
+    如果数组中存在 null 元素，则该元素及之后的累加和为 null。
+
+    SELECT array_cum_sum(ARRAY [1, 2, 3]) -- array[1, 3, 6]
+    SELECT array_cum_sum(ARRAY [1, 2, null, 3]) -- array[1, 3, null, null]
 ```
 ```cpp
     array_distinct(array(E)) -> array(E)
 
-    Remove duplicate values from the input array.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal. ::
+    从输入数组中删除重复的值。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 
-        SELECT array_distinct(ARRAY [1, 2, 3]); -- [1, 2, 3]
-        SELECT array_distinct(ARRAY [1, 2, 1]); -- [1, 2]
-        SELECT array_distinct(ARRAY [1, NULL, NULL]); -- [1, NULL]
+    SELECT array_distinct(ARRAY [1, 2, 3]); -- [1, 2, 3]
+    SELECT array_distinct(ARRAY [1, 2, 1]); -- [1, 2]
+    SELECT array_distinct(ARRAY [1, NULL, NULL]); -- [1, NULL]
 ```
 ```cpp
     array_duplicates(array(E)) -> array(E)
 
-    Returns a set of elements that occur more than once in array.
-    E must be bigint or varchar.
+    返回数组中出现多次的元素集合。E 必须是 bigint 或 varchar。
 
-        select array_duplicates(ARRAY [5, 2, 5, 1, 1, 5, null, null])); -- [null, 1, 5]
+    select array_duplicates(ARRAY [5, 2, 5, 1, 1, 5, null, null])); -- [null, 1, 5]
 ```
 ```cpp
     array_except(array(E) x, array(E) y) -> array(E)
 
-    Returns an array of the elements in array ``x`` but not in array ``y``, without duplicates.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal. ::
+    返回一个包含数组“x”但不包含在数组“y”中的元素的数组，且不包含重复元素。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 
-        SELECT array_except(ARRAY [1, 2, 3], ARRAY [4, 5, 6]); -- [1, 2, 3]
-        SELECT array_except(ARRAY [1, 2, 3], ARRAY [1, 2]); -- [3]
-        SELECT array_except(ARRAY [1, 2, 2], ARRAY [1, 1, 2]); -- []
-        SELECT array_except(ARRAY [1, 2, 2], ARRAY [1, 3, 4]); -- [2]
-        SELECT array_except(ARRAY [1, NULL, NULL], ARRAY [1, 1, NULL]); -- []
+    SELECT array_except(ARRAY [1, 2, 3], ARRAY [4, 5, 6]); -- [1, 2, 3]
+    SELECT array_except(ARRAY [1, 2, 3], ARRAY [1, 2]); -- [3]
+    SELECT array_except(ARRAY [1, 2, 2], ARRAY [1, 1, 2]); -- []
+    SELECT array_except(ARRAY [1, 2, 2], ARRAY [1, 3, 4]); -- [2]
+    SELECT array_except(ARRAY [1, NULL, NULL], ARRAY [1, 1, NULL]); -- []
 ```
 ```cpp
     array_frequency(array(E) x) -> map(E, int)
 
-    Returns a map: keys are the unique elements in the array, values are how many times the key appears.
-    Ignores null elements. Empty array returns empty map. E must be bigint or varchar. ::
+    返回一个映射：键是数组中唯一元素，值是该键出现的次数。
+    忽略空元素。空数组返回空映射。E 必须是 bigint 或 varchar。
 
-        SELECT array_frequency(ARRAY [1, 1, 2, 2, 2, 2]); -- {1 -> 2, 2 -> 4}
-        SELECT array_frequency(ARRAY [1, 1, NULL, NULL, NULL]); -- {1 -> 2}
-        SELECT array_frequency(ARRAY ["knock", "knock", "who", "?"]); -- {"knock" -> 2, "who" -> 1, "?" -> 1}
-        SELECT array_frequency(ARRAY []); -- {}
+    SELECT array_frequency(ARRAY [1, 1, 2, 2, 2, 2]); -- {1 -> 2, 2 -> 4}
+    SELECT array_frequency(ARRAY [1, 1, NULL, NULL, NULL]); -- {1 -> 2}
+    SELECT array_frequency(ARRAY ["knock", "knock", "who", "?"]); -- {"knock" -> 2, "who" -> 1, "?" -> 1}
+    SELECT array_frequency(ARRAY []); -- {}
 ```
 ```cpp
     array_has_duplicates(array(E)) -> boolean
 
-    Returns a boolean: whether array has any elements that occur more than once.
-    E must be bigint or varchar.
+    返回布尔值：数组中是否有元素出现超过一次。E 必须是 bigint 或 varchar。
 
-        select array_has_duplicates(ARRAY [5, 2, 5, 1, 1, 5, null, null])); -- true
+    select array_has_duplicates(ARRAY [5, 2, 5, 1, 1, 5, null, null])); -- true
 ```
 ```cpp
     array_intersect(array(E) x, array(E) y) -> array(E)
 
-    Returns an array of the elements in the intersection of array ``x`` and array ``y``, without duplicates.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal. ::
+    返回数组“x”和数组“y”交集元素的数组，不包含重复元素。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 
-        SELECT array_intersect(ARRAY [1, 2, 3], ARRAY[4, 5, 6]); -- []
-        SELECT array_intersect(ARRAY [1, 2, 2], ARRAY[1, 1, 2]); -- [1, 2]
-        SELECT array_intersect(ARRAY [1, NULL, NULL], ARRAY[1, 1, NULL]); -- [1, NULL]
+    SELECT array_intersect(ARRAY [1, 2, 3], ARRAY[4, 5, 6]); -- []
+    SELECT array_intersect(ARRAY [1, 2, 2], ARRAY[1, 1, 2]); -- [1, 2]
+    SELECT array_intersect(ARRAY [1, NULL, NULL], ARRAY[1, 1, NULL]); -- [1, NULL]
 ```
 ```cpp
     array_join(x, delimiter, null_replacement) -> varchar
 
-    Concatenates the elements of the given array using the delimiter and an optional string to replace nulls. ::
+    使用分隔符和可选字符串连接给定数组的元素以替换空值。
 
-        SELECT array_join(ARRAY [1, 2, 3], ",") -- "1,2,3"
-        SELECT array_join(ARRAY [1, NULL, 2], ",") -- "1,2"
-        SELECT array_join(ARRAY [1, NULL, 2], ",", "0") -- "1,0,2"
+    SELECT array_join(ARRAY [1, 2, 3], ",") -- "1,2,3"
+    SELECT array_join(ARRAY [1, NULL, 2], ",") -- "1,2"
+    SELECT array_join(ARRAY [1, NULL, 2], ",", "0") -- "1,0,2"
 ```
 ```cpp
     array_max(array(E)) -> E
 
-    Returns the maximum value of input array.
-    NaN is considered to be greater than Infinity.
-    Returns NULL if array contains a NULL value. ::
+    返回输入数组的最大值。
+    NaN 被认为大于无穷大。
+    如果数组包含 NULL 值，则返回 NULL。
 
-        SELECT array_max(ARRAY [1, 2, 3]); -- 3
-        SELECT array_max(ARRAY [-1, -2, -2]); -- -1
-        SELECT array_max(ARRAY [-1, -2, NULL]); -- NULL
-        SELECT array_max(ARRAY []); -- NULL
-        SELECT array_max(ARRAY [-1, nan(), NULL]); -- NULL
-        SELECT array_max(ARRAY[{-1, -2, -3, nan()]); -- NaN
-        SELECT array_max(ARRAY[{infinity(), nan()]); -- NaN
+    SELECT array_max(ARRAY [1, 2, 3]); -- 3
+    SELECT array_max(ARRAY [-1, -2, -2]); -- -1
+    SELECT array_max(ARRAY [-1, -2, NULL]); -- NULL
+    SELECT array_max(ARRAY []); -- NULL
+    SELECT array_max(ARRAY [-1, nan(), NULL]); -- NULL
+    SELECT array_max(ARRAY[{-1, -2, -3, nan()]); -- NaN
+    SELECT array_max(ARRAY[{infinity(), nan()]); -- NaN
 ```
 ```cpp
     array_min(array(E)) -> E
 
-    Returns the minimum value of input array.
-    NaN is considered to be greater than Infinity.
-    Returns NULL if array contains a NULL value. ::
+    返回输入数组的最小值。NaN 被认为大于无穷大。
+    如果数组包含 NULL 值，则返回 NULL。
 
-        SELECT array_min(ARRAY [1, 2, 3]); -- 1
-        SELECT array_min(ARRAY [-1, -2, -2]); -- -2
-        SELECT array_min(ARRAY [-1, -2, NULL]); -- NULL
-        SELECT array_min(ARRAY []); -- NULL
-        SELECT array_min(ARRAY [-1, nan(), NULL]); -- NULL
-        SELECT array_min(ARRAY[{-1, -2, -3, nan()]); -- -1
-        SELECT array_min(ARRAY[{infinity(), nan()]); -- Infinity
+    SELECT array_min(ARRAY [1, 2, 3]); -- 1
+    SELECT array_min(ARRAY [-1, -2, -2]); -- -2
+    SELECT array_min(ARRAY [-1, -2, NULL]); -- NULL
+    SELECT array_min(ARRAY []); -- NULL
+    SELECT array_min(ARRAY [-1, nan(), NULL]); -- NULL
+    SELECT array_min(ARRAY[{-1, -2, -3, nan()]); -- -1
+    SELECT array_min(ARRAY[{infinity(), nan()]); -- Infinity
 ```
 ```cpp
     array_normalize(array(E), E) -> array(E)
 
-    Normalizes array ``x`` by dividing each element by the p-norm of the array. It is equivalent to ``TRANSFORM(array, v -> v / REDUCE(array, 0, (a, v) -> a + POW(ABS(v), p), a -> POW(a, 1 / p))``, but the reduce part is only executed once. Returns null if the array is null or there are null array elements. If ``p`` is 0, then the input array is returned. Only REAL and DOUBLE types are supported.
+    通过将每个元素除以数组的 p 范数来规范化数组 x。它等价于
+    TRANSFORM(array, v -> v / REDUCE(array, 0, (a, v) -> a + POW(ABS(v), p), a -> POW(a, 1 / p))，
+    但归约部分仅执行一次。如果数组为空或数组元素为空，则返回 null。如果 p 为 0，则返回输入数组。仅支持 REAL 和 DOUBLE 类型。
 ```
 ```cpp
     arrays_overlap(x, y) -> boolean
 
-    Tests if arrays ``x`` and ``y`` have any non-null elements in common.
-    Returns null if there are no non-null elements in common but either array contains null.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal.
+    测试数组“x”和“y”是否有共同的非空元素。
+    如果不存在共同的非空元素，但其中一个数组包含空值，则返回空值。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 ```
 ```cpp
     arrays_union(x, y) -> array
 
-    Returns an array of the elements in the union of x and y, without duplicates.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal.
+    返回 x 和 y 并集元素的数组，不包含重复项。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 ```
 ```cpp
     array_position(x, element) -> bigint
 
-    Returns the position of the first occurrence of the ``element`` in array ``x`` (or 0 if not found).
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal.
+    返回数组“x”中“元素”首次出现的位置（如果未找到，则返回 0）。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 ```
 ```cpp
     array_position(x, element, instance) -> bigint
-    :noindex:
 
-    If ``instance > 0``, returns the position of the ``instance``-th occurrence of the ``element`` in array ``x``. If ``instance < 0``, returns the position of the ``instance``-to-last occurrence of the ``element`` in array ``x``. If no matching element instance is found, 0 is returned.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal.
+    如果“instance > 0”，则返回该元素在数组“x”中第“instance”次出现的位置。如果“instance < 0”，则返回该元素在数组“x”中倒数第“instance”次出现的位置。如果未找到匹配的元素实例，则返回 0。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 ```
 ```cpp
     array_remove(x, element) -> array
 
-    Remove all elements that equal ``element`` from array ``x``.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal.
+    从数组“x”中移除所有等于“element”的元素。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 
-        SELECT array_remove(ARRAY [1, 2, 3], 3); -- [1, 2]
-        SELECT array_remove(ARRAY [2, 1, NULL], 1); -- [2, NULL]
-        SELECT array_remove(ARRAY [2.1, 1.1, nan()], nan()); -- [2.1, 1.1]
+    SELECT array_remove(ARRAY [1, 2, 3], 3); -- [1, 2]
+    SELECT array_remove(ARRAY [2, 1, NULL], 1); -- [2, NULL]
+    SELECT array_remove(ARRAY [2.1, 1.1, nan()], nan()); -- [2.1, 1.1]
 ```
 ```cpp
     array_sort(array(E)) -> array(E)
 
-    Returns an array which has the sorted order of the input array x. E must be
-    an orderable type. Null elements will be placed at the end of the returned array.
-    May throw if E is and ARRAY or ROW type and input values contain nested nulls.
-    Throws if deciding the order of elements would require comparing nested null values. ::
+    返回一个按输入数组 x 的排序顺序排列的数组。E 必须是
+    可排序类型。空元素将被放置在返回数组的末尾。
+    如果 E 是 ARRAY 或 ROW 类型，并且输入值包含嵌套的空值，则可能抛出异常。
+    如果确定元素的顺序需要比较嵌套的空值，则可能抛出异常。
 
-        SELECT array_sort(ARRAY [1, 2, 3]); -- [1, 2, 3]
-        SELECT array_sort(ARRAY [3, 2, 1]); -- [1, 2, 3]
-        SELECT array_sort(ARRAY [infinity(), -1.1, nan(), 1.1, -Infinity(), 0])); -- [-Infinity, -1.1, 0, 1.1, Infinity, NaN]
-        SELECT array_sort(ARRAY [2, 1, NULL]; -- [1, 2, NULL]
-        SELECT array_sort(ARRAY [NULL, 1, NULL]); -- [1, NULL, NULL]
-        SELECT array_sort(ARRAY [NULL, 2, 1]); -- [1, 2, NULL]
-        SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [2, null]]); -- [[1, 2], [2, null]]
-        SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [1, null]]); -- failed: Ordering nulls is not supported
+    SELECT array_sort(ARRAY [1, 2, 3]); -- [1, 2, 3]
+    SELECT array_sort(ARRAY [3, 2, 1]); -- [1, 2, 3]
+    SELECT array_sort(ARRAY [infinity(), -1.1, nan(), 1.1, -Infinity(), 0])); -- [-Infinity, -1.1, 0, 1.1, Infinity, NaN]
+    SELECT array_sort(ARRAY [2, 1, NULL]; -- [1, 2, NULL]
+    SELECT array_sort(ARRAY [NULL, 1, NULL]); -- [1, NULL, NULL]
+    SELECT array_sort(ARRAY [NULL, 2, 1]); -- [1, 2, NULL]
+    SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [2, null]]); -- [[1, 2], [2, null]]
+    SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [1, null]]); -- failed: Ordering nulls is not supported
 ```
 ```cpp
     array_sort(array(T), function(T,U)) -> array(T)
-    :noindex:
 
-    Returns the array sorted by values computed using specified lambda in ascending
-    order. U must be an orderable type. Null elements will be placed at the end of
-    the returned array. May throw if E is and ARRAY or ROW type and input values contain
-    nested nulls. Throws if deciding the order of elements would require comparing nested
-    null values. ::
+    返回按指定 lambda 表达式计算的值升序排序的数组。U 必须是可排序类型。空元素将放置在返回数组的末尾。如果 E
+    是 ARRAY 或 ROW 类型，且输入值包含嵌套的空值，则可能抛出异常。如果确定元素的顺序需要比较嵌套的空值，则可能抛出异常。
 
-        SELECT array_sort(ARRAY ['cat', 'leopard', 'mouse'], x -> length(x)); -- ['cat', 'mouse', 'leopard']
+    SELECT array_sort(ARRAY ['cat', 'leopard', 'mouse'], x -> length(x)); -- ['cat', 'mouse', 'leopard']
 ```
 ```cpp
     array_sort_desc(array(E)) -> array(E)
 
-    Returns the array sorted in the descending order. E must be an orderable type.
-    Null elements will be placed at the end of the returned array.
-    May throw if E is and ARRAY or ROW type and input values contain nested nulls.
-    Throws if deciding the order of elements would require comparing nested null values. ::
+    返回按降序排序的数组。E 必须是可排序类型。
+    空元素将被放置在返回数组的末尾。
+    如果 E 是 ARRAY 或 ROW 类型，并且输入值包含嵌套的空值，则可能抛出异常。
+    如果确定元素的顺序需要比较嵌套的空值，则抛出异常。
 
-        SELECT array_sort_desc(ARRAY [1, 2, 3]); -- [3, 2, 1]
-        SELECT array_sort_desc(ARRAY [3, 2, 1]); -- [3, 2, 1]
-        SELECT array_sort_desc(ARRAY [2, 1, NULL]; -- [2, 1, NULL]
-        SELECT array_sort_desc(ARRAY [NULL, 1, NULL]); -- [1, NULL, NULL]
-        SELECT array_sort_desc(ARRAY [NULL, 2, 1]); -- [2, 1, NULL]
-        SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [2, null]]); -- [[1, 2], [2, null]]
-        SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [1, null]]); -- failed: Ordering nulls is not supported
+    SELECT array_sort_desc(ARRAY [1, 2, 3]); -- [3, 2, 1]
+    SELECT array_sort_desc(ARRAY [3, 2, 1]); -- [3, 2, 1]
+    SELECT array_sort_desc(ARRAY [2, 1, NULL]; -- [2, 1, NULL]
+    SELECT array_sort_desc(ARRAY [NULL, 1, NULL]); -- [1, NULL, NULL]
+    SELECT array_sort_desc(ARRAY [NULL, 2, 1]); -- [2, 1, NULL]
+    SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [2, null]]); -- [[1, 2], [2, null]]
+    SELECT array_sort(ARRAY [ARRAY [1, 2], ARRAY [1, null]]); -- failed: Ordering nulls is not supported
 ```
 ```cpp
     array_sort_desc(array(T), function(T,U)) -> array(T)
-    :noindex:
 
-    Returns the array sorted by values computed using specified lambda in descending
-    order. U must be an orderable type. Null elements will be placed at the end of
-    the returned array. May throw if E is and ARRAY or ROW type and input values contain
-    nested nulls. Throws if deciding the order of elements would require comparing nested
-    null values. ::
+    返回使用指定 lambda 表达式计算的值按降序排序的数组。U 必须是可排序类型。空元素将放置在返回数组的末尾。如果 E
+    是 ARRAY 或 ROW 类型，并且输入值包含嵌套的空值，则可能抛出异常。如果确定元素的顺序需要比较嵌套的空值，则抛出异常。
 
-        SELECT array_sort_desc(ARRAY ['cat', 'leopard', 'mouse'], x -> length(x)); -- ['leopard', 'mouse', 'cat']
+    SELECT array_sort_desc(ARRAY ['cat', 'leopard', 'mouse'], x -> length(x)); -- ['leopard', 'mouse', 'cat']
 ```
 ```cpp
     array_sum(array(T)) -> bigint/double
 
-    Returns the sum of all non-null elements of the array. If there is no non-null elements, returns 0. The behaviour is similar to aggregation function sum().
-    T must be coercible to double. Returns bigint if T is coercible to bigint. Otherwise, returns double.
+    返回数组中所有非空元素的和。如果没有非空元素，则返回 0。其行为类似于聚合函数 sum()。
+    T 必须可强制转换为 double。如果 T 可强制转换为 bigint，则返回 bigint。否则，返回 double。
 ```
 ```cpp
     cardinality(x) -> bigint
 
-    Returns the cardinality (size) of the array ``x``.
+    返回数组“x”的基数（大小）。
 ```
 ```cpp
     combinations(array(T), n) -> array(array(T))
 
-    Returns ``n``- element combinations of the input ``array``. If the input array has no duplicates, combinations returns ``n``- element subsets. Order of subgroup is deterministic but unspecified. Order of elements within a subgroup are deterministic but unspecified. ``n`` must not be greater than 5, and the total size of subgroups generated must be smaller than 100000. ::
+    返回输入数组的 ``n`` 个元素组合。如果输入数组没有重复项，则组合返回 ``n`` 个元素子集。子组的顺序是确定的，但未指定。
+    子组内元素的顺序是确定的，但未指定。``n`` 不得大于 5，且生成的子组总大小必须小于 100000。
 
-        SELECT combinations(ARRAY['foo', 'bar', 'boo'],2); --[['foo', 'bar'], ['foo', 'boo']['bar', 'boo']]
-        SELECT combinations(ARRAY[1,2,3,4,5],3); --[[1,2,3], [1,2,4], [1,3,4], [2,3,4]]
-        SELECT combinations(ARRAY[1,2,2],2); --[[1,2],[1,2],[2,2]]
+    SELECT combinations(ARRAY['foo', 'bar', 'boo'],2); --[['foo', 'bar'], ['foo', 'boo']['bar', 'boo']]
+    SELECT combinations(ARRAY[1,2,3,4,5],3); --[[1,2,3], [1,2,4], [1,3,4], [2,3,4]]
+    SELECT combinations(ARRAY[1,2,2],2); --[[1,2],[1,2],[2,2]]
 ```
 ```cpp
     concat(array1, array2, ..., arrayN) -> array
 
-    Concatenates the arrays ``array1``, ``array2``, ..., ``arrayN``. This function provides the same functionality as the SQL-standard concatenation operator (``||``).
+    连接数组“array1”、“array2”、“...”、“arrayN”。此函数提供与 SQL 标准连接运算符（“||”）相同的功能。
 ```
 ```cpp
     contains(x, element) -> boolean
 
-    Returns true if the array ``x`` contains the ``element``.
-    When 'element' is of complex type, throws if 'x' or 'element' contains nested nulls
-    and these need to be compared to produce a result.
-    For REAL and DOUBLE, NANs (Not-a-Number) are considered equal. ::
+    如果数组“x”包含“元素”，则返回 true。
+    当“元素”为复杂类型时，如果“x”或“元素”包含嵌套的空值，则抛出异常。
+    并且需要比较这些值才能得出结果。
+    对于 REAL 和 DOUBLE 类型，NAN（非数字）被视为相等。
 
-        SELECT contains(ARRAY [2.1, 1.1, nan()], nan()); -- true.
-        SELECT contains(ARRAY[ARRAY[1, 3]], ARRAY[2, null]); -- false.
-        SELECT contains(ARRAY[ARRAY[2, 3]], ARRAY[2, null]); -- failed: contains does not support arrays with elements that are null or contain null
-        SELECT contains(ARRAY[ARRAY[2, null]], ARRAY[2, 1]); -- failed: contains does not support arrays with elements that are null or contain null
+    SELECT contains(ARRAY [2.1, 1.1, nan()], nan()); -- true.
+    SELECT contains(ARRAY[ARRAY[1, 3]], ARRAY[2, null]); -- false.
+    SELECT contains(ARRAY[ARRAY[2, 3]], ARRAY[2, null]); -- failed: contains does not support arrays with elements that are null or contain null
+    SELECT contains(ARRAY[ARRAY[2, null]], ARRAY[2, 1]); -- failed: contains does not support arrays with elements that are null or contain null
 ```
 ```cpp
     element_at(array(E), index) -> E
 
-    Returns element of ``array`` at given ``index``.
-    If ``index`` > 0, this function provides the same functionality as the SQL-standard subscript operator (``[]``).
-    If ``index`` < 0, ``element_at`` accesses elements from the last to the first.
+    返回数组中给定索引 (index) 处的元素。
+    如果 index > 0，此函数提供与 SQL 标准下标运算符 ([]) 相同的功能。
+    如果 index < 0，则 element_at 将从最后一个元素到第一个元素进行访问。
 ```
 ```cpp
     filter(array(T), function(T,boolean)) -> array(T)
 
-    Constructs an array from those elements of ``array`` for which ``function`` returns true::
+    从 ``array`` 中 ``function`` 返回 true 的元素构造一个数组
 
-        SELECT filter(ARRAY [], x -> true); -- []
-        SELECT filter(ARRAY [5, -6, NULL, 7], x -> x > 0); -- [5, 7]
-        SELECT filter(ARRAY [5, NULL, 7, NULL], x -> x IS NOT NULL); -- [5, 7]
+    SELECT filter(ARRAY [], x -> true); -- []
+    SELECT filter(ARRAY [5, -6, NULL, 7], x -> x > 0); -- [5, 7]
+    SELECT filter(ARRAY [5, NULL, 7, NULL], x -> x IS NOT NULL); -- [5, 7]
 ```
 ```cpp
     find_first(array(T), function(T,boolean)) -> T
 
-    Returns the first element of ``array`` that matches the predicate.
-    Returns ``NULL`` if no element matches the predicate.
-    Throws if the first matching element is NULL to avoid ambiguous results
-    for no-match and first-match-is-null cases.
+    返回数组中第一个与谓词匹配的元素。
+    如果没有元素与谓词匹配，则返回“NULL”。
+    如果第一个匹配元素为 NULL，则抛出异常，以避免在不匹配和第一个匹配为 NULL 的情况下出现歧义结果。
 ```
 ```cpp
     find_first(array(T), index, function(T,boolean)) -> E
-    :noindex:
 
-    Returns the first element of ``array`` that matches the predicate.
-    Returns ``NULL`` if no element matches the predicate.
-    Throws if the first matching element is NULL to avoid ambiguous results
-    for no-match and first-match-is-null cases.
-    If ``index`` > 0, the search for element starts at position ``index``
-    until the end of the array.
-    If ``index`` < 0, the search for element starts at position ``abs(index)``
-    counting from the end of the array, until the start of the array. ::
+    返回数组中第一个与谓词匹配的元素。
+    如果没有元素与谓词匹配，则返回 NULL。
+    如果第一个匹配元素为 NULL，则抛出异常，以避免在不匹配和第一个匹配为 NULL 的情况下出现歧义结果。
+    如果 index > 0，则从位置 index 开始搜索元素，直到数组末尾。
+    如果 index < 0，则从位置 abs(index) 开始搜索元素，从数组末尾开始计数，直到数组开头。
 
-        SELECT find_first(ARRAY[3, 4, 5, 6], 2, x -> x > 0); -- 4
-        SELECT find_first(ARRAY[3, 4, 5, 6], -2, x -> x > 0); -- 5
-        SELECT find_first(ARRAY[3, 4, 5, 6], 2, x -> x < 4); -- NULL
-        SELECT find_first(ARRAY[3, 4, 5, 6], -2, x -> x > 5); -- NULL
+    SELECT find_first(ARRAY[3, 4, 5, 6], 2, x -> x > 0); -- 4
+    SELECT find_first(ARRAY[3, 4, 5, 6], -2, x -> x > 0); -- 5
+    SELECT find_first(ARRAY[3, 4, 5, 6], 2, x -> x < 4); -- NULL
+    SELECT find_first(ARRAY[3, 4, 5, 6], -2, x -> x > 5); -- NULL
 ```
 ```cpp
     find_first_index(array(T), function(T,boolean)) -> BIGINT
 
-    Returns the 1-based index of the first element of ``array`` that matches the predicate.
-    Returns ``NULL`` if no such element exists.
+    返回与谓词匹配的“数组”中第一个元素的从 1 开始的索引。
+    如果不存在这样的元素，则返回“NULL”。
 ```
 ```cpp
     find_first_index(array(T), index, function(T,boolean)) -> BIGINT
-    :noindex:
 
-    Returns the 1-based index of the first element of ``array`` that matches the predicate.
-    Returns ``NULL`` if no such element exists.
-    If ``index`` > 0, the search for element starts at position ``index`` until the end of the array.
-    If ``index`` < 0, the search for element starts at position ``abs(index)`` counting from
-    the end of the array, until the start of the array. ::
+    返回与谓词匹配的“数组”中第一个元素的从 1 开始的索引。
+    如果不存在这样的元素，则返回“NULL”。
+    如果“index”> 0，则从“index”位置开始搜索元素，直至数组末尾。
+    如果“index”< 0，则从“abs(index)”位置开始搜索元素，从数组末尾开始计数，直至数组开头。
 
-        SELECT find_first_index(ARRAY[3, 4, 5, 6], 2, x -> x > 0); -- 2
-        SELECT find_first_index(ARRAY[3, 4, 5, 6], -2, x -> x > 0); -- 3
-        SELECT find_first_index(ARRAY[3, 4, 5, 6], 2, x -> x < 4); -- NULL
-        SELECT find_first_index(ARRAY[3, 4, 5, 6], -2, x -> x > 5); -- NULL
+    SELECT find_first_index(ARRAY[3, 4, 5, 6], 2, x -> x > 0); -- 2
+    SELECT find_first_index(ARRAY[3, 4, 5, 6], -2, x -> x > 0); -- 3
+    SELECT find_first_index(ARRAY[3, 4, 5, 6], 2, x -> x < 4); -- NULL
+    SELECT find_first_index(ARRAY[3, 4, 5, 6], -2, x -> x > 5); -- NULL
 ```
 ```cpp
     flatten(array(array(T))) -> array(T)
 
-    Flattens an ``array(array(T))`` to an ``array(T)`` by concatenating the contained arrays.
+    通过连接包含的数组将“array(array(T))”展平为“array(T)”。
 ```
 ```cpp
     ngrams(array(T), n) -> array(array(T))
 
-    Returns `n-grams <https://en.wikipedia.org/wiki/N-gram>`_  for the array.
-    Throws if n is zero or negative. If n is greater or equal to input array,
-    result array contains input array as the only item. ::
+    返回数组的 `n-grams <https://en.wikipedia.org/wiki/N-gram>`_。
+    如果 n 为零或负数，则抛出异常。如果 n 大于或等于输入数组，
+    则结果数组将仅包含输入数组。
 
-        SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 2); -- [['foo', 'bar'], ['bar', 'baz'], ['baz', 'foo']]
-        SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 3); -- [['foo', 'bar', 'baz'], ['bar', 'baz', 'foo']]
-        SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 4); -- [['foo', 'bar', 'baz', 'foo']]
-        SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 5); -- [['foo', 'bar', 'baz', 'foo']]
-        SELECT ngrams(ARRAY[1, 2, 3, 4], 2); -- [[1, 2], [2, 3], [3, 4]]
-        SELECT ngrams(ARRAY["foo", NULL, "bar"], 2); -- [["foo", NULL], [NULL, "bar"]]
+    SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 2); -- [['foo', 'bar'], ['bar', 'baz'], ['baz', 'foo']]
+    SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 3); -- [['foo', 'bar', 'baz'], ['bar', 'baz', 'foo']]
+    SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 4); -- [['foo', 'bar', 'baz', 'foo']]
+    SELECT ngrams(ARRAY['foo', 'bar', 'baz', 'foo'], 5); -- [['foo', 'bar', 'baz', 'foo']]
+    SELECT ngrams(ARRAY[1, 2, 3, 4], 2); -- [[1, 2], [2, 3], [3, 4]]
+    SELECT ngrams(ARRAY["foo", NULL, "bar"], 2); -- [["foo", NULL], [NULL, "bar"]]
 ```
 ```cpp
     reduce(array(T), initialState S, inputFunction(S,T,S), outputFunction(S,R)) -> R
 
-    Returns a single value reduced from ``array``. ``inputFunction`` will
-    be invoked for each element in ``array`` in order. In addition to taking
-    the element, ``inputFunction`` takes the current state, initially
-    ``initialState``, and returns the new state. ``outputFunction`` will be
-    invoked to turn the final state into the result value. It may be the
-    identity function (``i -> i``).
+    返回从 ``array`` 中减去的单个值。``inputFunction`` 将按顺序对 ``array`` 中的每个元素调用。除了获取元素之外，``inputFunction`` 还会
+    `获取当前状态（初始状态为 ``initialState``），并返回新状态。``outputFunction`` 将被调用，将最终状态转换为结果值。它可能是恒等函数 (``i -> i``)。
 
-    Throws if array has more than 10,000 elements. ::
+    如果数组元素超过 10,000 个，则抛出异常。
 
-        SELECT reduce(ARRAY [], 0, (s, x) -> s + x, s -> s); -- 0
-        SELECT reduce(ARRAY [5, 20, 50], 0, (s, x) -> s + x, s -> s); -- 75
-        SELECT reduce(ARRAY [5, 20, NULL, 50], 0, (s, x) -> s + x, s -> s); -- NULL
-        SELECT reduce(ARRAY [5, 20, NULL, 50], 0, (s, x) -> s + COALESCE(x, 0), s -> s); -- 75
-        SELECT reduce(ARRAY [5, 20, NULL, 50], 0, (s, x) -> IF(x IS NULL, s, s + x), s -> s); -- 75
-        SELECT reduce(ARRAY [2147483647, 1], CAST (0 AS BIGINT), (s, x) -> s + x, s -> s); -- 2147483648
-        SELECT reduce(ARRAY [5, 6, 10, 20], -- calculates arithmetic average: 10.25
-                      CAST(ROW(0.0, 0) AS ROW(sum DOUBLE, count INTEGER)),
-                      (s, x) -> CAST(ROW(x + s.sum, s.count + 1) AS ROW(sum DOUBLE, count INTEGER)),
-                      s -> IF(s.count = 0, NULL, s.sum / s.count));
+    SELECT reduce(ARRAY [], 0, (s, x) -> s + x, s -> s); -- 0
+    SELECT reduce(ARRAY [5, 20, 50], 0, (s, x) -> s + x, s -> s); -- 75
+    SELECT reduce(ARRAY [5, 20, NULL, 50], 0, (s, x) -> s + x, s -> s); -- NULL
+    SELECT reduce(ARRAY [5, 20, NULL, 50], 0, (s, x) -> s + COALESCE(x, 0), s -> s); -- 75
+    SELECT reduce(ARRAY [5, 20, NULL, 50], 0, (s, x) -> IF(x IS NULL, s, s + x), s -> s); -- 75
+    SELECT reduce(ARRAY [2147483647, 1], CAST (0 AS BIGINT), (s, x) -> s + x, s -> s); -- 2147483648
+    SELECT reduce(ARRAY [5, 6, 10, 20], -- calculates arithmetic average: 10.25
+                  CAST(ROW(0.0, 0) AS ROW(sum DOUBLE, count INTEGER)),
+                  (s, x) -> CAST(ROW(x + s.sum, s.count + 1) AS ROW(sum DOUBLE, count INTEGER)),
+                  s -> IF(s.count = 0, NULL, s.sum / s.count));
 ```
 ```cpp
     repeat(element, count) -> array(E)
 
-    Repeat ``element`` for ``count`` times. ``count`` cannot be negative and must be less than or equal to 10000.
+    重复 ``element`` 达 ``count`` 次。``count`` 不能为负数，且必须小于或等于 10000。
 ```
 ```cpp
     reverse(array(E)) -> array(E)
 
-    Returns an array which has the reversed order of the input array.
+    返回与输入数组顺序相反的数组。
 ```
 ```cpp
     shuffle(array(E)) -> array(E)
 
-    Generate a random permutation of the given ``array`` ::
+    生成给定“数组”的随机排列
 
-        SELECT shuffle(ARRAY [1, 2, 3]); -- [3, 1, 2] or any other random permutation
-        SELECT shuffle(ARRAY [0, 0, 0]); -- [0, 0, 0]
-        SELECT shuffle(ARRAY [1, NULL, 1, NULL, 2]); -- [2, NULL, NULL, NULL, 1] or any other random permutation
+    SELECT shuffle(ARRAY [1, 2, 3]); -- [3, 1, 2] or any other random permutation
+    SELECT shuffle(ARRAY [0, 0, 0]); -- [0, 0, 0]
+    SELECT shuffle(ARRAY [1, NULL, 1, NULL, 2]); -- [2, NULL, NULL, NULL, 1] or any other random permutation
 ```
 ```cpp
     slice(array(E), start, length) -> array(E)
 
-    Returns a subarray starting from index ``start``(or starting from the end
-    if ``start`` is negative) with a length of ``length``.
+    返回一个从索引“start”开始（如果“start”为负数，则从末尾开始）且长度为“length”的子数组。
 ```
 ```cpp
     sequence(start, stop) -> array
 
-    Generate a sequence of integers from start to stop, incrementing by 1 if start is less than or equal to stop,
-    otherwise -1.
+    生成一个从起始位置到终止位置的整数序列，如果起始位置小于或等于终止位置，则加 1，否则加 -1。
 ```
 ```cpp
     sequence(start, stop, step) -> array
-   :noindex:
 
-    Generate a sequence of integers from start to stop, incrementing by step.
+    生成从开始到停止的整数序列，按步骤递增。
+
 ```
 ```cpp
     subscript(array(E), index) -> E
 
-    Returns element of ``array`` at given ``index``. The index starts from one.
-    Throws if the element is not present in the array. Corresponds to SQL subscript operator [].
+    返回数组中给定“索引”处的元素。索引从 1 开始。
+    如果元素不在数组中，则抛出异常。对应于 SQL 下标运算符 []。
 
     SELECT my_array[1] AS first_element
 ```
 ```cpp
     transform(array(T), function(T,U)) -> array(U)
 
-    Returns an array that is the result of applying ``function`` to each element of ``array``::
+    返回将“函数”应用于“数组”的每个元素的结果数组：
 
-        SELECT transform(ARRAY [], x -> x + 1); -- []
-        SELECT transform(ARRAY [5, 6], x -> x + 1); -- [6, 7]
-        SELECT transform(ARRAY [5, NULL, 6], x -> COALESCE(x, 0) + 1); -- [6, 1, 7]
-        SELECT transform(ARRAY ['x', 'abc', 'z'], x -> x || '0'); -- ['x0', 'abc0', 'z0']
-        SELECT transform(ARRAY [ARRAY [1, NULL, 2], ARRAY[3, NULL]], a -> filter(a, x -> x IS NOT NULL)); -- [[1, 2], [3]]
+    SELECT transform(ARRAY [], x -> x + 1); -- []
+    SELECT transform(ARRAY [5, 6], x -> x + 1); -- [6, 7]
+    SELECT transform(ARRAY [5, NULL, 6], x -> COALESCE(x, 0) + 1); -- [6, 1, 7]
+    SELECT transform(ARRAY ['x', 'abc', 'z'], x -> x || '0'); -- ['x0', 'abc0', 'z0']
+    SELECT transform(ARRAY [ARRAY [1, NULL, 2], ARRAY[3, NULL]], a -> filter(a, x -> x IS NOT NULL)); -- [[1, 2], [3]]
 ```
 ```cpp
     trim_array(x, n) -> array
 
-    Remove n elements from the end of ``array``::
+    从 ``array`` 的末尾删除 n 个元素
 
-        SELECT trim_array(ARRAY[1, 2, 3, 4], 1); -- [1, 2, 3]
-        SELECT trim_array(ARRAY[1, 2, 3, 4], 2); -- [1, 2]
-        SELECT trim_array(ARRAY[1, 2, 3, 4], 4); -- []
+    SELECT trim_array(ARRAY[1, 2, 3, 4], 1); -- [1, 2, 3]
+    SELECT trim_array(ARRAY[1, 2, 3, 4], 2); -- [1, 2]
+    SELECT trim_array(ARRAY[1, 2, 3, 4], 4); -- []
 ```
 ```cpp
     remove_nulls(x) -> array
 
-    Remove null values from an array ``array`` ::
+    从数组 ``array`` 中删除空值
 
-        SELECT remove_nulls(ARRAY[1, NULL, 3, NULL]); -- [1, 3]
-        SELECT remove_nulls(ARRAY[true, false, NULL]); -- [true, false]
-        SELECT remove_nulls(ARRAY[ARRAY[1, 2], NULL, ARRAY[1, NULL, 3]]); -- [[1, 2], [1, null, 3]]
+    SELECT remove_nulls(ARRAY[1, NULL, 3, NULL]); -- [1, 3]
+    SELECT remove_nulls(ARRAY[true, false, NULL]); -- [true, false]
+    SELECT remove_nulls(ARRAY[ARRAY[1, 2], NULL, ARRAY[1, NULL, 3]]); -- [[1, 2], [1, null, 3]]
 ```
 ```cpp
     zip(array(T), array(U),..) -> array(row(T,U, ...))
 
-    Returns the merge of the given arrays, element-wise into a single array of rows.
-    The M-th element of the N-th argument will be the N-th field of the M-th output element.
-    If the arguments have an uneven length, missing values are filled with ``NULL`` ::
+    返回将给定数组按元素合并为一个行数组的结果。
+    第 N 个参数的第 M 个元素将作为第 M 个输出元素的第 N 个字段。
+    如果参数长度不一致，则缺失值将用“NULL”填充。
 
-        SELECT zip(ARRAY[1, 2], ARRAY['1b', null, '3b']); -- [ROW(1, '1b'), ROW(2, null), ROW(null, '3b')]
+    SELECT zip(ARRAY[1, 2], ARRAY['1b', null, '3b']); -- [ROW(1, '1b'), ROW(2, null), ROW(null, '3b')]
 ```
 ```cpp
     zip_with(array(T), array(U), function(T,U,R)) -> array(R)
 
-    Merges the two given arrays, element-wise, into a single array using ``function``.
-    If one array is shorter, nulls are appended at the end to match the length of the
-    longer array, before applying ``function`` ::
+    使用“函数”将两个给定数组按元素合并为一个数组。
+    如果其中一个数组较短，则在应用“函数”之前，在末尾添加 null 以匹配较长数组的长度。
 
-        SELECT zip_with(ARRAY[1, 3, 5], ARRAY['a', 'b', 'c'], (x, y) -> (y, x)); -- [ROW('a', 1), ROW('b', 3), ROW('c', 5)]
-        SELECT zip_with(ARRAY[1, 2], ARRAY[3, 4], (x, y) -> x + y); -- [4, 6]
-        SELECT zip_with(ARRAY['a', 'b', 'c'], ARRAY['d', 'e', 'f'], (x, y) -> concat(x, y)); -- ['ad', 'be', 'cf']
-        SELECT zip_with(ARRAY['a'], ARRAY['d', null, 'f'], (x, y) -> coalesce(x, y)); -- ['a', null, 'f']
+    SELECT zip_with(ARRAY[1, 3, 5], ARRAY['a', 'b', 'c'], (x, y) -> (y, x)); -- [ROW('a', 1), ROW('b', 3), ROW('c', 5)]
+    SELECT zip_with(ARRAY[1, 2], ARRAY[3, 4], (x, y) -> x + y); -- [4, 6]
+    SELECT zip_with(ARRAY['a', 'b', 'c'], ARRAY['d', 'e', 'f'], (x, y) -> concat(x, y)); -- ['ad', 'be', 'cf']
+    SELECT zip_with(ARRAY['a'], ARRAY['d', null, 'f'], (x, y) -> coalesce(x, y)); -- ['a', null, 'f']
 ```

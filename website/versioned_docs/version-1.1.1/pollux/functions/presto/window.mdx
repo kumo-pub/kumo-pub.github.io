@@ -1,32 +1,29 @@
-================
-Window functions
-================
+# Window functions
 
-Pollux window functions can be used to compute SQL window functions.
+Pollux 窗口函数可用于计算 SQL 窗口函数。
 
-Understanding the window function definition
---------------------------------------------
-Window functions operate over all the input rows.
+## Understanding the window function definition
 
-Each window function can be thought to operate with an OVER clause
-that specifies how it is evaluated:
+窗口函数对所有输入行进行操作。
 
-.. code-block::
+每个窗口函数都可以理解为带有一个 OVER 子句，该子句指定了函数的求值方式：
+
+```text
 
    function(args) OVER (
         [PARTITION BY expression]
         [ORDER BY expression [ASC|DESC]]
         [frame]
    )
-
-A frame is one of:
+```
+框架是以下之一：
 
 ```text
 
    {RANGE|ROWS} frame_start
    {RANGE|ROWS} BETWEEN frame_start AND frame_end
 ```
-frame_start and frame_end can be any of:
+frame_start 和 frame_end 可以是以下任意一种：
 
 ```text
 
@@ -36,39 +33,41 @@ frame_start and frame_end can be any of:
    expression FOLLOWING  -- only allowed in ROWS mode
    UNBOUNDED FOLLOWING
 ```
-More details:
+更多详情：
 
-* The PARTITION BY fields separate the input rows into different partitions.
+* PARTITION BY 字段将输入行分成不同的分区。
 
-  This is analogous to how the aggregate functions input is separated into different groups for evaluation.
-  If PARTITION BY fields are not specified, the entire input is treated as a single partition.
+这类似于聚合函数将输入分成不同的组进行求值。
 
-* The ORDER BY fields determine the order in which input rows are processed by the window function.
+如果未指定 PARTITION BY 字段，则整个输入将被视为单个分区。
 
-  If ORDER BY fields are not specified, the ordering is undefined.
+* ORDER BY 字段决定窗口函数处理输入行的顺序。
 
-* The frame clause specifies the sliding window of rows to be processed by the function for a given input row.
+如果未指定 ORDER BY 字段，则顺序未定义。
 
-  A frame can be ROWS type or RANGE type, and it runs from frame_start to frame_end.
-  If frame_end is not specified, a default value of CURRENT ROW is used.
+* frame 子句指定函数针对给定输入行处理的行的滑动窗口。
 
-  In ROWS mode, CURRENT ROW refers to the current row.
+frame 可以是 ROWS 类型或 RANGE 类型，其运行范围从 frame_start 到 frame_end。
 
-  In RANGE mode, CURRENT ROW refers to any peer row of the current row.
-  Rows are peers if they have the same values for the ORDER BY fields.
-  A frame start of CURRENT ROW refers to the first peer row of the current row,
-  while a frame end of CURRENT ROW refers to the last peer row of the current row.
-  If no ORDER BY is specified, all rows are considered peers of the current row.
+如果未指定 frame_end，则使用默认值 CURRENT ROW。
 
-  If no frame is specified, a default frame of RANGE UNBOUNDED PRECEDING is used.
+在 ROWS 模式下，CURRENT ROW 指的是当前行。
 
-  More details about window frames can be found at :doc:`/develop/window`
+在 RANGE 模式下，CURRENT ROW 指的是当前行的任意对等行。
+如果行的 ORDER BY 字段值相同，则它们对等。
+CURRENT ROW 的 frame 起始指的是当前行的第一个对等行，
+而 CURRENT ROW 的 frame 结束指的是当前行的最后一个对等行。
+如果未指定 ORDER BY，则所有行都被视为当前行的对等行。
 
-SQL Example
-___________
+如果未指定 frame，则使用默认的 RANGE UNBOUNDED PRECEDING frame。
 
-Window functions can be used to evaluate the following SQL query.
-The query ranks orders for each clerk by price:
+有关窗口框架的更多详细信息，请参阅[window](../../develop/window.mdx)
+
+## SQL Example
+
+
+窗口函数可用于执行以下 SQL 查询。
+该查询按价格对每位店员的订单进行排序：
 
 ```sql
 
@@ -82,101 +81,84 @@ The query ranks orders for each clerk by price:
 ```cpp
     cume_dist() -> bigint
 
-Returns the cumulative distribution of a value in a group of values. The result is the number of rows
-preceding or peer with the row in the window ordering of the window partition divided by the total
-number of rows in the window partition. Thus, any tie values in the ordering will evaluate to the same
-distribution value.
+    返回一组值中某个值的累积分布。结果为窗口分区中，按窗口顺序排列的行数
+    在前或与该行对等的行数除以窗口分区的总行数。因此，排序中任何相同的值都将计算为相同的分布值。
 ```
 ```cpp
     dense_rank() -> bigint
 
-Returns the rank of a value in a group of values. This is similar to rank(), except that tie values do
-not produce gaps in the sequence.
+    返回一组值中某个值的排名。这与 rank() 类似，但平局值不会在序列中产生空位。
 ```
 ```cpp
     ntile(n) -> bigint
 
-Divides the rows for each window partition into n buckets ranging from 1 to at most ``n``. Bucket values
-will differ by at most 1. If the number of rows in the partition does not divide evenly into the number
-of buckets, then the remainder values are distributed one per bucket, starting with the first bucket.
+    将每个窗口分区的行分成 n 个存储桶，每个存储桶的数值范围从 1 到最多“n”。存储桶值
+    最多相差 1。如果分区中的行数不能被存储桶数整除，则剩余值将从第一个存储桶开始，按每个存储桶分配一个。
 
-For example, with 6 rows and 4 buckets, the bucket values would be as follows: ``1 1 2 2 3 4``
+    例如，如果有 6 行和 4 个存储桶，则存储桶值将如下所示：“1 1 2 2 3 4”
 ```
 ```cpp
     percent_rank() -> double
 
-Returns the percentage ranking of a value in a group of values. The result is ``(r - 1) / (n - 1)`` where ``r``
-is the ``rank()`` of the row and ``n`` is the total number of rows in the window partition.
+    返回某个值在一组值中的百分比排名。结果为 ``(r - 1) / (n - 1)``，其中 ``r`` 是该行的 ``rank()``，``n`` 是窗口分区中的总行数。
 ```
 ```cpp
     rank() -> bigint
 
-Returns the rank of a value in a group of values. The rank is one plus the number of rows preceding the
-row that are not peer with the row. Thus, the values in the ordering will produce gaps in the sequence.
-The ranking is performed for each window partition.
+    返回一组值中某个值的排名。排名等于 1 加上该行之前不与该行对等的行数。因此，排序中的值会在序列中产生间隙。
+    排名针对每个窗口分区执行。
 ```
 ```cpp
     row_number() -> bigint
 
-Returns a unique, sequential number for each row, starting with one, according to the ordering of rows
-within the window partition.
+    根据窗口分区内行的顺序，为每一行返回一个唯一的连续编号，从 1 开始。
 ```
 ## Value functions
 
 
-Value functions provide an option to specify how null values should be treated when evaluating the
-function. Nulls can either be ignored (``IGNORE NULLS``) or respected (``RESPECT NULLS``). By default,
-null values are respected. If ``IGNORE NULLS`` is specified, all rows where the value expression is
-null are excluded from the calculation. If ``IGNORE NULLS`` is specified and the value expression is
-null for all rows, the ``default_value`` is returned, or if it is not specified, ``null`` is returned.
+值函数提供了一个选项，用于指定在执行函数时如何处理空值。空值可以被忽略（`IGNORE NULLS`）或
+被接受（`RESPECT NULLS`）。默认情况下，会接受空值。如果指定了`IGNORE NULLS`，则所有值表达式为空的行都将
+从计算中排除。如果指定了“IGNORE NULLS”，并且所有行的值表达式都为空，则返回`default_value`；如果未指定，则返回`null`。
 
 ```cpp
     first_value(x) -> [same as input]
 
-Returns the first value of the window.
+    返回窗口的第一个值。
 ```
 ```cpp
     last_value(x) -> [same as input]
 
-Returns the last value of the window.
+    返回窗口的最后一个值。
 ```
 ```cpp
     nth_value(x, offset) -> [same as input]
 
-Returns the value at the specified offset from the beginning of the window. Offsets start at 1. The offset
-can be any scalar expression. If the offset is null or greater than the number of values in the window, null is
-returned. It is an error for the offset to be zero or negative.
+    返回距离窗口起始位置指定偏移量的值。偏移量从 1 开始。偏移量可以是任意标量表达式。如果
+    偏移量为 null 或大于窗口中值的数量，则返回 null。偏移量为零或负数会出错。
 ```
 ```cpp
     lag(x[, offset[, default_value]]) -> [same as input]
 
-Returns the value at ``offset`` rows before the current row in the window partition.
-Offsets start at ``0``, which is the current row. The default ``offset`` is ``1``.
-The offset can be a constant value or a column reference. If the offset is ``null``, ``null`` is
-returned. If the offset refers to a row that is not within the partition, the
-``default_value`` is returned, or if ``default_value`` is not specified ``null``
-is returned.
+    返回窗口分区中当前行之前 ``offset`` 行的值。
+    偏移量从 ``0``（即当前行）开始。默认 ``offset`` 为 ``1``。
+    偏移量可以是常量值或列引用。如果偏移量为 ``null``，则返回 ``null``。如果偏移量指向的行不
+    在分区内，则返回 ``default_value``；如果未指定 ``default_value``，则返回 ``null``。
 
-If ``IGNORE NULLS`` is specified, ``null`` values are ignored during offset counting.
-If not enough non-null values are found during offset counting, ``default_value``
-is returned.
+    如果指定了“IGNORE NULLS”，则在偏移量计数期间会忽略“null”值。
+    如果在偏移量计数期间未找到足够的非空值，则返回“default_value”。
 ```
 ```cpp
     lead(x[, offset[, default_value]]) -> [same as input]
 
-Returns the value at ``offset`` rows after the current row in the window partition.
-Offsets start at ``0``, which is the current row. The default ``offset`` is ``1``.
-The offset can be a constant value or a column reference. If the offset is ``null``, ``null`` is
-returned. If the offset refers to a row that is not within the partition, the
-``default_value`` is returned, or if ``default_value`` is not specified ``null``
-is returned.
+    返回窗口分区中当前行之后 ``offset`` 行的值。
+    偏移量从 ``0``（即当前行）开始。默认 ``offset`` 为 ``1``。
+    偏移量可以是常量值或列引用。如果偏移量为 ``null``，则返回 ``null``。如果偏移量指向不在分区内的行，
+    则返回 ``default_value``；如果未指定 ``default_value``，则返回 ``null``。
 
-If ``IGNORE NULLS`` is specified, ``null`` values are ignored during offset counting.
-If not enough non-null values are found during offset counting, ``default_value``
-is returned.
+    如果指定了 ``IGNORE NULLS``，则在偏移量计数期间忽略 ``null`` 值。
+    如果在偏移量计数期间未找到足够多的非空值，则返回 ``default_value``。
 ```
 ## Aggregate functions
 
 
-All aggregate functions can be used as window functions by adding the OVER clause. The aggregate function is computed
-for each row over the rows within the current row's window frame.
+所有聚合函数都可以通过添加 OVER 子句用作窗口函数。聚合函数会针对当前行窗口框架内的每一行进行计算。

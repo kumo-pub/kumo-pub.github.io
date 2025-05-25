@@ -3,70 +3,69 @@
 ```cpp
     bit_count(x, bits) -> bigint
 
-    Count the number of bits set in ``x`` (treated as ``bits``-bit signed
-    integer) in 2's complement representation::
+    计算 ``x`` 中设置的位数（视为 ``bits`` 位有符号整数），以 2 的补码表示形式表示：
 
-        SELECT bit_count(9, 64); -- 2
-        SELECT bit_count(9, 8); -- 2
-        SELECT bit_count(-7, 64); -- 62
-        SELECT bit_count(-7, 8); -- 6
+    SELECT bit_count(9, 64); -- 2
+    SELECT bit_count(9, 8); -- 2
+    SELECT bit_count(-7, 64); -- 62
+    SELECT bit_count(-7, 8); -- 6
 ```
 ```cpp
     bitwise_and(x, y) -> bigint
 
-    Returns the bitwise AND of ``x`` and ``y`` in 2's complement representation.
+    以 2 的补码表示形式返回“x”和“y”的按位与。
 ```
 ```cpp
     bitwise_arithmetic_shift_right(x, shift) -> bigint
 
-    Returns the arithmetic right shift operation on ``x`` shifted by ``shift`` in 2’s complement representation.
-    ``shift`` must not be negative.
+    返回对 ``x`` 进行算术右移运算后，以 2 的补码表示形式移位 ``shift`` 的值。
+    ``shift`` 不能为负数。
 ```
 ```cpp
     bitwise_left_shift(x, shift) -> [same as x]
 
-    Returns the left shifted value of ``x``.
-    Supported types of x are: ``TINYINT`` , ``SMALLINT``, ``INTEGER`` and ``BIGINT``.
-    ``shift`` is an ``INTEGER``.
+    返回 ``x`` 左移的值。
+    支持的 x 类型为：``TINYINT`` 、``SMALLINT`` 、``INTEGER`` 和 ``BIGINT``。
+    ``shift`` 是一个 ``INTEGER``。
 ```
 ```cpp
     bitwise_logical_shift_right(x, shift, bits) -> bigint
 
-    Returns the logical right shift operation on ``x`` (treated as ``bits``-bit integer) shifted by ``shift``.
-    ``shift`` must not be negative.
+    返回对 ``x``（视为 ``bits`` 位整数）进行逻辑右移运算并移位 ``shift`` 的结果。
+    ``shift`` 不能为负数。
 ```
 ```cpp
     bitwise_not(x) -> bigint
 
-    Returns the bitwise NOT of ``x`` in 2's complement representation.
+    以 2 的补码表示形式返回“x”的按位非。
 ```
 ```cpp
     bitwise_or(x, y) -> bigint
 
-    Returns the bitwise OR of ``x`` and ``y`` in 2's complement representation.
+     以 2 的补码表示形式返回“x”和“y”的按位或。
 ```
 ```cpp
     bitwise_right_shift(x, shift) -> [same as x]
 
-    Returns the logical right shifted value of ``x``.
-    Supported types of x are: ``TINYINT``, ``SMALLINT``, ``INTEGER`` and ``BIGINT``.
-    ``shift`` is an ``INTEGER``.
+    返回 ``x`` 的逻辑右移值。
+    支持的 x 类型为：``TINYINT``、``SMALLINT``、``INTEGER`` 和 ``BIGINT``。
+    ``shift`` 是一个 ``INTEGER``。
 ```
 ```cpp
     bitwise_right_shift_arithmetic(x, shift) -> [same as x]
 
-    Returns the arithmetic right shift value of ``x``.
-    Supported types of x are: ``TINYINT``, ``SMALLINT``, ``INTEGER`` and ``BIGINT``.
-    ``shift`` is an ``INTEGER``.
+    返回 ``x`` 的算术右移值。
+    支持的 x 类型为：``TINYINT``、``SMALLINT``、``INTEGER`` 和 ``BIGINT``。
+    ``shift`` 是一个 ``INTEGER``。
 ```
 ```cpp
     bitwise_shift_left(x, shift, bits) -> bigint
 
-    Returns the left shift operation on ``x`` (treated as ``bits``-bit integer) shifted by ``shift``.
-    ``shift`` must not be negative.
+    返回对 ``x``（视为 ``bits`` 位整数）进行左移运算后，移位 ``shift`` 的值。
+    ``shift`` 不能为负数。
 ```
 ```cpp
     bitwise_xor(x, y) -> bigint
 
-    Returns the bitwise XOR of ``x`` and ``y`` in 2's complement representation.
+    以 2 的补码表示形式返回“x”和“y”的按位异或。
 ```

@@ -3,87 +3,52 @@
 
 ## Date and Time Operators
 
-
-.. list-table::
-   :widths: 15 60 25
-   :header-rows: 1
-
-   * - Operator
-     - Example
-     - Result
-   * - ``+``
-     - ``interval '1' second + interval '1' hour``
-     - ``0 01:00:01.000``
-   * - ``+``
-     - ``timestamp '1970-01-01 00:00:00.000' + interval '1' second``
-     - ``1970-01-01 00:00:01.000``
-   * - ``-``
-     - ``interval '1' hour - interval '1' second``
-     - ``0 00:59:59.000``
-   * - ``-``
-     - ``timestamp '1970-01-01 00:00:00.000' - interval '1' second``
-     - ``1969-12-31 23:59:59.000``
-   * - ``*``
-     - ``interval '1' second * 2``
-     - ``0 00:00:02.000``
-   * - ``*``
-     - ``2 * interval '1' second``
-     - ``0 00:00:02.000``
-   * - ``*``
-     - ``interval '1' second * 0.001``
-     - ``0 00:00:00.001``
-   * - ``*``
-     - ``0.001 * interval '1' second``
-     - ``0 00:00:00.001``
-   * - ``/``
-     - ``interval '15' second / 1.5``
-     - ``0 00:00:10.000``
+| Operator | Example | Result |
+|----------|---------|--------|
+| `+` | `interval '1' second + interval '1' hour` | `0 01:00:01.000` |
+| `+` | `timestamp '1970-01-01 00:00:00.000' + interval '1' second` | `1970-01-01 00:00:01.000` |
+| `-` | `interval '1' hour - interval '1' second` | `0 00:59:59.000` |
+| `-` | `timestamp '1970-01-01 00:00:00.000' - interval '1' second` | `1969-12-31 23:59:59.000` |
+| `*` | `interval '1' second * 2` | `0 00:00:02.000` |
+| `*` | `2 * interval '1' second` | `0 00:00:02.000` |
+| `*` | `interval '1' second * 0.001` | `0 00:00:00.001` |
+| `*` | `0.001 * interval '1' second` | `0 00:00:00.001` |
+| `/` | `interval '15' second / 1.5` | `0 00:00:10.000` |
 
 ```cpp
     plus(x, y) -> [same as x]
 
-    Returns the sum of ``x`` and ``y``. Both ``x`` and ``y`` are intervals day
-    to second or one of them can be timestamp. For addition of two intervals day to
-    second, returns ``-106751991167 07:12:55.808`` when the addition overflows
-    in positive and returns ``106751991167 07:12:55.807`` when the addition
-    overflows in negative. When addition of a timestamp with an interval day to
-    second, overflowed results are wrapped around.
+    返回“x”和“y”的和。“x”和“y”均为间隔“天到秒”，或者其中一个可以是时间戳。对于两个间隔“天到秒”的加法，当加法溢
+    出时，正数返回“-106751991167 07:12:55.808”，负数返回“106751991167 07:12:55.807”。当将时间戳与
+    间隔“天到秒”相加时，溢出的结果将被环绕。
 ```
 ```cpp
     minus(x, y) -> [same as x]
 
-    Returns the result of subtracting ``y`` from ``x``. Both ``x`` and ``y``
-    are intervals day to second or ``x`` can be timestamp. For subtraction of
-    two intervals day to second, returns ``-106751991167 07:12:55.808`` when
-    the subtraction overflows in positive and returns ``106751991167 07:12:55.807``
-    when the subtraction overflows in negative. For subtraction of an interval
-    day to second from a timestamp, overflowed results are wrapped around.
+    返回“x”减“y”的结果。“x”和“y”均为以天为单位的时间间隔，或者“x”可以是时间戳。对于两个以天
+    为单位的时间间隔的减法，当减法结果为正数溢出时，返回“-106751991167 07:12:55.808”，当减法结
+    果为负数溢出时，返回“106751991167 07:12:55.807”。对于从时间戳中减去以天为单位的时间间隔，溢出的结果将被折回。
 ```
 ```cpp
     multiply(interval day to second, x) -> interval day to second
 
-    Returns the result of multiplying ``interval day to second`` by ``x``.
-    ``x`` can be a bigint or double. Returns ``0`` when ``x`` is NaN. Returns
-    ``106751991167 07:12:55.807`` when ``x`` is infinity or when the
-    multiplication overflow in positive. Returns ``-106751991167 07:12:55.808``
-    when ``x`` is -infinity or when the multiplication overflow in negiative.
+    返回“间隔天到秒”乘以“x”的结果。
+    “x”可以是 Bigint 或 Double。当“x”为 NaN 时返回“0”。
+    当“x”为无穷大或乘法溢出为正数时，返回“106751991167 07:12:55.807”。当“x”为负无穷大或乘法溢出为
+    负数时，返回“-106751991167 07:12:55.808”。
 ```
 ```cpp
     multiply(x, interval day to second) -> interval day to second
 
-    Returns the result of multiplying ``x`` by ``interval day to second``.
-    Same as ``multiply(interval day to second, x)``.
+    返回“x”乘以“间隔天到秒”的结果。
+    与“multiply(间隔天到秒, x)”相同。
 ```
 ```cpp
     divide(interval day to second, x) -> interval day to second
 
-    Returns the result of ``interval day to second`` divided by ``x``. ``x`` is
-    a double. Returns ``0`` when ``x`` is NaN or is infinity. Returns
-    ``106751991167 07:12:55.807`` when ``x`` is ``0.0`` and
-    ``interval day to second`` is not ``0``, or when the division overflows in
-    positive. Returns ``-106751991167 07:12:55.808`` when ``x`` is ``-0.0`` and
-    ``interval day to second`` is not ``0``, or when the division overflows in
-    negiative.
+    返回“间隔天到秒”除以“x”的结果。“x”为双精度数。当“x”为 NaN 或无穷大时返回“0”。当“x”为“0.0”且“间隔
+    天到秒”不为“0”时，或除法出现正溢出时，返回“106751991167 07:12:55.807”。当“x”为“-0.0”且“间隔天
+    到秒”不为“0”时，或除法出现负溢出时，返回“-106751991167 07:12:55.808”。
 ```
 ## Date and Time Functions
 
@@ -91,23 +56,23 @@
 ```cpp
     current_date() -> date
 
-    Returns the current date.
+    返回当前日期。
 ```
 ```cpp
     date(x) -> date
 
-    This is an alias for ``CAST(x AS date)``.
+    这是“CAST(x AS date)”的别名。
 ```
 ```cpp
     from_iso8601_date(string) -> date
 
-    Parses the ISO 8601 formatted ``string`` into a ``date``.
+    将 ISO 8601 格式的“字符串”解析为“日期”。
 
-    Accepts formats described by the following syntax::
+    接受以下语法描述的格式：
 
-       date = yyyy ['-' MM ['-' dd]]
+    date = yyyy ['-' MM ['-' dd]]
 
-    Examples of valid input strings:
+    有效输入字符串示例：
 
     * '2012'
     * '2012-4'
@@ -119,9 +84,9 @@
 ```cpp
     from_iso8601_timestamp(string) -> timestamp with time zone
 
-    Parses the ISO 8601 formatted string into a timestamp with time zone.
+        将 ISO 8601 格式的字符串解析为带时区的时间戳。
 
-    Accepts formats described by the following syntax::
+        接受以下语法描述的格式：
 
         datetime          = time | date-opt-time
         time              = 'T' time-element [offset]
@@ -153,230 +118,215 @@
 ```cpp
     from_unixtime(unixtime) -> timestamp
 
-    Returns the UNIX timestamp ``unixtime`` as a timestamp.
+    返回 UNIX 时间戳“unixtime”作为时间戳。
 ```
 ```cpp
     from_unixtime(unixtime, string) -> timestamp with time zone
-    :noindex:
 
-    Returns the UNIX timestamp ``unixtime`` as a timestamp with time zone
-    using ``string`` for the time zone.
+
+    返回 UNIX 时间戳“unixtime”作为带时区的时间戳，使用“string”作为时区。
 ```
 ```cpp
     from_unixtime(unixtime, hours, minutes) -> timestamp with time zone
 
-    Returns the UNIX timestamp ``unixtime`` as a timestamp with time zone
-    using ``hours`` and ``minutes`` for the time zone offset.
-    The offset must be in [-14:00, 14:00] range.
+    返回 UNIX 时间戳“unixtime”作为带时区的时间戳，使用“小时”和“分钟”作为时区偏移量。
+    偏移量必须在 [-14:00, 14:00] 范围内。
 ```
 ```cpp
     to_iso8601(x) -> varchar
 
-    Formats ``x`` as an ISO 8601 string. Supported types for ``x`` are:
-    DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE.
+    将“x”格式化为 ISO 8601 字符串。“x”支持的类型包括：DATE、TIMESTAMP、TIMESTAMP WITH TIME ZONE。
 
-    Example results::
+    示例结果：
 
-        SELECT to_iso8601(current_date); -- 2024-06-06
-        SELECT to_iso8601(now()); -- 2024-06-06T20:25:46.726-07:00
-        SELECT to_iso8601(now() + interval '6' month); -- 2024-12-06T20:27:11.992-08:00
+    SELECT to_iso8601(current_date); -- 2024-06-06
+    SELECT to_iso8601(now()); -- 2024-06-06T20:25:46.726-07:00
+    SELECT to_iso8601(now() + interval '6' month); -- 2024-12-06T20:27:11.992-08:00
 ```
 ```cpp
     to_milliseconds(interval) -> bigint
 
-    Returns the day-to-second ``interval`` as milliseconds.
+   以毫秒为单位返回日到秒的“间隔”。
 ```
 ```cpp
     to_unixtime(timestamp) -> double
 
-    Returns ``timestamp`` as a UNIX timestamp.
+    返回“timestamp”作为 UNIX 时间戳。
 ```
 ## Truncation Function
 
 
-The ``date_trunc`` function supports the following units:
+``date_trunc`` 函数支持以下单位：
 
-=========== ===========================
-Unit        Example Truncated Value
-=========== ===========================
-``second``  ``2001-08-22 03:04:05.000``
-``minute``  ``2001-08-22 03:04:00.000``
-``hour``    ``2001-08-22 03:00:00.000``
-``day``     ``2001-08-22 00:00:00.000``
-``week``    ``2001-08-20 00:00:00.000``
-``month``   ``2001-08-01 00:00:00.000``
-``quarter`` ``2001-07-01 00:00:00.000``
-``year``    ``2001-01-01 00:00:00.000``
-=========== ===========================
+| Unit     | Example Truncated Value      |
+|----------|-------------------------------|
+| `second` | `2001-08-22 03:04:05.000`     |
+| `minute` | `2001-08-22 03:04:00.000`     |
+| `hour`   | `2001-08-22 03:00:00.000`     |
+| `day`    | `2001-08-22 00:00:00.000`     |
+| `week`   | `2001-08-20 00:00:00.000`     |
+| `month`  | `2001-08-01 00:00:00.000`     |
+| `quarter`| `2001-07-01 00:00:00.000`     |
+| `year`   | `2001-01-01 00:00:00.000`     |
 
-The above examples use the timestamp ``2001-08-22 03:04:05.321`` as the input.
+
+上述示例使用时间戳“2001-08-22 03:04:05.321”作为输入。
 
 ```cpp
     date_trunc(unit, x) -> x
 
-    Returns ``x`` truncated to ``unit``. The supported types for ``x`` are TIMESTAMP, DATE, and TIMESTAMP WITH TIME ZONE.
+    返回截断为“unit”的“x”。“x”支持的类型为 TIMESTAMP、DATE 和 TIMESTAMP WITH TIME ZONE。
 ```
 ## Interval Functions
 
 
-The functions in this section support the following interval units:
+本节中的函数支持以下间隔单位：
 
-=============== =======================
-Unit            Description
-=============== =======================
-``millisecond`` ``Milliseconds``
-``second``      ``Seconds``
-``minute``      ``Minutes``
-``hour``        ``Hours``
-``day``         ``Days``
-``week``        ``Weeks``
-``month``       ``Months``
-``quarter``     ``Quarters of a year``
-``year``        ``Years``
-=============== =======================
+| Unit        | Description          |
+|-------------|----------------------|
+| `millisecond` | `Milliseconds`       |
+| `second`    | `Seconds`            |
+| `minute`    | `Minutes`            |
+| `hour`      | `Hours`              |
+| `day`       | `Days`               |
+| `week`      | `Weeks`              |
+| `month`     | `Months`             |
+| `quarter`   | `Quarters of a year` |
+| `year`      | `Years`              |
+
 
 ```cpp
     date_add(unit, value, x) -> x
 
-    Adds an interval ``value`` of type ``unit`` to ``x``. The supported types for ``x`` are TIMESTAMP, DATE, and TIMESTAMP WITH TIME ZONE.
-    Subtraction can be performed by using a negative value.
+    将“unit”类型的间隔“value”添加到“x”。“x”支持的类型包括 TIMESTAMP、DATE 和 TIMESTAMP WITH TIME ZONE。
+    可以使用负值进行减法运算。
 ```
 ```cpp
     date_diff(unit, x1, x2) -> bigint
 
-    Returns ``x2 - x1`` in terms of ``unit``. The supported types for ``x`` are TIMESTAMP and DATE.
+    以“单位”形式返回“x2 - x1”。“x”支持的类型为 TIMESTAMP 和 DATE。
 ```
 ## Duration Function
 
 
-The ``parse_duration`` function supports the following units:
+``parse_duration`` 函数支持以下单位：
 
-======= =============
-Unit    Description
-======= =============
-``ns``  Nanoseconds
-``us``  Microseconds
-``ms``  Milliseconds
-``s``   Seconds
-``m``   Minutes
-``h``   Hours
-``d``   Days
-======= =============
+| Unit | Description   |
+|------|---------------|
+| `ns` | Nanoseconds   |
+| `us` | Microseconds  |
+| `ms` | Milliseconds  |
+| `s`  | Seconds       |
+| `m`  | Minutes       |
+| `h`  | Hours         |
+| `d`  | Days          |
+
 
 ```cpp
     parse_duration(string) -> interval
 
-    Parses ``string`` of format ``value unit`` into an interval, where
-    ``value`` is fractional number of ``unit`` values::
+    将格式为“value unit”的“string”解析为一个区间，其中“value”是“unit”值的分数：
 
-        SELECT parse_duration('42.8ms'); -- 0 00:00:00.043
-        SELECT parse_duration('3.81 d'); -- 3 19:26:24.000
-        SELECT parse_duration('5m');     -- 0 00:05:00.000
+    SELECT parse_duration('42.8ms'); -- 0 00:00:00.043
+    SELECT parse_duration('3.81 d'); -- 3 19:26:24.000
+    SELECT parse_duration('5m');     -- 0 00:05:00.000
 ```
 ## MySQL Date Functions
 
 
-The functions in this section use a format string that is compatible with
-the MySQL ``date_parse`` and ``str_to_date`` functions.
-The following table, based on the MySQL manual, describes the format specifiers:
+本节中的函数使用与 MySQL ``date_parse`` 和 ``str_to_date`` 函数兼容的格式字符串。
+下表基于 MySQL 手册，描述了格式说明符：
 
-========= =============================================================================================================================
-Specifier Description
-========= =============================================================================================================================
-``%a``    Abbreviated weekday name (``Sun`` ... ``Sat``)
-``%b``    Abbreviated month name (``Jan`` ... ``Dec``)
-``%c``    Month, numeric (``1`` ... ``12``) [4]_
-``%D``    Day of the month with English suffix (``0th``, ``1st``, ``2nd``, ``3rd``, ...)
-``%d``    Day of the month, numeric (``01`` ... ``31``) [4]_
-``%e``    Day of the month, numeric (``1`` ... ``31``) [4]_
-``%f``    Fraction of second (6 digits for printing: ``000000`` ... ``999000``; 1 - 9 digits for parsing: ``0`` ... ``999999999``) [1]_
-``%H``    Hour (``00`` ... ``23``)
-``%h``    Hour (``01`` ... ``12``)
-``%I``    Hour (``01`` ... ``12``)
-``%i``    Minutes, numeric (``00`` ... ``59``)
-``%j``    Day of year (``001`` ... ``366``)
-``%k``    Hour (``0`` ... ``23``)
-``%l``    Hour (``1`` ... ``12``)
-``%M``    Month name (``January`` ... ``December``)
-``%m``    Month, numeric (``01`` ... ``12``) [4]_
-``%p``    ``AM`` or ``PM``
-``%r``    Time, 12-hour (``hh:mm:ss`` followed by ``AM`` or ``PM``)
-``%S``    Seconds (``00`` ... ``59``)
-``%s``    Seconds (``00`` ... ``59``)
-``%T``    Time, 24-hour (``hh:mm:ss``)
-``%U``    Week (``00`` ... ``53``), where Sunday is the first day of the week
-``%u``    Week (``00`` ... ``53``), where Monday is the first day of the week
-``%V``    Week (``01`` ... ``53``), where Sunday is the first day of the week; used with ``%X``
-``%v``    Week (``01`` ... ``53``), where Monday is the first day of the week; used with ``%x``
-``%W``    Weekday name (``Sunday`` ... ``Saturday``)
-``%w``    Day of the week (``0`` ... ``6``), where Sunday is the first day of the week [3]_
-``%X``    Year for the week where Sunday is the first day of the week, numeric, four digits; used with ``%V``
-``%x``    Year for the week, where Monday is the first day of the week, numeric, four digits; used with ``%v``
-``%Y``    Year, numeric, four digits
-``%y``    Year, numeric (two digits) [2]_
-``%%``    A literal ``%`` character
-``%x``    ``x``, for any ``x`` not listed above
-========= =============================================================================================================================
+| Specifier | Description                                                                                                                 |
+|-----------|-----------------------------------------------------------------------------------------------------------------------------|
+| `%a`      | Abbreviated weekday name (`Sun` ... `Sat`)                                                                                  |
+| `%b`      | Abbreviated month name (`Jan` ... `Dec`)                                                                                    |
+| `%c`      | Month, numeric (`1` ... `12`) [4]_                                                                                          |
+| `%D`      | Day of the month with English suffix (`0th`, `1st`, `2nd`, `3rd`, ...)                                                      |
+| `%d`      | Day of the month, numeric (`01` ... `31`) [4]_                                                                              |
+| `%e`      | Day of the month, numeric (`1` ... `31`) [4]_                                                                               |
+| `%f`      | Fraction of second (6 digits for printing: `000000` ... `999000`; 1 - 9 digits for parsing: `0` ... `999999999`) [1]_       |
+| `%H`      | Hour (`00` ... `23`)                                                                                                        |
+| `%h`      | Hour (`01` ... `12`)                                                                                                        |
+| `%I`      | Hour (`01` ... `12`)                                                                                                        |
+| `%i`      | Minutes, numeric (`00` ... `59`)                                                                                            |
+| `%j`      | Day of year (`001` ... `366`)                                                                                               |
+| `%k`      | Hour (`0` ... `23`)                                                                                                         |
+| `%l`      | Hour (`1` ... `12`)                                                                                                         |
+| `%M`      | Month name (`January` ... `December`)                                                                                       |
+| `%m`      | Month, numeric (`01` ... `12`) [4]_                                                                                         |
+| `%p`      | `AM` or `PM`                                                                                                                |
+| `%r`      | Time, 12-hour (`hh:mm:ss` followed by `AM` or `PM`)                                                                         |
+| `%S`      | Seconds (`00` ... `59`)                                                                                                     |
+| `%s`      | Seconds (`00` ... `59`)                                                                                                     |
+| `%T`      | Time, 24-hour (`hh:mm:ss`)                                                                                                  |
+| `%U`      | Week (`00` ... `53`), where Sunday is the first day of the week                                                             |
+| `%u`      | Week (`00` ... `53`), where Monday is the first day of the week                                                             |
+| `%V`      | Week (`01` ... `53`), where Sunday is the first day of the week; used with `%X`                                             |
+| `%v`      | Week (`01` ... `53`), where Monday is the first day of the week; used with `%x`                                             |
+| `%W`      | Weekday name (`Sunday` ... `Saturday`)                                                                                      |
+| `%w`      | Day of the week (`0` ... `6`), where Sunday is the first day of the week [3]_                                               |
+| `%X`      | Year for the week where Sunday is the first day of the week, numeric, four digits; used with `%V`                           |
+| `%x`      | Year for the week, where Monday is the first day of the week, numeric, four digits; used with `%v`                          |
+| `%Y`      | Year, numeric, four digits                                                                                                  |
+| `%y`      | Year, numeric (two digits) [2]_                                                                                             |
+| `%%`      | A literal `%` character                                                                                                     |
+| `%x`      | `x`, for any `x` not listed above                                                                                           |
 
-.. [1] Timestamp is truncated to milliseconds.
 
-.. [2] When parsing, two-digit year format assumes range ``1970`` ... ``2069``, so “70” will result in year ``1970`` but “69” will produce ``2069``.
+.. [1] 时间戳被截断为毫秒。
 
-.. [3] This specifier is not supported yet. Consider using :func:`day_of_week` (it uses ``1-7`` instead of ``0-6``).
+.. [2] 解析时，两位数年份格式假定范围为“1970”到“2069”，因此“70”将返回年份“1970”，而“69”将返回年份“2069”。
 
-.. [4] This specifier does not support ``0`` as a month or day.
+.. [3] 此说明符尚不受支持。请考虑使用 :func:`day_of_week`（它使用“1-7”而不是“0-6”）。
 
-**Warning**: The following specifiers are not currently supported: ``%D``, ``%U``, ``%u``, ``%V``, ``%w``, ``%X``.
+.. [4] 此说明符不支持将“0”作为月份或日期。
+
+**警告**：目前不支持以下说明符：“%D”、“%U”、“%u”、“%V”、“%w”、“%X”。
 
 ```cpp
     date_format(x, format) -> varchar
 
-    Formats ``x`` as a string using ``format``. ``x`` is a timestamp or a timestamp with time zone.
+   使用“format”将“x”格式化为字符串。“x”是时间戳或带时区的时间戳。
 ```
 ## Java Date Functions
 
 
-The functions in this section leverage a native cpp implementation that follows
-a format string compatible with JodaTime’s [DateTimeFormat](http://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)
-pattern format. The symbols currently supported are ``y``, ``Y``, ``M`` , ``d``,
-``H``, ``m``, ``s``, ``S``, ``z`` and ``Z``.
+本节中的函数使用原生 CPP 实现，该实现遵循与 JodaTime 的
+[DateTimeFormat](http://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) 兼
+容的格式字符串。当前支持的符号包括“y”、“Y”、“M”、“d”、“H”、“m”、“s”、“S”、“z”和“Z”。
 
-``z`` represents a timezone name (3-letter format), and ``Z`` a timezone offset
-specified using the format ``+00``, ``+00:00`` or ``+0000`` (or ``-``). ``Z``
-also accepts ``UTC``,  ``UCT``, ``GMT``, and ``GMT0`` as valid representations
-of GMT.
+“z”表示时区名称（3 个字母格式），“Z”表示时区偏移量，使用“+00”、“+00:00”或“+0000”（或“-”）格式指定。 ``Z`` 也接受 ``UTC``、``UCT``、``GMT`` 和 ``GMT0`` 作为 GMT 的有效表示。
 
 ```cpp
     format_datetime(timestamp, format) -> varchar
 
-    Formats ``timestamp`` as a string using ``format``.
+   使用“format”将“timestamp”格式化为字符串。
 ```
 ```cpp
     parse_datetime(string, format) -> timestamp with time zone
 
-    Parses string into a timestamp with time zone using ``format``.
+   使用“格式”将字符串解析为带有时区的时间戳。
 ```
 ## Convenience Extraction Functions
 
 
-These functions support TIMESTAMP, DATE, and TIMESTAMP WITH TIME ZONE input types.
+这些函数支持 TIMESTAMP、DATE 和 TIMESTAMP WITH TIME ZONE 输入类型。
 
-For these functions, the input timestamp has range limitations on seconds and nanoseconds.
-Seconds should be in the range [INT64_MIN/1000 - 1, INT64_MAX/1000], nanoseconds should
-be in the range [0, 999999999]. This behavior is different from Presto Java that allows
-arbitrary large timestamps.
+对于这些函数，输入时间戳在秒和纳秒方面有范围限制。
+秒应在 [INT64_MIN/1000 - 1, INT64_MAX/1000] 范围内，纳秒应在 [0, 999999999] 范围内。此行为与允许任意大时间戳的 Presto Java 不同。
 
 ```cpp
     day(x) -> bigint
 
-    Returns the day of the month from ``x``.
+    返回“x”对应的月份日期。
 
-    The supported types for ``x`` are DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE, INTERVAL DAY TO SECOND.
+    “x”支持的类型包括 DATE、TIMESTAMP、TIMESTAMP WITH TIME ZONE 和 INTERVAL DAY TO SECOND。
 ```
 ```cpp
     day_of_month(x) -> bigint
 
-    This is an alias for :func:`day`.
+   这是`day` 的别名。
 ```
 ```cpp
     day_of_week(x) -> bigint
@@ -403,9 +353,9 @@ arbitrary large timestamps.
 ```cpp
     hour(x) -> bigint
 
-    Returns the hour of the day from ``x``. The value ranges from 0 to 23.
-    Supported types for ``x`` are: DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE,
-    INTERVAL DAY TO SECOND¶.
+    返回“x”对应的小时数。取值范围为 0 到 23。
+    “x”支持的类型包括：DATE、TIMESTAMP、TIMESTAMP WITH TIME ZONE、
+    INTERVAL DAY TO SECOND¶
 ```
 ```cpp
     last_day_of_month(x) -> date
@@ -415,48 +365,47 @@ arbitrary large timestamps.
 ```cpp
     millisecond(x) -> int64
 
-    Returns the millisecond of the second from ``x``. Supported types for ``x`` are:
-    DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE, INTERVAL DAY TO SECOND¶.
+    返回“x”秒的毫秒数。“x”支持的类型有：DATE、TIMESTAMP、TIMESTAMP WITH TIME ZONE、INTERVAL DAY TO SECOND¶
 ```
 ```cpp
     minute(x) -> bigint
 
-    Returns the minute of the hour from ``x``. Supported types for ``x`` are:
-    DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE, INTERVAL DAY TO SECOND¶.
+    返回“x”对应的小时中的分钟数。“x”支持的类型有：DATE、TIMESTAMP、TIMESTAMP WITH
+    TIME ZONE、INTERVAL DAY TO SECOND.
 ```
 ```cpp
     month(x) -> bigint
 
-    Returns the month of the year from ``x``. Supported types for ``x`` are:
-    DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE, INTERVAL YEAR TO MONTH.
+    返回“x”对应的月份。“x”支持的类型包括：DATE、TIMESTAMP、TIMESTAMP
+    WITH TIME ZONE、INTERVAL YEAR TO MONTH。
 ```
 ```cpp
     quarter(x) -> bigint
 
-    Returns the quarter of the year from ``x``. The value ranges from ``1`` to ``4``.
+    返回 ``x`` 对应的季度。取值范围为 ``1`` 到 ``4``。
 ```
 ```cpp
     second(x) -> bigint
 
-    Returns the second of the minute from ``x``. Supported types for ``x`` are:
-    DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE, INTERVAL DAY TO SECOND¶.
+    返回“x”对应的分钟数。“x”支持的类型包括：DATE、TIMESTAMP、TIMESTAMP WITH
+    TIME ZONE、INTERVAL DAY TO SECOND¶
 ```
 ```cpp
     timezone_hour(timestamp) -> bigint
 
-    Returns the hour of the time zone offset from ``timestamp``.
+     返回与“时间戳”相对的时区偏移量的小时。
 ```
 ```cpp
     timezone_minute(timestamp) -> bigint
 
-    Returns the minute of the time zone offset from ``timestamp``.
+    返回距“时间戳”的时区偏移量的分钟。
 ```
 ```cpp
     week(x) -> bigint
 
     Returns the `ISO-Week`_ of the year from x. The value ranges from ``1`` to ``53``.
 
-.. _ISO-Week: https://en.wikipedia.org/wiki/ISO_week_date
+    ISO-Week: https://en.wikipedia.org/wiki/ISO_week_date
 ```
 ```cpp
     week_of_year(x) -> bigint
@@ -466,8 +415,7 @@ arbitrary large timestamps.
 ```cpp
     year(x) -> bigint
 
-    Returns the year from ``x``. Supported types for ``x`` are:
-    DATE, TIMESTAMP, TIMESTAMP WITH TIME ZONE, INTERVAL YEAR TO MONTH.
+  返回“x”对应的年份。“x”支持的类型包括：DATE、TIMESTAMP、TIMESTAMP WITH TIME ZONE、INTERVAL YEAR TO MONTH。
 ```
 ```cpp
     year_of_week(x) -> bigint
@@ -477,60 +425,57 @@ arbitrary large timestamps.
 ```cpp
     yow(x) -> bigint
 
-    This is an alias for :func:`year_of_week`.
+    这是`year_of_week` 的别名。
 ```
-.. _presto-time-zones:
 
 ## Time Zones
 
 
-Pollux has full support for time zone rules, which are needed to perform date/time
-calculations correctly. Typically, the session time zone is used for temporal
-calculations. This is the time zone of the client computer that submits the query, if
-available. Otherwise, it is the time zone of the server running the Presto coordinator.
+Pollux 完全支持时区规则，这些规则对于正确执行日期/时间计算至关重要。通常，会话时区用于时间计算。如果可用，则使用提交查询的客户端计算机的时区。否则，使用运行 Presto 协调器的服务器的时区。
 
-Queries that operate with time zones that follow daylight saving can produce unexpected
-results. For example, if we run the following query in the `America/Los Angeles` time
-zone: ::
+使用遵循夏令时的时区运行的查询可能会产生意外的结果。例如，如果我们在“America/Los Angeles”时区运行以下查询：
 
-        SELECT date_add('hour', 24, cast('2014-03-08 09:00:00' as timestamp));
-        -- 2014-03-09 10:00:00.000
+```sql
+    SELECT date_add('hour', 24, cast('2014-03-08 09:00:00' as timestamp));
+    -- 2014-03-09 10:00:00.000
+```
 
-The timestamp appears to only advance 23 hours. This is because on March 9th clocks in
-`America/Los Angeles` are turned forward 1 hour, so March 9th only has 23 hours. To
-advance the day part of the timestamp, use the `day` unit instead: ::
+时间戳似乎只前进了 23 个小时。这是因为 3 月 9 日“America/Los Angeles”的时钟向前拨了 1 个小
+时，所以 3 月 9 日只有 23 个小时。要将时间戳中的“日期”部分向前推进，请使用“日期”单位：
 
-        SELECT date_add('day', 1, cast('2014-03-08 09:00:00' as timestamp));
-        -- 2014-03-09 09:00:00.000
+```sql
+    SELECT date_add('day', 1, cast('2014-03-08 09:00:00' as timestamp));
+    -- 2014-03-09 09:00:00.000
+```
 
-This works because the :func:`date_add` function treats the timestamp as list of fields, adds
-the value to the specified field and then rolls any overflow into the next higher field.
+之所以有效，是因为 :func:`date_add` 函数将时间戳视为字段列表，将值添加到指定字段，然后将任何溢出的字段滚动到下一个更高的字段。
 
-Time zones are also necessary for parsing and printing timestamps. Queries that use this
-functionality can also produce unexpected results. For example, on the same machine: ::
+时区对于解析和打印时间戳也是必需的。使用此功能的查询也可能产生意外结果。例如，在同一台机器上：
 
-        SELECT cast('2014-03-09 02:30:00' as timestamp);
+```sql
+    SELECT cast('2014-03-09 02:30:00' as timestamp);
+```
 
-The above query causes an error because there was no 2:30 AM on March 9th in
-`America/Los_Angeles` due to a daylight saving time transition.
+上述查询导致错误，因为由于夏令时转换，`America/Los_Angeles` 中没有 3 月 9 日凌晨 2:30。
 
-Similarly, the following query has two possible outcomes due to a daylight saving time
-transition: ::
+同样，由于夏令时转换，以下查询可能有两种结果：
 
-        SELECT cast('2014-11-02 01:30:00' as timestamp);
-        -- 2014-11-02 08:30:00.000
+```sql
+    SELECT cast('2014-11-02 01:30:00' as timestamp);
+    -- 2014-11-02 08:30:00.000
+```
 
-It can be interpreted as `2014-11-02 01:30:00 PDT`, or `2014-11-02 01:30:00 PST`, which are
-`2014-11-02 08:30:00 UTC` or `2014-11-02 09:30:00 UTC` respectively. The former one is
-picked to be consistent with Presto.
+它可以被解释为 `2014-11-02 01:30:00 PDT` 或 `2014-11-02 01:30:00 PST`，分别对应
+`2014-11-02 08:30:00 UTC` 或 `2014-11-02 09:30:00 UTC`。选择前者是为了与 Presto 保持一致。
 
-**Timezone Name Parsing**: When parsing strings that contain timezone names, the
-list of supported timezones follow the definition [here](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
+**时区名称解析**：解析包含时区名称的字符串时，支持的时区列表遵循[此处](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 的定义。
 
-**Timezone Conversion**: The ``AT TIME ZONE`` operator sets the time zone of a timestamp: ::
+**时区转换**：“AT TIME ZONE”运算符设置时间戳的时区：
 
-        SELECT timestamp '2012-10-31 01:00 UTC';
-        -- 2012-10-31 01:00:00.000 UTC
+```sql
+    SELECT timestamp '2012-10-31 01:00 UTC';
+    -- 2012-10-31 01:00:00.000 UTC
 
-        SELECT timestamp '2012-10-31 01:00 UTC' AT TIME ZONE 'America/Los_Angeles';
-        -- 2012-10-30 18:00:00.000 America/Los_Angeles
+    SELECT timestamp '2012-10-31 01:00 UTC' AT TIME ZONE 'America/Los_Angeles';
+    -- 2012-10-30 18:00:00.000 America/Los_Angeles
+```
