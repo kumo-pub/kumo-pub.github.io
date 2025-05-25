@@ -1,0 +1,177 @@
+# Aggregation and Window Fuzzer
+
+## Aggregation Fuzzer
+
+Pollux 允许用户定义 UDAF（用户定义聚合函数），并提供聚合模糊测试器 (Aggregation Fuzzer) 和窗口模糊测试器 (Window Fuzzer) 工具，用于全面测试引擎和 UDAF。
+这些工具用于测试 Presto 和 Spark 的内置函数，并发现了许多由极端情况引起的错误，这些错误在单元测试中难以覆盖。
+
+聚合模糊测试器通过生成随机聚合并在随机输入向量上进行评估来测试 HashAggregation 运算符、StreamingAggregation 运算符和 UDAF。
+
+聚合模糊测试器测试全局聚合（无分组键）、分组聚合（一个或多个分组键）、非重复聚合（无聚合）、带和不带掩码的聚合以及对已排序和非重复输入的聚合。
+
+聚合模糊测试器包括溢出和放弃部分聚合的测试。
+
+使用 DuckDB 支持的函数进行的聚合结果与 DuckDB 结果进行了比较。
+
+对于每次聚合，Fuzzer 都会生成多个逻辑上等效的计划，并验证结果是否匹配。这些计划包括：
+
+- 单次聚合（原始输入，最终结果）。
+- 部分 -> 最终聚合。
+- 部分 -> 中间 -> 最终聚合。
+- 部分 -> LocalExchange（分组键）-> 最终聚合。
+- 以上所有操作均使用扁平化的输入向量。
+
+此外，为了测试 StreamingAggregation 运算符，Fuzzer 使用 OrderBy 和 StreamingAggregation 生成执行计划。
+
+- OrderBy（分组键）-> 单流聚合（原始输入，最终结果）。
+- OrderBy（分组键）-> 部分流式传输-> 最终流式聚合。
+- OrderBy（分组键）-> 部分流式传输-> 中间流式传输
+-> 最终流式聚合。
+- OrderBy（分组键）-> 部分流式传输-> LocalMerge（分组键）
+-> 最终流式聚合。
+- 以上所有操作均使用扁平化输入向量。
+
+模糊测试器迭代交替使用 Values 或 TableScan 节点生成计划。
+
+许多函数能够很好地处理随机输入数据。然而，有些函数对输入值有限制，而随机数据往往会违反这些限制，从而导致失败，并阻止模糊测试器在初始健全性检查之后执行聚合操作。
+
+例如，“min”函数有两个签名：
+
+```text
+
+    min(x) → [same as x]
+    Returns the minimum value of all input values.
+
+    min(x, n) → array<[same as x]>
+    Returns n smallest values of all input values of x. n must be a positive integer and not exceed 10,000.
+```
+
+第二个签名，我们称之为 min_n，有两个参数。第一个参数是值，第二个参数是要返回的最小值的常数个数。
+大多数情况下，第二个参数的随机生成值不在 [1, 10,000] 范围内，聚合会失败：
+
+```text
+
+    PolluxUserError
+    Error Source: USER
+    Error Code: INVALID_ARGUMENT
+    Reason: (3069436511015786487 vs. 10000) second argument of max/min must be less than or equal to 10000
+    Retriable: False
+    Expression: newN <= 10'000
+    Function: checkAndSetN
+    File: /Users/mbasmanova/cpp/pollux-1/pollux/functions/prestosql/aggregates/MinMaxAggregates.cpp
+    Line: 574
+```
+
+类似地，approx_distinct 函数的签名允许在 [0.0040625, 0.26000] 范围内指定最大标准误差。“e”的随机值几乎不存在落入此范围的概率。
+
+为了有效地测试这些函数，聚合模糊器允许为各个函数注册自定义输入生成器。
+
+当测试结果取决于输入顺序的聚合函数（例如 map_agg、map_union、arbitrary 等）时，模糊器会验证所有计划是否成功或失败，并抛出兼容的用户异常。如果
+计划成功，模糊器会验证所有计划的结果行数是否相同。
+
+此外，模糊器使用对已排序输入进行聚合来测试顺序敏感的函数。当输入已排序时，结果是确定性的，因此可以进行验证。
+
+模糊器还支持指定自定义结果验证器。例如，array_agg
+可以通过首先对结果数组进行排序来验证结果。类似地，map_agg
+可以通过将结果映射转换为已排序的映射键数组来部分验证结果。approx_distinct
+可以通过将结果与 count(distinct) 进行比较来验证结果。
+
+自定义验证器可以通过比较执行两个逻辑上等效的 Pollux 计划的结果，或执行 Pollux 计划和参考数据库中等效查询的结果来工作。这些验
+证器会转换结果，使其具有确定性，然后再进行比较。这用于验证 array_agg、set_agg、set_union、map_agg 和类似函数。
+
+自定义验证器也可以通过分析单次执行 Pollux 计划的结果来工作。例如，approx_distinct 通过计算输入数据的 count(distinct) 并检
+查 approx_distinct 的结果是否在预期的误差范围内来验证结果。approx_percentile 的验证器工作原理类似。
+
+运行结束时，Fuzzer 会打印出显示已测试内容的统计信息：
+
+```text
+
+    ==============================> Done with iteration 5683
+    Total functions tested: 31
+    Total masked aggregations: 1011 (17.79%)
+    Total global aggregations: 500 (8.80%)
+    Total group-by aggregations: 4665 (82.07%)
+    Total distinct aggregations: 519 (9.13%)
+    Total aggregations verified against DuckDB: 2537 (44.63%)
+    Total failed aggregations: 1061 (18.67%)
+```
+
+## Window Fuzzer
+
+窗口模糊测试器通过生成随机窗口查询并在随机输入向量上执行这些查询，来测试窗口运算符与窗口和聚合函数的匹配情况。窗口查询的结果可以与 Presto 进行比较，作为真实数据源。
+
+对于每个窗口操作，模糊测试器都会生成多个逻辑上等效的计划，并验证结果是否匹配。这些计划包括：
+
+- 值 -> 窗口
+- TableScan -> PartitionBy -> 窗口
+- 值 -> OrderBy -> 窗口（流式）
+- TableScan -> OrderBy -> 窗口（流式）
+
+窗口模糊测试器目前不使用任何自定义结果验证器。需要自定义结果验证器的函数未经验证。
+
+## How to integrate
+
+要与聚合模糊测试器集成，请创建一个测试，注册引擎支持的所有聚合函数，并调用 `AggregationFuzzerRunner.h`_ 中定义的 ``AggregationFuzzerRunner::run()``。请参阅
+`AggregationFuzzerTest.cpp`_。
+
+.. _AggregationFuzzerRunner.h：https://github.com/facebookincubator/pollux/blob/main/pollux/exec/fuzzer/AggregationFuzzer.h
+
+.. _AggregationFuzzerTest.cpp：https://github.com/facebookincubator/pollux/blob/main/pollux/functions/prestosql/fuzzer/AggregationFuzzerTest.cpp
+
+聚合模糊测试器 (Aggregation Fuzzer) 允许指示结果依赖于输入顺序的函数，并可选地提供自定义结果验证器。该模糊测试器还允许为各个函数提供自定义输入生成器。
+
+与窗口模糊测试器的集成与聚合模糊测试器类似。请参阅
+`WindowFuzzerRunner.h`_ 和 `WindowFuzzerTest.cpp`_。
+
+.. _WindowFuzzerRunner.h：https://github.com/kumo-pub/pollux/blob/main/pollux/exec/fuzzer/WindowFuzzer.h
+
+.. _WindowFuzzerTest.cpp：https://github.com/kumo-pub/pollux/blob/main/pollux/functions/prestosql/fuzzer/WindowFuzzerTest.cpp
+
+## How to run
+
+所有模糊测试器都支持许多强大的命令行参数。
+
+* ``–-steps``：要运行的迭代次数。每次迭代生成并评估一个表达式或聚合。默认值为 10。
+
+* ``–-duration_sec``：运行时间（以秒为单位）。如果同时指定了 ``-–steps`` 和 ``-–duration_sec``，则优先使用 –duration_sec。
+
+* ``–-seed``：用于生成随机表达式和输入向量的种子。
+
+* ``–-verbosity=1``：详细日志记录（来自 [turbo Logging Library](https://github.com/gottingen/turbo)）。
+
+* ``–-only``：用于生成表达式的函数列表（以逗号分隔）。
+
+* ``--num_batches``：要生成的大小为 `--batch_size` 的输入向量数量。默认值为 10。
+
+* ``–-batch_size``：要生成的输入向量的大小。默认值为 100。
+
+* ``--null_ratio``：在计划中添加空常量或向量中添加空值的概率（以 0 到 1 的双精度数表示）。默认值为 0.1。
+
+* ``--max_num_varargs``：模糊测试器将为接受可变参数的函数生成的最大可变参数数量。除了函数所需的参数外，模糊测试器还将为可变参数列表生成最多 max_num_varargs 个参数。默认值为 10。
+
+* ``--presto_url``：Presto 协调器 URI 及端口。
+
+* ``--req_timeout_ms``：对参考数据库（例如 Presto）发出的 HTTP 请求的超时时间（以毫秒为单位）。
+
+此外，Window Fuzzer支持根据参考数据库验证窗口查询结果：
+
+* ``--enable_window_reference_verification``：设置为 true 时，窗口聚合的结果将与参考数据库结果进行比较。默认值为 false。
+
+`WindowFuzzerTest.cpp`_ 和 `AggregationFuzzerTest.cpp`_ 允许使用 Presto 验证结果。要将 Presto 设置为参考数据库，请遵
+循以下 `说明`_。以下标志控制与 Presto 集群的连接：``--presto_url`` 是 http 服务器 URL 及其端口号，``--req_timeout_ms`` 是设置请求
+超时时间（以毫秒为单位）。默认情况下，超时时间为 1000 毫秒，但如果此时间对于某些查询而言不足，可以增加超时时间。示例命令：
+
+```text
+
+    pollux/functions/prestosql/fuzzer:pollux_window_fuzzer_test --enable_window_reference_verification --presto_url="http://127.0.0.1:8080" --req_timeout_ms=2000 --duration_sec=60 --logtostderr=1 --minloglevel=0
+```
+
+
+## How to reproduce failures
+
+与 :doc:`Expression Fuzzer </develop/testing/expression-fuzzer>` 类似，开发者
+可以将 ``--seed`` 与 Aggregation Fuzzer 和 Window Fuzzer 结合使用来重现失败的迭代。
+
+使用 Aggregation Fuzzer 时，开发者还可以在运行 fuzzer 时使用 ``--repro_persist_path`` 将输入向量和聚合查
+询计划保存到文件中。然后，开发者可以使用 tests/exec/pollux_aggregation_runner_test
+重新运行已保存的查询计划，并保存输入向量。

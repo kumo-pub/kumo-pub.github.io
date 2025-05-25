@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[52332],{44573:e=>{e.exports="/feature-requests"}}]);

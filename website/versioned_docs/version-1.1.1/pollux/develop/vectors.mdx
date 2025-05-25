@@ -1,0 +1,438 @@
+# Vectors(向量)
+
+Pollux 向量是一种列式内存格式，用于在执行期间存储查询数据。它与 Arrow 类似，但编码方式更多，并且对字符串、
+数组和 Map 的布局也有所不同，从而支持乱序写入。向量是 Pollux 库的基础。
+
+Pollux 向量支持：`标量和复杂类型</develop/types>`，并有几种不同的编码。
+
+支持的编码有：
+
+* Flat(平面编码)
+* Constant(常量编码)
+* Dictionary(字典编码)
+* Bias(偏差编码)
+* Sequence(序列编码)
+
+在本指南中，我们将讨论平面编码、常量编码和字典编码。偏差编码和
+序列编码不在本指南的讨论范围内。
+
+单个向量表示单列的多行。RowVector 用于表示多列的行集合，以及结构体类型的单列的行集合。
+
+每个向量都有类型、编码和大小。向量大小是指存储在向量中的行数。平面编码、常量编码和字典编码可以与任何类型组合使用。
+
+## 缓冲器 {#buffers}
+
+矢量数据使用一个或多个缓冲区存储在内存中。缓冲区是一段连续的字节。缓冲区采用引用计数，必须由 BufferPtr 持
+有。缓冲区可以拥有自己的内存，也可以表示外部管理内存的视图 (BufferView)。拥有自己内存的缓冲区 (AlignedBuffer)
+从 MemoryPool 分配内存。如果只有一个引用指向该缓冲区，则该缓冲区可以处于可变状态，例如，该缓冲区被唯一引用。如果一个缓冲区有多个引用，则该缓冲区为只读。
+
+缓冲区本身没有类型，但它们提供了特定于类型的便捷方法。
+
+`AlignedBuffer::allocate<T>(size, pool)` 静态方法从 MemoryPool 中分配一个缓冲区，该缓冲区至少可容纳 `size` 个`T` 类型的值。
+
+分配一个缓冲区来存储 100 个 64 位整数：
+
+```cpp
+    BufferPtr values = AlignedBuffer::allocate<int64_t>(100, pool);
+````
+
+生成的缓冲区长度至少为 `sizeof(int64_t) * 100 = 800` 字节。你可以
+通过 `as<T>()` 模板方法访问原始缓冲区进行读取，并使用 `asMutable<T>()` 模板方法进行写入：
+
+```cpp
+
+    // Read-only access.
+    const int64_t* rawValues = values->as<int64_t>();
+
+    // Read-write access.
+    int64_t* rawValues = values->asMutable<int64_t>();
+```
+分配一个缓冲区来存储 100 个布尔标志：
+
+```cpp
+
+    BufferPtr flags = AlignedBuffer::allocate<bool>(100, pool);
+```
+
+生成的缓冲区长度至少为 100 / 8 = 13 个字节（Pollux 为每个布尔标志仅使用 1 位）。与其他类
+型不同，布尔值不能通过布尔指针单独访问。相反，您可以将缓冲区解释为一个连续的 64 位无符号整数数组，
+并使用`bits`命名空间中的辅助方法访问各个值。
+
+```cpp
+
+    // Read-only access.
+    const uint64_t* rawFlags = flags->as<uint64_t>();
+
+    // Check if flag # 12 is set.
+    bool active = bits::isBitSet(rawFlags, 12);
+
+    // Read-write access.
+    uint64_t* rawFlags = flags->asMutable<uint64_t>();
+
+    // Set flag 15 to true/on.
+    `bits::setBit(rawFlags, 15)`;
+
+    // or
+    bits::setBit(rawFlags, 15, true);
+
+    // Set flag 16 to false/off.
+    bits::clearBit(rawFlags, 16);
+
+    // or
+    bits::setBit(rawFlags, 16, false);
+```
+由于缓冲区没有类型，因此缓冲区的大小反映的是缓冲区中的字节数，而不是值的数量。
+
+## 空标志 {#null-flags}
+
+每个向量包含一组可选的空值标志，用于标识具有空值的行。如果给定向量中没有空值，则可能不存在空值标志。空值标志按位打包成一个 64 位无符号整数数组。
+零表示空值。一表示非空值。（这种违反直觉的选择是为了与 Arrow 兼容。）
+
+下图中位置 2、7 和 11 为空。
+
+import nulls from '@site/static/img/pollux/images/nulls.png';
+
+<img width="150" align="center" src={nulls}/>
+
+
+BaseVector 是所有向量的基类。它包含向量中存储的值的类型（例如 INTEGER 还是 VARCHAR）、空值缓冲区以及向量中的行数。
+
+```cpp
+
+    std::shared_ptr<const Type> type_;
+    BufferPtr nulls_;
+    vector_size_t length_ = 0;
+```
+向量始终由 std::shared_ptr 使用 VectorPtr 别名保存。
+
+```cpp
+
+    using VectorPtr = std::shared_ptr<BaseVector>;
+```
+`bits`命名空间包含许多用于处理空值缓冲区的便捷函数。
+
+```cpp
+
+    // Check if position #12 is null.
+    bool isNull = bits::isBitNull(rawNulls, 12);
+
+    // Set position #12 to null.
+    bits::setNull(rawNulls, 12);
+    bits::setNull(rawNulls, 12, true);
+
+    // Set position #12 to non-null.
+    bits::clearNull(rawNulls, 12);
+    bits::setNull(rawNulls, 12, false);
+```
+
+## 平面向量 - 标量类型 {#flat-vectors-scalar-types}
+
+
+标量类型的扁平向量使用 `FlatVector<T>` 模板表示，其中 T 是标量类型的 C++ 类型。向量中存储的值自然也使用 C++ 类型。
+
+`FlatVector<T>` 包含一个值缓冲区，如果 `T = StringView`，则包含一个或多个字符串缓冲区。值缓冲区是一个连续的字节缓冲区，
+每个值的大小为 `sizeof(T)` 个字节，包括 null 值。不同类型每个值的字节数不同。布尔值采用位打包，每 8 个值占用 1 个字节。
+
+```cpp
+
+    BufferPtr values_;
+    std::vector<BufferPtr> stringBuffers_;
+```
+`FlatVector<T>` 使用 BaseVector 作为基类，并从中获取类型、大小和空缓冲区。扁平向量与所有其他向量一样，由 std::shared_ptr 使用 FlatVectorPtr 别名保存。
+
+```cpp
+
+    template <typename T>
+    `using FlatVectorPtr = std::shared_ptr<FlatVector<T>>`;
+```
+下图展示了一个包含 12 个值的 INTEGER 类型的扁平向量。该向量表示为 `FlatVector<int32_t>`。`values_` 缓冲区至少
+可容纳 12 个连续的条目，每个条目长度为 4 字节。`nulls_` 缓冲区至少可容纳 12 个连续的条目，每个条目长度为 1 位。位置 2、7、11 的值为
+null，例如 `nulls_` 缓冲区中的位 2、7、11 为 0。`nulls_` 缓冲区中的其余位为 1。`values_` 缓冲区中的条目 2、7、11 包含垃圾数据。
+
+import flat_vector from '@site/static/img/pollux/images/flat-vector.png';
+
+<img width="300" align="center" src={flat_vector}/>
+
+
+所有标量值（包括字符串）都是固定宽度的，例如，每个值都存储在固定数量的字节中。由于字符串的长度可变，因
+此实际的字符串存储在一组与值缓冲区分开的字符串缓冲区中。值缓冲区存储 16 字节的 StringView，这些 StringView 由 4 字节的字符
+串大小、4 字节的前缀和 8 字节的指针组成，该指针指向其中一个字符串缓冲区中的完整字符串。短字符串（最多 12 个字符）完全存储在 StringView
+结构体中。它们占用前缀和指针占用的空间。
+
+import string_view_layout from '@site/static/img/pollux/images/string-view-layout.png';
+
+<img width="300" align="center" src={string_view_layout}/>
+
+下图展示了长字符串和短字符串在内存中表示的区别。“Yellowstone National Park”是一个25个字符长的字符串，
+由于太长，无法内联。因此，StringView 在字符串缓冲区中存储了一个4字节的前缀“Yell”和一个指向整个字符串的指针。`“heavy rain”`字符串
+只有10个字符长，因此以内联方式存储在StringView中。将长字符串的前缀存储在StringView中可以优化比较操作。
+
+import string_views from '@site/static/img/pollux/images/string-views.png';
+
+<img width="600" align="center" src={string_views}/>
+
+
+字符串缓冲区中的字符串不一定按顺序出现，并且各个字符串之间可能存在间隙。单个向量可以使用一个或多个字符串缓冲区。
+
+下图显示了一个包含 8 个值的 VARCHAR 类型的向量。该向量表示为 `FlatVector<StringView>`。`values_` 缓冲区至少有 8 个条
+目（每个条目 16 字节）的空间。`stringBuffers_` 数组有一个条目，包含非内联字符串的连接。`values_` 缓冲区中的每个条目使用 4 个字节来存储字符串的大小。
+
+import string_vector from '@site/static/img/pollux/images/string-vector.png';
+
+<img width="700" align="center" src={string_vector}/>
+
+
+固定宽度值允许无序填充向量，例如，先写入第 5 行的值，然后再写入第 2 行的值。这在评估条件表达式时非常有用。
+
+:::info
+
+    Pollux vector of any type (scalar or complex) can be written out of order.
+    This is the main difference between the Pollux vectors and Arrow arrays.
+:::
+
+允许字符串缓冲区中的字符串以无序形式出现，且各个字符串之间有间隙，可以实现 substr 和 split 等函数的零拷贝实
+现。这些函数的结果由原始字符串的子字符串组成，因此可以使用指向与输入向量相同的字符串缓冲区的 StringView。
+
+将 [`presto substr(s, 2)`](https://prestodb.io/docs/current/functions/string.html#substr-string-start-varchar) 函数应用于上面显示的向量的结果如下所示：
+
+import substr_result from '@site/static/img/pollux/images/substr-result.png';
+
+<img width="700" align="center" src={substr_result}/>
+
+
+此向量使用与原始向量相同的字符串缓冲区。它只是使用 std::shared_ptr 引用它。各个 StringView 条目要么包含内联字符串，要么引用原始字符串缓冲区中的位置。
+在应用 [`presto substr(s, 2)`](https://prestodb.io/docs/current/functions/string.html#substr-string-start-varchar) 函数后，
+位置 1 处的字符串变得足够短，可以放入 StringView 中，因此它不再包含指向字符串缓冲区中位置的指针。
+
+允许这些仅更改字符串起始位置/长度的函数的零拷贝实现，意味着我们最终可能会得到指向 `stringBuffers`
+中重叠范围的 StringView。因此，`stringBuffers` 中的缓冲区应被视为不可变的，以防止意外的级联修改。
+
+TIMESTAMP 类型的扁平向量用 `FlatVector<Timestamp>` 表示。Timestamp 结构体由两个 64 位整数组成：秒和纳秒。每个条目占用 16 个字节。
+
+```cpp
+
+    int64_t seconds_;
+    uint64_t nanos_;
+```
+## 常量向量 - 标量类型 {#constant-vector-scalar-types}
+
+常量向量使用 `ConstantVector<T>` 模板表示，该模板包含一个值和一个布尔值，用于指示该值是否为空。如果 T = StringView 且字符串长度超过 12 个字符，则它可能包含一个字符串缓冲区。
+
+```cpp
+
+    T value_;
+    bool isNull_ = false;
+    BufferPtr stringBuffer_;
+```
+`BaseVector::createConstant()` 静态方法可用于从标量值创建常量向量。
+
+```cpp
+
+    static std::shared_ptr<BaseVector> createConstant(
+        const TypePtr& type,
+        variant value,
+        vector_size_t size,
+        pollux::memory::MemoryPool* pool);
+```
+
+## 字典向量 - 标量类型 {#dictionary-vector-scalar-types}
+
+字典编码用于紧凑地表示包含大量重复值的向量，以及过滤器或类似过滤器操作的结果，而无需复制数据。字典编码也可用于表示排序操作的结果，而无需复制数据。
+
+标量类型的字典向量由 `DictionaryVector<T>` 模板表示。字典向量包含一个指向基向量的共享指针，该基向量可以是平面的，也可以不是平面的，以及一个指向基向量的索引缓冲区。索引是 32 位整数。
+
+```cpp
+
+    BufferPtr indices_;
+    VectorPtr dictionaryValues_;
+```
+这是一个 VARCHAR 类型的字典向量，用于表示颜色。基向量仅包含 5 个条目：红色、蓝色、黄色、粉色、紫色和金色。字典向量
+包含一个指向基向量的 std::shared_ptr 指针，以及一个缓冲区，其中包含指向该向量的索引。字典向量中的每个条目都指向基向量中的一个条目。条目 0
+和 2 都指向基向量中包含“红色”的条目 0。条目 1、4、5、10 指向相同但不同的条目 1，该条目包含“蓝色”。这种编码避免了复制
+重复的字符串。
+
+import dictionary_repeated2_png from '@site/static/img/pollux/images/dictionary-repeated2.png';
+
+<img width="500" align="center" src={dictionary_repeated2_png}/>
+
+
+多个字典向量可以引用同一个基向量。我们说，字典向量包裹了基向量。
+
+这是一个 INTEGER 类型的字典，表示过滤器的结果：`n % 2= 0`。基向量包含 12 个条目。其中只有 6 个条目通过了过滤器，因此字典向量的大小为 6。
+索引缓冲区包含 6 个条目，它们指向原始向量中通过过滤器的位置。
+
+import dictionary_subset2 from '@site/static/img/pollux/images/dictionary-subset2.png';
+
+<img width="500" align="center" src={dictionary_subset2}/>
+
+
+当过滤器或类似过滤器的操作应用于多列时，结果可以表示为多个字典向量，它们共享相同的索引缓冲区。这可以减少索引缓冲区所需的内存量，并通过剥离共享字典实现高效的表达式求值。
+
+字典编码用于表示连接的结果，其中探测端的列被包装到字典中，以避免在构建端出现重复的、具有多个匹配项的行。字典编码也用于表示取消嵌套的结果。
+
+字典编码用于表示连接的结果，其中探测端的列被包装到字典中，以避免在构建端出现重复的、具有多个匹配项的行。字典编码也用于表示取消嵌套的结果。
+
+`BaseVector::wrapInDictionary()` 静态方法可用于将任何给定的向量包装到字典中。
+
+```cpp
+  static std::shared_ptr<BaseVector> wrapInDictionary(
+      BufferPtr nulls,
+      BufferPtr indices,
+      vector_size_t size,
+      std::shared_ptr<BaseVector> vector);
+```
+BaseVector 中定义的 **wrappedVector()** 虚方法提供对字典最内层向量的访问，例如：`Dict(Dict(Flat))->wrappedVector()` 返回 Flat。
+
+BaseVector 中定义的 **wrappedIndex(index)** 虚方法将字典向量中的索引转换为最内层向量中的索引，例如：对于上面的字典向量，`wrappedIndex(3)` 返回 6。
+
+字典向量拥有独立于基向量空值缓冲区的空值缓冲区。这使得即使基向量没有空值，字典向量也可以表示空值。我们称之为“字典包装会向基向量添加空值”。
+
+以下是示例。字典中的条目 #4 被标记为空值。索引缓冲区中对应的条目包含垃圾数据，不应被访问。
+
+import dictionary_with_nulls from '@site/static/img/pollux/images/dictionary-with-nulls.png';
+
+<img width="500" align="center" src={dictionary_with_nulls}/>
+
+## 平面向量 - 复杂类型 {#flat-vectors-complex-types}
+
+复杂类型 ARRAY、MAP 和 ROW/STRUCT 的平面向量分别使用 ArrayVector、MapVector 和 RowVector 表示。
+
+## 数组向量 {#array-vector}
+
+ArrayVector 存储数组类型的值。除了空值缓冲区外，它还包含偏移量、大小缓冲区以及一个元素向量。偏移量和大小均为 32 位
+整数。向量中由偏移量和大小构成的非空非空范围不允许相互重叠。
+
+```cpp
+
+    BufferPtr offsets_;
+    BufferPtr sizes_;
+    VectorPtr elements_;
+```
+
+元素向量包含所有数组的所有元素。特定数组中的元素按顺序相邻排列。每个数组条目
+包含偏移量和大小。偏移量指向元素向量中数组的第一个元素。大小指定数组中元素的数量。
+
+这是一个例子。
+
+import array_vector from '@site/static/img/pollux/images/array-vector.png';
+
+<img width="400" align="center" src={array_vector}/>
+
+我们将数组向量称为顶层向量，将元素向量称为嵌套向量或内部向量。在上面的示例中，顶层数组有 4 个顶层行，而元素数组有 11 个嵌套行。前 3 个嵌套行
+对应于第 0 个顶层行。接下来的 2 个嵌套行对应于第 1 个顶层行。接下来的 4 个嵌套行对应于第 2 个顶层行。
+剩下的 2 个嵌套行对应于第 3 个顶层行。
+
+元素向量中的值可能与数组向量中的值出现顺序不同。以下是相同逻辑数组向量的另一种布局示例。这里，元素数组中的值以不同的
+顺序出现，例如首先是第 0 个顶层行的元素，然后是第 2 个顶层行的元素，接着是第 1 个顶层行的元素，最后是
+第 3 个顶层行的元素。偏移量已调整，以指向元素数组中的正确条目。大小保持不变。
+
+import array_out_of_order from '@site/static/img/pollux/images/array-out-of-order.png';
+
+<img width="400" align="center" src={array_out_of_order}/>
+
+
+同时指定偏移量和大小允许乱序写入数组向量，例如，先写入条目 5，再写入条目 3。
+
+空数组通过将大小设置为零来指定。空数组的偏移量被视为未定义，可以是任意值。考虑将空数组的偏移量设置为零。
+
+空数组和空数组并不相同。
+
+元素向量可能具有一个独立于数组向量本身的空缓冲区的空值缓冲区。这使我们能够指定包含部分或全部空元素的非空数组。空数组和所有空元素的数组并不相同。
+
+## 键值 {#map-vector}
+
+
+MapVector 存储 MAP 类型的值。除了空值缓冲区外，它还包含偏移量和大小缓冲区、键和值向量。偏移量和大小均为 32 位整数。
+向量中由偏移量和大小构成的非空非空范围不允许相互重叠。
+
+
+```cpp
+
+    BufferPtr offsets_;
+    BufferPtr sizes_;
+    VectorPtr keys_;
+    VectorPtr values_;
+```
+这是一个例子。
+
+import map_vector from '@site/static/img/pollux/images/map-vector.png';
+
+<img width="700" align="center" src={map_vector}/>
+
+
+与数组向量类似，各个映射条目会按顺序一起出现在键和值向量中。但是，顶层映射 #4 的映射条目不必出现在顶层映射 #5 的映射条目之前。
+
+空映射可以通过将 size 设置为零来指定。空映射的偏移量被视为未定义，可以是任意值。请考虑将空映射的偏移量设置为零。
+
+空映射和空映射不同。
+
+键和值向量可以具有彼此独立的空值缓冲区，并且独立于映射向量本身的空值缓冲区。这使我们能够指定非空映射，其中部分或所有值为空。从技术上讲，
+映射也可能具有空键，尽管这在实践中可能不太有用。空映射和所有值都为空的映射并不相同。
+
+映射向量布局并不保证或要求各个映射的键是唯一的。然而，在实践中，创建映射的地方（例如 ORC 和 Parquet 读取器、:func:`map` 函数等）会确保映射键是唯一的。
+
+## 行向量 {#row-vector}
+
+最后，RowVector 存储 ROW 类型的值（例如结构体）。除了空值缓冲区外，它还包含一个子向量列表。
+
+```cpp
+
+    std::vector<VectorPtr> children_;
+```
+这是一个例子。
+
+import row_vector from '@site/static/img/pollux/images/row-vector.png';
+
+<img width="700" align="center" src={row_vector}/>
+
+
+行向量可以包含任意数量的子向量，包括零个。
+
+对于行向量中的每个顶层行，每个子向量中都恰好有一行。
+
+子向量可能包含自己的空值缓冲区，因此，顶层结构体值可能为非空，但部分或所有子字段为空。空值结构体不同于所有字段都为空的结构体。
+顶层结构体为空的行的子字段值未定义。
+
+RowVector 用于表示结构体类型的单个列，以及查询执行期间从一个运算符传递到下一个运算符的列集合。
+
+## 常量向量 - 复杂类型 {#constant-vector-complex-types}
+
+
+复杂类型的常量向量用 `ConstantVector<ComplexType>` 表示，其中 ComplexType 是一种特殊的标记类型，适用于所有复杂类型。
+ARRAY(INTEGER) 类型的常量向量和 MAP(TINYINT, VARCHAR) 类型的常量向量由同一个类 `ConstantVector<ComplexType>` 表示。
+
+`ConstantVector<ComplexType>` 通过指向另一个向量中的特定行来标识特定的复杂类型值。
+
+```cpp
+
+    VectorPtr valueVector_;
+    vector_size_t index_;
+```
+
+下图展示了一个 ARRAY(INTEGER) 类型的复数向量，表示一个包含 4 个整数的数组：`[10, 12, -1, 0]`。它被定义为指向其他 ArrayVector 中第 2 行的指针。
+
+import constant_array_vector from '@site/static/img/pollux/images/constant-array-vector.png';
+
+<img width="800" align="center" src={constant_array_vector}/>
+
+使用 BaseVector::wrapInConstant() 静态方法创建一个复杂类型的常量向量。任何向量都可以包装成常量向量。当对非平面向量使用 wrapInConstant() 时，
+生成的常量向量最终会引用最内层的向量，例如，wrapInConstant(100, 5, Dict
+(Flat)) 返回 `ConstantVector<ComplexType>`(100, Dict->wrappedIndex(5), Flat)。
+
+```cpp
+
+    static std::shared_ptr<BaseVector> wrapInConstant(
+        vector_size_t length,
+        vector_size_t index,
+        std::shared_ptr<BaseVector> vector);
+```
+BaseVector 中定义的 **wrappedVector()** 虚方法提供对底层平面向量的访问。
+
+BaseVector 中定义的 **wrappedIndex(index)** 虚方法返回底层平面向量中用于标识常量值的索引。此方法返
+回所有输入的相同值，因为常量向量的所有行都映射到底层平面向量的同一行。
+
+## 字典向量 - 复杂类型 {#dictionary-vector-complex-types}
+
+与常量向量类似，复杂类型的字典向量用 `DictionaryVector<ComplexType>` 表示，其中 ComplexType 是一种特殊的标记类型，适用于所有复杂
+类型。ARRAY (INTEGER) 类型的字典向量和 MAP(TINYINT, VARCHAR) 类型的字典向量都用同一个类 `DictionaryVector<ComplexType>`
+表示。除此之外，复杂类型的字典向量与标量类型的字典向量没有任何区别。

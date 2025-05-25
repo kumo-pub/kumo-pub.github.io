@@ -1,0 +1,136 @@
+# SIMD Usage in Pollux
+
+SIMD 使用 CPU 中的特殊寄存器来同时操作多个原始数据。在某些基本情况下，编译器能够将紧密循环转换为 SIMD 指令，但通常我们需要显式调用 SIMD 内部函数。
+
+在 Pollux 中，我们有几个地方显式使用了 SIMD 来获得更好的性能。我们使用 `ksimd`_ 作为内部函数的零成本抽象，以解决可移植性问题。
+
+
+## Architectures
+
+
+在 Pollux 中，我们支持多种 CPU 架构的 SIMD：X86 和 ARM。
+X86有第三代SIMD技术：SSE、AVX和AVX512。ARM有NEON和SVE。光纤通道架构有其自己的寄存器尺寸，我们总结如下：
+
+| Architecture | Register Size (bits) | Used in Pollux CPU Family | CPU Family |
+|--------------|----------------------|---------------------------|------------|
+| SSE          | 128                  | Yes                       | x86        |
+| AVX          | 256                  | Yes                       | x86        |
+| AVX512       | 512                  | No                        | x86        |
+| NEON         | 128                  | Yes                       | ARM        |
+| SVE          | 128 - 2048           | No                        | ARM        |
+
+
+## ksimd Basics
+
+
+``ksimd`` 中用于表示 SIMD 寄存器的数据结构是 ``batch<T, A>``。
+``T`` 代表元素数据类型，``A`` 代表架构。
+例如，``batch<int32_t, avx2>`` 表示一个包含 AVX2 架构上 32 位有符号整数的 SIMD 向量。该类型只有一个
+名为 ``data`` 的字段，它是底层 SIMD 寄存器（例如，对于 AVX，它可以是 ``__m256``、``__m256d`` 或 ``__m256i``）。这确
+保了该数据结构可以直接优化为寄存器，而不会在运行时产生任何开销。
+
+当比较两个 SIMD 向量（例如 ``x == y``）时，会根据架构产生两种结果类型。对于 AVX512，比较结果以位掩码（每个元素 1 位，最
+多 64 位）的形式保存在一个普通整数中。对于所有其他架构，结果保存在另一个与操作数通道数相同的 SIMD 寄存器中，结果中的每个元素都被
+设置为 -1（“true”）或 0（“false”）。在 ``ksimd`` 中，这两种类型被统一为一个类型：``batch_bool<T, A>``。``T`` 是比较操作数的
+元素类型，``A`` 是架构。
+
+``ksimd`` 提供了一些函数和运算符来抽象不同架构上的内在函数，包括基本算术、比较、按位运算、数学函数以及从内存加载或存储。
+
+## SIMD Utilities
+
+
+有一些内部函数尚未被“ksimd”抽象出来。我们在“common/base/SimdUtil.h”中添加了 Pollux 中常用的函数。
+
+### HalfBatch
+
+
+在“ksimd”中，向量大小由架构“A”唯一决定。但在某些情况下，我们需要不同大小的向量，例如在 Gather 操作
+中，如果数据类型为 64 位，而索引类型为 32 位，则索引向量的大小需要为数据向量的一半。为了满足这种需求，我们定义了一个类型`HalfBatch<T, A>`来获取相应的向量类型。
+
+在某些情况下，当默认向量大小为 128 位时，没有对应的 64 位 SIMD 向量可用作“HalfBatch”。在这种情况下，我们定
+义并使用一个类型`Batch64<T>`，其某些方法和操作符与`batch<T, A>`相同，以便可以互换使用它们。
+
+### Gather
+
+
+Gather 是一种从非连续内存加载向量的操作。最简单的形式是，给定一个`base`和一个`index`列表（保存在一个 SIMD 向量中），Gather
+会返回另一个包含所有元素的向量。
+
+```cpp
+
+   base + indices[0]
+   base + indices[1]
+   ...
+   base + indices[n]
+```
+
+Gather 的一个变体名为`maskGather`，它接受一个额外的向量`src`和一个`batch_bool`掩码，仅当`mask[i]`被设置时才
+从相应的内存地址加载数据，否则使用`src[i]`中的元素。换句话说，该函数返回`dst`，其中
+
+```cpp
+   if mask[i]
+     dst[i] = load(base + indices[i])
+   else
+     dst[i] = src[i]
+```
+
+### Bit Masks
+
+
+如上所述，`batch_bool`用于表示比较结果，底层数据可以是位掩码或SIMD向量。
+为了方便我们操作此结果，我们提供了一些实用程序来在`batch_bool`和位掩码之间进行转换
+（`toBitMask`和`fromBitMask`）。将其转换为位掩码后，即可对其进行常规的位操作。我们还提供了`leadingMask`和`allSetBitMask`等实用程序，使位操作更加轻松快捷。
+
+### Filter
+
+
+`SimdUtil.h`中的另一个重要函数是`filter`。它接受一个
+SIMD 向量`data`和一个`bitMask`，然后对于每个设置了`bitMask[i]`的`i`，我们将相应的`data[i]`移到最前面并返回结果。
+这和`std::partition`非常相似。换句话说，该函数
+返回“dst”，其中
+
+```cpp
+
+   j = 0
+   for i in 0 to n
+     if bitMask[i]
+       dst[j++] = data[i]
+   for i in 0 to n
+     if not bitMask[i]
+       dst[j++] = data[i]
+```
+
+## BMI Utilities
+
+
+除了 SIMD 抽象和实用程序之外，我们还有一些依赖于 BMI2 内部函数的函数。我们在“common/base/BitUtil.h”中定义了它们的可移植
+版本。这些函数包括`extractBits`和`rotateLeft`。与 SIMD 相比，它们相对简单且独立，
+您可以参考文件中的文档了解它们的用法。
+
+## Use Cases
+
+
+### Hash Table
+
+
+在“BigintValuesUsingHashTable::testValues”中，我们使用 SIMD 来检查哈希表中是否同时存在多个值。在哈希表中，我们
+使用一个特殊的空标记来指示值缺失。流程如下：
+
+1. 如果所有值都超出范围，则返回 false。
+2. 如果哈希表中已插入空标记，则回退并逐个检查值。
+3. 使用 SIMD 乘法和模运算对所有有效值进行哈希运算，然后使用“maskGather”获取哈希表中的对应状态。
+4. 如果状态为空标记，则表示值缺失；如果状态等于值，则表示找到了该值。否则，我们会遇到哈希冲突，需要查找哈希表中的下一个位置。
+如果没有发生冲突，我们可以立即返回结果。
+5. 对于每个发生冲突的值，我们使用 SIMD 一次性推进多个位置，直到找到匹配的值或空标记。
+
+### Filtering
+
+
+使用 SIMD 过滤值的典型用例位于“dwio/dwrf/common/DecoderUtil.h”中的“processFixedFilter”。此函数对一批值执行过
+滤器评估，并将该批值中传递的行号存储到“filterHits”，将传递的值存储到“rawValues”。
+
+使用“Filter::testValues”对值进行过滤，结果存储在位掩码中。然后，我们将位掩码传递给“simd::filter”以存储索引和值。最
+后，我们将位掩码的 popcount 值增加到“numValues”。
+
+请注意，当数据类型长度为 16 位时，我们需要分两批执行该过程（``loadIndices(0)`` 和 ``loadIndices(1)``），因为索引长度
+为 32 位，而一个 SIMD 向量不足以包含所有所需的索引。

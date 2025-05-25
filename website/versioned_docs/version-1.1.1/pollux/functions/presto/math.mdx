@@ -1,0 +1,477 @@
+# Mathematical Functions
+
+```cpp
+    abs(x) -> [same as x]
+
+   返回“x”的绝对值。
+```
+
+```cpp
+    cbrt(x) -> double
+
+    返回“x”的立方根。
+```
+
+```cpp
+    ceil(x) -> [same as x]
+
+    这是 :func:`ceiling` 的别名。
+```
+
+```cpp
+    ceiling(x) -> [same as x]
+
+    返回“x”向上舍入到最接近的整数。
+```
+
+```cpp
+    clamp(x, low, high) -> [same as x]
+
+    如果“x”小于“low”，则返回“low”。如果“x”大于“high”，则返回“high”。
+    否则返回“x”。
+
+    “low”预计小于或等于“high”。出于性能原因，此预期未经验证。当“low”大于“high”时，对所有“x”值返回“high”。
+```
+
+```cpp
+    cosine_similarity(map(varchar, double), map(varchar, double)) -> double
+
+    返回以 map(varchar, double) 表示的向量之间的[余弦相似度](https://en.wikipedia.org/wiki/Cosine_similarity)。
+    如果任何输入映射为空，则该函数返回 NaN。
+```
+
+```sql
+        SELECT cosine_similarity(MAP(ARRAY['a'], ARRAY[1.0]), MAP(ARRAY['a'], ARRAY[2.0])); -- 1.0
+
+        SELECT cosine_similarity(MAP(ARRAY['a', 'b'], ARRAY[1.0, 2.0]), MAP(ARRAY['a', 'b'], ARRAY[NULL, 3.0])); -- NULL
+
+        SELECT cosine_similarity(MAP(ARRAY[], ARRAY[]), MAP(ARRAY['a', 'b'], ARRAY[2, 3])); -- NaN
+```
+```cpp
+    degrees(x) -> double
+
+    Converts angle x in radians to degrees.
+```
+
+```cpp
+    divide(x, y) -> [same as x]
+
+    返回 x 除以 y 的结果。x 和 y 的类型必须相同。
+    除以零的结果取决于输入类型。对于整数类型，
+    除以零会导致错误。对于浮点类型，
+    如果 x 大于零，则除以零返回正无穷大；如果 x 小于零，则除以零返回负无穷大；如果 x 等于零，则除以零返回 NaN。
+```
+
+```cpp
+    e() -> double
+
+    Returns the value of Euler's Constant.
+```
+
+```cpp
+    exp(x) -> double
+
+   返回欧拉数的“x”次方。
+```
+
+```cpp
+    floor(x) -> [same as x]
+
+    返回向下舍入到最接近的整数的“x”。
+```
+
+```cpp
+    from_base(string, radix) -> bigint
+
+    返回以“radix”为基数的“string”值。“radix”必须介于 2 到 36 之间。
+```
+
+```cpp
+    ln(x) -> double
+
+    返回“x”的自然对数。
+```
+
+```cpp
+    log2(x) -> double
+
+    返回“x”的以 2 为底的对数。
+```
+
+```cpp
+    log10(x) -> double
+
+    返回“x”的以 10 为底的对数。
+```
+
+```cpp
+    minus(x, y) -> [same as x]
+
+    返回 x 减 y 的结果。x 和 y 的类型必须相同。
+    对于整数类型，溢出会导致错误。
+```
+
+```cpp
+    mod(n, m) -> [same as n]
+
+    返回“n”除以“m”的模数（余数）。
+```
+
+```cpp
+    multiply(x, y) -> [same as x]
+
+    返回 x 乘以 y 的结果。x 和 y 的类型必须相同。
+    对于整数类型，溢出会导致错误。
+```
+
+```cpp
+    negate(x) -> [same as x]
+
+    返回 x 的加法逆元，例如，与 x 相加得出零的数。
+```
+
+```cpp
+    pi() -> double
+
+    返回 Pi 的值。
+```
+
+```cpp
+    plus(x, y) -> [same as x]
+
+    返回 x 与 y 相加的结果。x 和 y 的类型必须相同。
+    对于整数类型，溢出会导致错误。
+```
+
+```cpp
+    pow(x, p) -> double
+
+    This is an alias for :func:`power`.
+```
+
+```cpp
+    power(x, p) -> double
+
+    Returns ``x`` raised to the power of ``p``.
+```
+
+```cpp
+    radians(x) -> double
+
+    将角度 x 以度为单位转换为弧度。
+```
+
+```cpp
+    rand() -> double
+
+    这是 :func:`random()` 的别名。
+```
+
+```cpp
+    random() -> double
+
+    返回范围为“0.0 <= x < 1.0”内的伪随机值。
+```
+
+```cpp
+    random(n) -> [same as n]
+
+    返回范围为“0.0 <= x < n”内的伪随机值。
+```
+
+```cpp
+    round(x) -> [same as x]
+
+    返回四舍五入到最接近的整数“x”。
+```
+
+```cpp
+    round(x, d) -> [same as x]
+
+    返回四舍五入到小数点后 d 位的“x”。
+```
+
+```cpp
+    secure_rand() -> double
+
+    这是:func:`secure_random()` 的别名。
+```
+```cpp
+    secure_random() -> double
+
+    返回范围为“0.0 <= x < 1.0”的加密安全随机值。
+```
+
+```cpp
+    secure_random(lower, upper) -> [same as input]
+
+    返回范围为“lower <= x < upper”内的加密安全随机值，其中“lower < upper”。
+```
+```cpp
+    sign(x) -> [same as x]
+
+    返回“x”的正负号函数。对于整数和浮点数参数，返回：
+    * 如果参数为 0，则返回 0；
+    * 如果参数大于 0，则返回 1；
+    * 如果参数小于 0，则返回 -1。
+
+    对于双精度参数，该函数还会返回：
+    * 如果参数为 NaN，则返回 NaN；
+    * 如果参数为正无穷大，则返回 1；
+    * 如果参数为负无穷大，则返回 -1。
+```
+
+```cpp
+    sqrt(x) -> double
+
+    返回 ``x`` 的平方根。如果 ``x`` 为负数，则返回 ``NaN``。
+```
+
+```cpp
+    to_base(x, radix) -> varchar
+
+    返回“x”的基数“radix”表示。“radix”必须介于 2 到 36 之间。
+```
+
+```cpp
+    truncate(x) -> [same as x]
+
+    返回舍去小数点后数字，并将 x 四舍五入为整数的值。
+    支持的“x”类型为：REAL 和 DOUBLE。
+```
+
+```cpp
+    truncate(x, n) -> [same as x]
+
+    返回截断至小数点后 n 位的 x。n 可以为负数，表示截断小数点后 n 位。
+    支持的“x”类型为：REAL 和 DOUBLE。
+    “n”为 INTEGER 类型。
+```
+
+```cpp
+    width_bucket(x, bound1, bound2, n) -> bigint
+
+    返回具有指定“bound1”和“bound2”边界以及“n”个桶的等宽直方图中“x”的桶号。
+```
+
+```cpp
+    width_bucket(x, bins) -> bigint
+
+    根据数组“bins”指定的bin，返回“x”从零开始的bin编号。“bins”参数必须是双精度数组，不应包含“null”或非有限元素，并且假定按升序排列。
+
+    例如，如果“bins”为“ARRAY[0, 2, 4]”，则有四个bin：
+    “(-infinity(), 0)”、“[0, 2)”、“[2, 4)”和“[4, infinity())”。
+
+    注意：如果函数在“bins”中遇到“null”或非有限元素，则会返回错误。但由于二分查找算法，某些此类元素可能会被忽略，因此函数将返回结果。
+```
+
+## Trigonometric Functions
+
+
+```cpp
+    acos(x) -> double
+
+   返回“x”的反余弦。
+```
+
+
+```cpp
+    asin(x) -> double`
+
+    返回“x”的反正弦。
+```
+
+
+```cpp
+    atan(x) -> double`
+
+   返回“x”的反正切。
+```
+
+```cpp
+    atan2(y, x) -> double
+
+   返回“y / x”的反正切。
+```
+
+```cpp
+    cos(x) -> double
+
+   返回“x”的余弦。
+```
+
+```cpp
+    cosh(x) -> double
+
+    返回“x”的双曲余弦。
+```
+
+```cpp
+    sin(x) -> double
+
+    返回“x”的正弦值。
+```
+
+```cpp
+    tan(x) -> double
+
+    返回“x”的正切。
+```
+
+```cpp
+    tanh(x) -> double
+
+    返回“x”的双曲正切。
+```
+
+
+## Floating Point Functions
+
+```cpp
+    infinity() -> double
+
+    返回表示正无穷大的常数。
+```
+
+```cpp
+    is_finite(x) -> boolean
+
+    确定 x 是否有限。
+```
+
+```cpp
+    is_infinite(x) -> boolean
+
+    确定 x 是否无限。
+```
+
+```cpp
+    is_nan(x) -> boolean
+
+    确定 x 是否不是数字。
+```
+
+```cpp
+    nan() -> double
+
+    返回表示非数字的常数。
+```
+
+## Probability Functions: cdf
+
+```cpp
+    beta_cdf(a, b, value) -> double
+
+    计算给定 a、b 个参数的 `Beta cdf <https://en.wikipedia.org/wiki/Beta_distribution>`_：P(N < value; a, b)。
+    参数 a、b 必须是正实数，value 必须是实数（均为 DOUBLE 类型）。
+    value 必须位于区间 [0, 1] 内。
+```
+
+```cpp
+    binomial_cdf(numberOfTrials, successProbability, value) -> double
+
+    计算给定试验次数和成功概率（单次试验）的二项式累积分布函数：P(N < 值)。
+    成功概率必须是 [0, 1] 之间的实数值，试验次数和值必须是
+    试验次数大于或等于值的正整数
+```
+
+```cpp
+    cauchy_cdf(median, scale, value) -> double
+
+    计算给定参数中位数和尺度 (gamma) 的柯西累积分布函数 (cdf)：P(N; 中位数, 尺度)。
+    尺度参数必须是正双精度数。值参数必须是区间 [0, 1] 上的双精度数。
+```
+
+```cpp
+    chi_squared_cdf(df, value) -> double
+
+    计算给定 df（自由度）参数的卡方累积分布函数 (cdf)：P(N < value; df)。
+    df 参数必须是正实数，value 必须是非负实数（均为 DOUBLE 类型）。
+```
+
+```cpp
+    f_cdf(df1, df2, value) -> double
+
+    计算给定 df1（分子自由度）和 df2（分母自由度）参数的 F cdf：P(N < 值; df1, df2)。
+    分子和分母 df 参数必须是正实数。值必须是非负实数。
+```
+
+```cpp
+    gamma_cdf(shape, scale, value) -> double
+
+    计算给定形状和尺度参数的 Gamma 累积分布函数：P(N < 值; 形状, 尺度)。
+    形状和尺度参数必须是正实数。值必须是非负实数。
+```
+
+```cpp
+    inverse_normal_cdf(mean, sd, p) -> double
+
+    计算给定平均值和标准差 (sd) 的累积概率 (p) 的正态累积分布函数 (cdf) 的倒数：P(N < n)。平均值必须是实数，
+    标准差必须是实数且为正值（均为 DOUBLE 类型）。概率 p 必须位于区间 (0, 1) 内。
+```
+```cpp
+    laplace_cdf(mean, scale, value) -> double
+
+    计算给定均值和尺度参数的拉普拉斯累积分布函数 (cdf)：P(N < 数值; 均值, 尺度)。
+    均值和数值必须是实数，尺度参数必须是正值（均为 DOUBLE 类型）。
+```
+```cpp
+    normal_cdf(mean, sd, value) -> double
+
+    计算给定平均值和标准差 (sd) 的正态累积分布函数 (CDF)：P(`N < 值`; 平均值, sd)。
+    平均值和值必须是实数，标准差必须是实数且为正值（均为 DOUBLE 类型）。
+```
+```cpp
+    poisson_cdf(lambda, value) -> double
+
+    使用给定的 lambda（平均值）参数计算泊松分布的累积分布函数：P(`N <= value`; lambda)。
+    lambda 参数必须是正实数（DOUBLE 类型），并且值必须是非负整数。
+```
+
+```cpp
+    weibull_cdf(a, b, value) -> double
+
+    计算给定参数 a、b 的威布尔分布的累积分布函数：`P(N <= value)`。``a`` 和 ``b`` 参数必
+    须是正双精度数，``value`` 也必须是双精度数。
+```
+
+## Probability Functions: inverse_cdf
+
+```cpp
+    inverse_beta_cdf(a, b, p) -> double
+
+    计算给定 a、b 参数的 Beta 累积分布函数的逆，得到累积概率 (p)：P(N < n)。a、b 参数必须为正
+    实数（均为 DOUBLE 类型）。概率 p 必须位于区间 [0, 1] 内。
+```
+```cpp
+    inverse_weibull_cdf(a, b, p) -> double
+
+    计算给定参数“a”和“b”的威布尔分布的累积分布函数的逆，得到概率“p”。
+    参数“a”和“b”必须是正双精度值。概率“p”必须是区间[0, 1]上的双精度值。
+```
+
+```cpp
+    inverse_cauchy_cdf(median, scale, p) -> double
+
+    计算给定参数“median”和“scale”（gamma）的柯西累积分布函数的逆，得到概率 p。
+    scale 参数必须是正二阶双精度数。概率“p”必须是区间 [0, 1] 上的二阶双精度数。
+```
+```cpp
+    inverse_laplace_cdf(mean, scale, p) -> double
+
+    计算给定“均值”和“尺度”参数的拉普拉斯累积分布函数 (p) 的逆：P(N < n)。
+    均值必须是实数，尺度必须是正实数（均为 DOUBLE 类型）。
+    概率“p”必须位于区间 [0, 1] 内。
+```
+# Statistical Functions
+
+```cpp
+    wilson_interval_lower(successes, trials, z) -> double
+
+    返回伯努利试验过程的威尔逊得分区间的下限，置信度由 z 得分 z 指定。
+```
+```cpp
+    wilson_interval_upper(successes, trials, z) -> double
+
+    返回伯努利试验过程的威尔逊得分区间的上限，置信度由 z 得分 z 指定。
+```

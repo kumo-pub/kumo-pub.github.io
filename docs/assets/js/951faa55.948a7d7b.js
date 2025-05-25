@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[9564],{75253:e=>{e.exports=JSON.parse('{"title":"Changelog","items":[{"title":"1.1.1","permalink":"/changelog/1.1.1","unlisted":false,"date":"2024-08-23T20:00:00.000Z"},{"title":"0.5.2","permalink":"/changelog/0.5.2","unlisted":false,"date":"2024-08-13T20:00:00.000Z"}]}')}}]);

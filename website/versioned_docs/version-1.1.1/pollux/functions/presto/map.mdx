@@ -1,0 +1,282 @@
+# Map Functions
+
+```cpp
+    all_keys_match(x(K,V), function(K, boolean)) -> boolean
+    返回映射中所有键是否都与给定的谓词匹配。如果所有键都与谓词匹配（特殊情况是映射为空），则返回 true；如果一个或多个键
+    不匹配，则返回 false；如果谓词函数对一个或多个键返回 NULL，而对所有其他键返回 true，则返回 NULL。
+```
+
+```sql
+    SELECT all_keys_match(map(array['a', 'b', 'c'], array[1, 2, 3]), x -> length(x) = 1); -- true
+```
+```cpp
+    any_keys_match(x(K,V), function(K, boolean)) -> boolean
+    返回映射中是否有任何键与给定的谓词匹配。如果一个或多个键与谓词匹配，则返回 true；如果没有键匹配，则返回 false（特殊情况是映射为空）；
+    如果谓词函数对一个或多个键返回 NULL，而对所有其他键返回 false，则返回 NULL。
+```
+
+```sql
+    SELECT any_keys_match(map(array['a', 'b', 'c'], array[1, 2, 3]), x -> x = 'a'); -- true
+```
+
+```cpp
+    any_values_match(x(K,V), function(V, boolean)) -> boolean
+
+    返回映射中是否有任何值与给定的谓词匹配。如果一个或多个值与谓词匹配，则返回 true；如果所有值均不匹配（特殊情况是映射为空），则返回 false；如果谓词函数对一个或多个值返回 NULL，而对所有其他值返回 false，则返回 NULL。
+```
+
+```sql
+    SELECT ANY_VALUES_MATCH(map(ARRAY['a', 'b', 'c'], ARRAY[1, 2, 3]), x -> x = 1); -- true
+```
+```cpp
+    cardinality(x) -> bigint
+
+    返回地图“x”的基数（大小）。
+```
+
+```cpp
+    element_at(map(K,V), key) -> V
+
+
+    返回给定“key”的值，如果该键不包含在映射中，则返回“NULL”。
+```
+
+```cpp
+    map() -> map<unknown, unknown>`
+
+    返回一个空地图。
+```
+```sql
+        SELECT map(); -- {}
+```
+```cpp
+    map(array(K), array(V)) -> map(K,V)`
+
+   返回使用给定键/值数组创建的映射。键不允许为空或包含空值。
+    对于 REAL 和 DOUBLE 类型，NaN（非数字）被视为相等。
+```
+
+```sql
+    SELECT map(ARRAY[1,3], ARRAY[2,4]); -- {1 -> 2, 3 -> 4}
+```
+    See also :func:`map_agg` for creating a map as an aggregation.
+
+```cpp
+    map_concat(map1(K,V), map2(K,V), ..., mapN(K,V)) -> map(K,V)`
+
+    返回所有给定映射的并集。如果在多个给定映射中找到某个键，则结果映射中该键的值将来自最后一个映射。
+```
+```cpp
+    map_entries(map(K,V)) -> array(row(K,V))
+
+    返回给定映射中所有条目的数组。
+```
+
+```sql
+    SELECT map_entries(MAP(ARRAY[1, 2], ARRAY['x', 'y'])); -- [ROW(1, 'x'), ROW(2, 'y')]
+```
+
+```cpp
+    map_filter(map(K,V), function(K,V,boolean)) -> map(K,V)
+
+   根据 ``map`` 中 ``function`` 返回 true 的条目构造一个映射
+```
+
+```sql
+    SELECT map_filter(MAP(ARRAY[], ARRAY[]), (k, v) -> true); -- {}
+    SELECT map_filter(MAP(ARRAY[10, 20, 30], ARRAY['a', NULL, 'c']), (k, v) -> v IS NOT NULL); -- {10 -> a, 30 -> c}
+    SELECT map_filter(MAP(ARRAY['k1', 'k2', 'k3'], ARRAY[20, 3, 15]), (k, v) -> v > 10); -- {k1 -> 20, k3 -> 15}
+```
+```cpp
+    map_from_entries(array(row(K, V))) -> map(K, V)
+
+    返回由给定条目数组创建的映射。键不能为空或包含空值。
+```
+
+```sql
+        SELECT map_from_entries(ARRAY[(1, 'x'), (2, 'y')]); -- {1 -> 'x', 2 -> 'y'}
+```
+```cpp
+    map_normalize(map(varchar,double)) -> map(varchar,double)
+
+    返回具有相同键但所有非空值的映射，这些非空值按比例缩放，使值的总和为 1。具有空值的映射条目保持不变。
+
+    当非空值的总和为零时，空值保持为空，
+    零、NaN、无穷大和负无穷大值变为 NaN，
+    正值变为无穷大，负值变为负无穷大。
+```
+
+```sql
+    SELECT map_normalize(map(array['a', 'b', 'c'], array[1, 4, 5])); -- {a=0.1, b=0.4, c=0.5}
+    SELECT map_normalize(map(array['a', 'b', 'c', 'd'], array[1, null, 4, 5])); -- {a=0.1, b=null, c=0.4, d=0.5}
+    SELECT map_normalize(map(array['a', 'b', 'c'], array[1, 0, -1])); -- {a=Infinity, b=NaN, c=-Infinity}
+```
+```cpp
+    map_remove_null_values(map(K,V)) -> map(K,V)
+
+   返回一个映射，该映射移除了输入映射中所有值为空的键。如果输入为空，则输出也为空。如果输入映射为空，则输出映射也为空。
+```
+
+```sql
+    SELECT map_remove_null_values(MAP(ARRAY['ab', 'bc', 'cd'], ARRAY[null, null, null])); -- {}
+    SELECT map_remove_null_values(MAP(ARRAY[], ARRAY[])); -- {}
+    SELECT map_remove_null_values(MAP(ARRAY[1, 2, 3], ARRAY[3, 4, NULL])); -- {1=3, 2=4}
+    SELECT map_remove_null_values(NULL); -- NULL
+```
+```cpp
+    map_subset(map(K,V), array(k)) -> map(K,V)
+
+    根据“map”中键位于给定数组中的条目，构造一个映射。
+    对于包含 REAL 和 DOUBLE 的键，NAN（非数字）被视为相等。
+```
+
+```sql
+    SELECT map_subset(MAP(ARRAY[1,2], ARRAY['a','b']), ARRAY[10]); -- {}
+    SELECT map_subset(MAP(ARRAY[1,2], ARRAY['a','b']), ARRAY[1]); -- {1->'a'}
+    SELECT map_subset(MAP(ARRAY[1,2], ARRAY['a','b']), ARRAY[1,3]); -- {1->'a'}
+    SELECT map_subset(MAP(ARRAY[1,2], ARRAY['a','b']), ARRAY[]); -- {}
+    SELECT map_subset(MAP(ARRAY[], ARRAY[]), ARRAY[1,2]); -- {}
+```
+```cpp
+    map_top_n(map(K,V), n) -> map(K, V)
+
+    截断 Map 项。仅保留按值排序的前 N 个元素。键用于区分大小写，并使用所选的最大键。键和值均应可排序。
+
+    “n”必须是非负的 BIGINT 值。
+```
+
+```sql
+    SELECT map_top_n(map(ARRAY['a', 'b', 'c'], ARRAY[2, 3, 1]), 2) --- {'b' -> 3, 'a' -> 2}
+    SELECT map_top_n(map(ARRAY['a', 'b', 'c'], ARRAY[NULL, 3, NULL]), 2) --- {'b' -> 3, 'c' -> NULL}
+```
+```cpp
+    map_keys_by_top_n_values(map(K,V), n) -> array(K)
+
+    返回 Map 中前 N 个键的数组。仅保留按值排序的前 N ​​个元素。键用于区分大小写，以选择最大键。键和值都应可排序。
+
+    “n”必须是非负的 BIGINT 值。
+```
+
+```sql
+    SELECT map_keys_by_top_n_values(map(ARRAY['a', 'b', 'c'], ARRAY[2, 3, 1]), 2) --- ['b', 'a']
+    SELECT map_keys_by_top_n_values(map(ARRAY['a', 'b', 'c'], ARRAY[NULL, 3, NULL]), 2) --- ['b', 'c']
+```
+```cpp
+    map_top_n_keys(map(K,V), n) -> array(K)
+
+    构造一个包含前 N 个键的数组。键应可排序。
+
+    “n”必须是非负的 BIGINT 值。
+```
+
+```sql
+    SELECT map_top_n_keys(map(ARRAY['a', 'b', 'c'], ARRAY[1, 2, 3]), 2) --- ['c', 'b']
+    SELECT map_top_n_keys(map(ARRAY['a', 'b', 'c'], ARRAY[1, 2, 3]), 0) --- []
+```
+```cpp
+    map_top_n_values(map(K,V), n) -> array(V)
+
+    通过对 Map 中的值进行降序排序，返回其中的前 N ​​个值。键和值都应该可排序。
+
+    “n”必须是非负的 BIGINT 值。
+```
+
+```sql
+    SELECT map_top_n_values(map(ARRAY['a', 'b', 'c'], ARRAY[1, 2, 3]), 2) --- [3, 2]
+```
+```cpp
+    map_keys(x(K,V)) -> array(K)
+
+   返回映射“x”中的所有键。
+```
+
+```cpp
+    map_values(x(K,V)) -> array(V)
+
+   返回映射“x”中的所有值。
+```
+
+```cpp
+    map_zip_with(map(K,V1), map(K,V2), function(K,V1,V2,V3)) -> map(K,V3)
+
+    将两个给定的映射合并为一个映射，方法是将“函数”应用于具有相同键的值对。
+    对于仅存在于一个映射中的键，将传递 NULL 作为缺失键的值。
+```
+
+
+```sql
+    SELECT map_zip_with(MAP(ARRAY[1, 2, 3], ARRAY['a', 'b', 'c']), -- {1 -> ad, 2 -> be, 3 -> cf}
+                        MAP(ARRAY[1, 2, 3], ARRAY['d', 'e', 'f']),
+                        (k, v1, v2) -> concat(v1, v2));
+    SELECT map_zip_with(MAP(ARRAY['k1', 'k2'], ARRAY[1, 2]), -- {k1 -> ROW(1, null), k2 -> ROW(2, 4), k3 -> ROW(null, 9)}
+                        MAP(ARRAY['k2', 'k3'], ARRAY[4, 9]),
+                        (k, v1, v2) -> (v1, v2));
+    SELECT map_zip_with(MAP(ARRAY['a', 'b', 'c'], ARRAY[1, 8, 27]), -- {a -> a1, b -> b4, c -> c9}
+                        MAP(ARRAY['a', 'b', 'c'], ARRAY[1, 2, 3]),
+                            (k, v1, v2) -> k || CAST(v1/v2 AS VARCHAR));
+```
+
+```cpp
+    multimap_from_entries(array(row(K,V))) -> map(K,array(V))
+
+   返回由给定条目数组创建的多重映射。每个键可以与多个值关联。
+```
+```sql
+        SELECT multimap_from_entries(ARRAY[(1, 'x'), (2, 'y'), (1, 'z')]); -- {1 -> ['x', 'z'], 2 -> ['y']}
+```
+```cpp
+    no_keys_match(x(K,V), function(K, boolean)) -> boolean
+
+    返回映射中是否没有键与给定的谓词匹配。如果所有键均不匹配谓词（特殊情况是映射为空），则返回 true；如果一个或多个键匹配，则返回 false；如果谓词函
+    数对一个或多个键返回 NULL，而对所有其他键返回 false，则返回 NULL。
+```
+```sql
+        SELECT no_keys_match(map(array['a', 'b', 'c'], array[1, 2, 3]), x -> x = 'd'); -- true
+```
+```cpp
+    no_values_match(x(K,V), function(V, boolean)) -> boolean
+
+    返回映射中是否没有任何值与给定的谓词匹配。如果所有值均不与谓词匹配（特殊情况是映射为空），则返回 true；如果一个或多个值匹配，则返回 false；如果谓词函数对一个或多个值返回 NULL，而对所有其他值返回 false，则返回 NULL。::
+```
+```sql
+        SELECT no_values_match(map(array['a', 'b', 'c'], array[1, 2, 3]), x -> x = 'd'); -- true
+```
+```cpp
+    subscript(map(K, V), key) -> V
+
+    返回给定“键”的值。如果键不包含在映射中，则返回 null。
+    对于 REAL 和 DOUBLE 类型，NaN（非数字）被视为相等，可以用作键。
+    对应于 SQL 下标运算符 []。
+```
+
+```sql
+    SELECT name_to_age_map['Bob'] AS bob_age;
+```
+```cpp
+    transform_keys(map(K1,V), function(K1,V,K2)) -> map(K2,V)
+
+    返回一个映射，将“函数”应用于“映射”的每个条目并转换键
+```
+
+```sql
+    SELECT transform_keys(MAP(ARRAY[], ARRAY[]), (k, v) -> k + 1); -- {}
+    SELECT transform_keys(MAP(ARRAY [1, 2, 3], ARRAY ['a', 'b', 'c']), (k, v) -> k + 1); -- {2 -> a, 3 -> b, 4 -> c}
+    SELECT transform_keys(MAP(ARRAY ['a', 'b', 'c'], ARRAY [1, 2, 3]), (k, v) -> v * v); -- {1 -> 1, 4 -> 2, 9 -> 3}
+    SELECT transform_keys(MAP(ARRAY ['a', 'b'], ARRAY [1, 2]), (k, v) -> k || CAST(v as VARCHAR)); -- {a1 -> 1, b2 -> 2}
+    SELECT transform_keys(MAP(ARRAY [1, 2], ARRAY [1.0, 1.4]), -- {one -> 1.0, two -> 1.4}
+                              (k, v) -> MAP(ARRAY[1, 2], ARRAY['one', 'two'])[k]);
+```
+```cpp
+    transform_values(map(K,V1), function(K,V1,V2)) -> map(K,V2)
+
+    返回一个映射，将“函数”应用于“映射”的每个条目并转换值::
+```
+
+```sql
+    SELECT transform_values(MAP(ARRAY[], ARRAY[]), (k, v) -> v + 1); -- {}
+    SELECT transform_values(MAP(ARRAY [1, 2, 3], ARRAY [10, 20, 30]), (k, v) -> v + k); -- {1 -> 11, 2 -> 22, 3 -> 33}
+    SELECT transform_values(MAP(ARRAY [1, 2, 3], ARRAY ['a', 'b', 'c']), (k, v) -> k * k); -- {1 -> 1, 2 -> 4, 3 -> 9}
+    SELECT transform_values(MAP(ARRAY ['a', 'b'], ARRAY [1, 2]), (k, v) -> k || CAST(v as VARCHAR)); -- {a -> a1, b -> b2}
+    SELECT transform_values(MAP(ARRAY [1, 2], ARRAY [1.0, 1.4]), -- {1 -> one_1.0, 2 -> two_1.4}
+                                (k, v) -> MAP(ARRAY[1, 2], ARRAY['one', 'two'])[k] || '_' || CAST(v AS VARCHAR));
+```

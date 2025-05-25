@@ -1,0 +1,61 @@
+
+# Join Fuzzer
+
+连接模糊测试器测试所有类型的哈希连接和合并连接，最多包含 5 个连接键和
+最多 3 个有效载荷列（包含或不包含溢出）。
+
+在每次迭代中，模糊测试器会随机选择一种连接类型（INNER、LEFT、FULL、LEFT SEMI FILTER、LEFT SEMI PROJECT、ANTI）、空感知标志
+（如果连接类型支持）、连接键和有效载荷列的数量和类型。然后，模糊测试器会生成探测端和构建端大小的输入，并构建一个 Values -> HashJoin 查询计
+划。在生成构建端数据时，模糊测试器会生成一个空数据集或一个探测端键的 10% 样本（包含替换），并结合随机生成的有效载荷。在生成连接
+计划节点时，模糊测试器会打乱连接键和输出列，并从输出中随机删除一些列。
+
+Fuzzer 运行查询计划，并将结果与参考（DuckDB 或 Presto）进行比较作为预期结果。
+
+然后，模糊测试器会生成一组不同但逻辑上等效的计划，
+并运行它们并验证结果是否相同。每个计划运行两次：包含溢出和不包含溢出。
+
+逻辑上等效的计划生成如下：
+
+- 展平可能已编码的连接输入。
+- 翻转连接边：
+- LEFT(a, b) => RIGHT(b, a)
+- LEFT SEMI FILTER(a, b) => RIGHT SEMI FILTER(b, a)
+- LEFT SEMI PROJECT(a, b) => RIGHT SEMI PROJECT(b, a)
+- 在连接前引入循环本地交换：
+Values -> LocalExchange(ROUND_ROBIN) -> HashJoin
+- 对于支持的连接类型（INNER、LEFT），将 HashJoin 替换为 OrderBy(join keys) + MergeJoin。
+
+## How to run
+
+使用 pollux_join_fuzzer_test 二进制文件运行连接模糊器：
+
+```shell
+
+    tests/exec/pollux_join_fuzzer_test
+```
+
+默认情况下，模糊测试器将进行 10 次迭代。使用 --steps
+或 --duration-sec 参数可以延长模糊测试器的运行时间。使用 --seed 参数可以
+重现模糊测试器的失败。
+
+以下是受支持的命令行参数的完整列表。
+
+* ``–-steps``：要运行的迭代次数。每次迭代生成并计算一个表达式或聚合。默认值为 10。
+
+* ``–-duration_sec``：运行时间（秒）。如果同时指定了 ``-–steps`` 和 ``-–duration_sec``，则以 –duration_sec 为准。
+
+* ``–-seed``：用于生成随机表达式和输入向量的种子。
+
+* ``–-verbosity=1``：详细日志记录（来自 [turbo Logging Library](https://github.com/gottingen/turbo)）。
+
+* ``–-batch_size``：要生成的输入向量的大小。默认值为 100。
+
+* ``--num_batches``：要生成的 `--batch_size` 大小的输入向量数量。默认值为 5。
+
+* ``--enable_spill``：是否测试溢出。默认值为 true。
+
+* ``--arbitrator_capacity``：仲裁器容量（以字节为单位）。默认值为 `6L << 30`。
+
+* ``--allocator_capacity``：分配器容量（以字节为单位）。默认值为 `8L << 30`。
+
+如果从 CLion IDE 运行，请添加 ``--logtostderr=1`` 以查看完整输出。

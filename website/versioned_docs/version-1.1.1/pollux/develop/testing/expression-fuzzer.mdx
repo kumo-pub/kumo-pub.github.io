@@ -1,0 +1,323 @@
+
+# Expression Fuzzer
+
+Pollux 允许用户定义 UDF（用户定义函数），并提供一个表达式模糊测试工具来全面测试引擎和 UDF。该工具正在用于测试 Presto 和 Spark 的内置
+函数，并发现了许多由极端情况引起的错误，这些错误在单元测试中难以覆盖。
+
+表达式模糊测试工具通过生成随机表达式并在随机输入向量上对其进行求值来测试表达式求值引擎和 UDF。
+每个生成的表达式可能包含多个子表达式，并且每个输入向量可能具有随机且可能嵌套的编码。
+
+为了确保求值引擎和 UDF 能够正确处理向量编码，表达式模糊测试工具会对每个表达式进行两次求值，并断言结果相同：一次使用常规求
+值路径，另一次使用简化求值路径，即在求值表达式之前展平所有输入向量。
+
+## How to integrate
+
+
+要与 Expression Fuzzer 集成，请创建一个测试，注册引擎支持的所有标量函数，然后调用 ``FuzzerRunner::run()``，该函数定义在 ``FuzzerRunner.h`_ 文件中。请参阅 ``ExpressionFuzzerTest.cpp`_ 文件。
+
+.. _FuzzerRunner.h：https://github.com/facebookincubator/pollux/blob/main/pollux/expression/fuzzer/ExpressionFuzzer.h
+
+.. _ExpressionFuzzerTest.cpp：https://github.com/facebookincubator/pollux/blob/main/pollux/expression/fuzzer/ExpressionFuzzerTest.cpp
+
+可以使用跳过列表将已知存在 bug 的函数排除在测试之外。
+
+## Custom Input Generators
+
+
+在以下情况下，表达式模糊测试器需要自定义输入生成器：
+
+* 函数要求输入值满足特定约束（例如，有效的 JSON 或 URL）。
+
+* 默认的随机输入生成器无法充分覆盖边缘情况。
+
+自定义输入生成器可以按照以下步骤定义。
+
+### Step 1: Define the generator class
+
+
+开发者可以通过继承 ``ArgValuesGenerator`` 并重写 ``generate()`` 方法来实现自定义输入生成器类。例如 ``JsonParseArgValuesGenerator`` 类。
+
+.. _JsonParseArgValuesGenerator：https://github.com/facebookincubator/pollux/blob/d25685bb6fddb76e467ee740d221455b1fac8f96/pollux/expression/fuzzer/ArgValuesGenerators.h#L22
+
+```cpp
+
+    class JsonParseArgValuesGenerator : public ArgValuesGenerator {
+     public:
+      ~JsonParseArgValuesGenerator() override = default;
+
+      std::vector<core::TypedExprPtr> generate(
+        const CallableSignature& signature,
+        const VectorFuzzer::Options& options,
+        FuzzerGenerator& rng,
+        ExpressionFuzzerState& state) override;
+    };
+
+```
+
+### Step 2: Implement the generate() method
+
+
+在实现 ``generate()`` 方法时，开发者首先调用 ``populateInputTypesAndNames(signature, state)``，将 ``signature`` 的参数类型和相应的输入列名附加到 ``state``。
+接下来，对于 ``signature`` 的每个参数，如果需要自定义输入生成器，开发者将 ``AbstractInputGenerator`` 子类的
+std::shared_ptr 放回到 ``state.customInputGenerators_`` 中。开发者还将使用此参数类型和相应的输入列名创建的 ``FieldAccessTypedExprPtr`` 放回到 ``inputExpressions`` 中。
+每个 ``AbstractInputGenerator`` 的子类都允许生成满足特定约束的输入值。例如，``RangeConstrainedGenerator`` 允许生成指定范
+围内的值； ``JsonInputGenerator`` 允许生成表示指定数据类型的有效 JSON 字符串。
+
+如果参数不需要自定义输入生成器，开发者可以在 ``state.customInputGenerators_`` 和 ``inputExpressions`` 中分别放置一个 nullptr。
+最后，``generate()`` 方法返回 ``inputExpressions``。
+
+```cpp
+
+    std::vector<core::TypedExprPtr> JsonParseArgValuesGenerator::generate(
+      const CallableSignature& signature,
+      const VectorFuzzer::Options& options,
+      FuzzerGenerator& rng,
+      ExpressionFuzzerState& state) {
+      POLLUX_CHECK_EQ(signature.args.size(), 1);
+      populateInputTypesAndNames(signature, state);
+
+      const auto representedType = kumo::pollux::randType(rng, 3);
+      const auto seed = rand<uint32_t>(rng);
+      const auto nullRatio = options.nullRatio;
+      state.customInputGenerators_.emplace_back(
+        std::make_shared<fuzzer::JsonInputGenerator>(
+            seed,
+            signature.args[0],
+            nullRatio,
+            fuzzer::getRandomInputGenerator(seed, representedType, nullRatio),
+            true));
+
+      std::vector<core::TypedExprPtr> inputExpressions{
+        signature.args.size(), nullptr};
+      inputExpressions[0] = std::make_shared<core::FieldAccessTypedExpr>(
+        signature.args[0], state.inputRowNames_.back());
+      return inputExpressions;
+    };
+
+```
+
+### Step 3: Register the custom input generator
+
+
+一旦实现了自定义输入生成器，开发人员就会在 ExpressionFuzzerTest.cpp 中的 ``main`` 函数中注册它，如下所示。
+
+```cpp
+
+    melon::F14FastMap<std::string, std::shared_ptr<ArgValuesGenerator>>
+      argValuesGenerators = {
+          {"json_parse", std::make_shared<JsonParseArgValuesGenerator>()},
+          {"function_name", std::make_shared<CustomInputGeneratorClassName>()},
+          ...};
+
+
+```
+
+
+## How to run
+
+
+Expression Fuzzer 支持许多强大的命令行参数。
+
+* ``–-steps``：运行迭代次数。每次迭代生成并评估一个表达式或聚合。默认值为 10。
+
+* ``–-duration_sec``：运行时间（秒）。如果同时指定了 ``-–steps`` 和 ``-–duration_sec``，则以 –duration_sec 为准。
+
+* ``–-seed``：用于生成随机表达式和输入向量的种子。
+
+* ``–-verbosity=1``：详细日志记录（来自 [turbo Logging Library](https://github.com/gottingen/turbo)）。
+
+* ``–-only``：用于生成表达式的函数列表（以逗号分隔）。
+
+* ``–-batch_size``：要生成的输入向量的大小。默认值为 100。
+
+* ``--null_ratio``：将空常量添加到计划中，或在向量中添加空值（以 0 到 1 的双精度数表示）的概率。默认值为 0.1。
+
+* ``--max_num_varargs``：模糊测试器将为接受可变参数的函数生成的最大可变参数数量。除了函数所需的参数外，模糊测试器还将为可变
+参数列表生成最多 max_num_varargs 个参数。默认值为 10。
+
+* ``--retry_with_try``：通过使用 try() 语句包装失败的表达式来重试。默认值为 false。
+
+* ``--enable_variadic_signatures``：启用对带有可变参数的函数签名的测试。默认值为 false。
+
+* ``--special_forms``：启用对指定特殊形式的测试，包括 `and`、`or`、`cast`、`coalesce`、`if` 和 `switch`。每个模糊测试都会指定其自
+身启用的特殊形式。pollux_expression_fuzzer_test 默认启用所有上述特殊形式。
+
+* ``--enable_dereference``：启用对结构体和 row_constructor 函数的字段引用的测试。默认值为 false。
+
+* ``--pollux_fuzzer_enable_complex_types``：启用对复杂参数或返回类型的函数签名的测试。默认值为 false。
+
+* ``--pollux_fuzzer_enable_decimal_type``：启用对十进制参数或返回类型的函数签名的测试。默认值为 false。
+
+* ``--lazy_vector_generation_ratio``：指定输入行向量中哪些列被选中进行惰性编码（以 0 到 1 的双精度数表示）。默认值为 0.0。
+
+* ``--pollux_fuzzer_enable_column_reuse``：启用表达式生成，使一个输入列可以被多个子表达式使用。默认值为 false。
+
+* ``--pollux_fuzzer_enable_expression_reuse``：启用表达式生成，使之能够重用已生成的子表达式。默认值为 false。
+
+* ``--assign_function_tickets``：以逗号分隔的函数名称及其标签列表，格式为 `<function_name>=<tickets>`。每个标签都代表一个从候选池中被选中函数的
+机会。默认情况下，每个函数都有一个标签，可以通过分配更多标签来增加函数被选中的可能性。请注意，在实践中，增加标签数量并不会成比例地增加被选中的可能性，因为选择过
+程涉及根据所需的返回类型筛选候选池，因此并非所有函数在每个实例中都会与相同数量的函数竞争。标签数量必须是正整数。例如：eq=3,floor=5。
+
+* ``--max_expression_trees_per_step``：设置每步生成的表达式树数量的上限。这些树将在同一个 ExprSet 中执行，并且可以复用已生成的列和子表达式（如果启用了复用功能）。默认值为 1。
+
+* ``--pollux_fuzzer_max_level_of_nesting``：表达式嵌套的最大层数。默认值为 10，最小为 1。
+
+如果您想使用 Presto 作为可信源来运行 Expression Fuzzer，可以使用两个命令行参数来指定 Presto 的 URL 和超时时间：
+
+* ``--presto_url``：Presto 协调器 URI 及其端口。
+
+* ``--req_timeout_ms``：对参考数据库（例如 Presto）发出的 HTTP 请求的超时时间（以毫秒为单位）。
+
+如果从 CLion IDE 运行，请添加“--logtostderr=1”以查看完整输出。
+
+启用所有功能运行表达式模糊测试器的示例参数集如下：
+``--duration_sec 60
+--enable_variadic_signatures
+--lazy_vector_generation_ratio 0.2
+--pollux_fuzzer_enable_complex_types
+--pollux_fuzzer_enable_expression_reuse
+--pollux_fuzzer_enable_column_reuse
+--retry_with_try
+--enable_dereference
+--special_forms="and,or,cast,coalesce,if,switch"
+--max_expression_trees_per_step=2
+--repro_persist_path=<a_valid_local_path>
+--logtostderr=1``
+
+以 Presto 为事实来源的表达式模糊测试器目前仅支持部分功能：
+``--duration_sec 60
+--presto_url=http://127.0.0.1:8080
+--req_timeout_ms 10000
+--enable_variadic_signatures
+--pollux_fuzzer_enable_complex_types
+--special_forms="cast,coalesce,if,switch"
+--lazy_vector_generation_ratio 0.2
+--pollux_fuzzer_enable_column_reuse
+--pollux_fuzzer_enable_expression_reuse
+--max_expression_trees_per_step 2
+--logtostderr=1``
+
+## How to reproduce failures
+
+
+当 Fuzzer 测试失败时，种子编号和求值的表达式会被打印到日志中。以下给出了一个示例。开发
+者可以使用 ``--seed`` 和此种子编号，以相同的输入重新运行完全相同的表达式，并使用调试器来调查问题。对于以
+下示例，重现错误的命令是 ``pollux/expression/fuzzer/pollux_expression_fuzzer_test --seed 1188545576``。
+
+```text
+
+    I0819 18:37:52.249965 1954756 ExpressionFuzzer.cpp:685] ==============================> Started iteration 38
+    (seed: 1188545576)
+    I0819 18:37:52.250263 1954756 ExpressionFuzzer.cpp:578]
+    Executing expression: in("c0",10 elements starting at 0 {120, 19, -71, null, 27, ...})
+    I0819 18:37:52.250350 1954756 ExpressionFuzzer.cpp:581] 1 vectors as input:
+    I0819 18:37:52.250401 1954756 ExpressionFuzzer.cpp:583] 	[FLAT TINYINT: 100 elements, 6 nulls]
+    E0819 18:37:52.252044 1954756 Exceptions.h:68] Line: pollux/expression/tests/ExpressionFuzzer.cpp:153, Function:compareVectors, Expression: vec1->equalValueAt(vec2.get(), i, i)Different results at idx '78': 'null' vs. '1', Source: RUNTIME, ErrorCode: INVALID_STATE
+    terminate called after throwing an instance of 'kumo::pollux::PolluxRuntimeError'
+    ...
+```
+
+请注意，更改所有用于测试的 UDF 集合会导致本次复现失效，这可能会受到跳过函数列表、“--only”参数或基准提交等的影响。这是因为表达式中
+选择的 UDF 取决于种子和所有 UDF 的池。因此，请确保在复现故障时使用相同的配置。
+
+## Accurate on-disk reproduction
+
+
+有时，开发人员可能希望捕获问题，并在稍后进行调查，
+这可能是由其他人使用不同的机器进行的。在这种情况下，使用 ``--seed`` 不足以准确重现故障。这可能是由于随机生成器在不同平台上的行为不同、
+在列表中添加/删除 UDF 等原因造成的。为了在任何环境下准确重现模糊器故障，
+您可以将输入向量和表达式记录到文件中，并在稍后重放。
+
+1. 使用“--seed”和“--repro_persist_path”参数运行模糊测试器，将输入向量和表达式保存到指定目录中的文件中。如果问题不是异
+常失败而是崩溃失败，则添加“--persist_and_run_once”。
+
+2. 使用生成的文件运行表达式运行器。
+
+``--repro_persist_path <path/to/directory>`` 标志指示 Fuzzer 将
+输入向量、初始结果向量、表达式 SQL 和其他相关数据保存到指定目录下的新目录中的文件中。它还会打印出这些
+文件的确切路径。Fuzzer 使用 :doc:`VectorSaver <../debugging/vector-saver>`
+将向量存储在磁盘上，同时保留编码。
+
+如果迭代在数据持久化之前导致进程崩溃，请使用该迭代使用的种子运行 Fuzzer，并使用以下标志：
+
+``--persist_and_run_once`` 在评估之前保留再现信息，并且仅运行一次迭代。
+这将在崩溃失败时使用种子编号重新运行并保留再现信息。
+仅在设置了 repro_persist_path 时有效。
+
+ExpressionRunner 至少需要一个输入向量的路径和一个运行 SQL 表达式的路径。
+但是，您可能需要更多文件来重现问题。所有这些文件都将位于模糊测试生成的目录中。您可以使用 --fuzzer_repro_path 直接
+将 ExpressionRunner 指向该目录，它会自动获取所有文件，或者您也可以使用其他启动参数明确指定每个文件。
+ExpressionRunner 支持以下参数：
+
+* ``--fuzzer_repro_path`` 目录路径，所有由 Fuzzer 生成的输入文件（用于重现故障）预计存放在此目录中。ExpressionRunner 将自动从此文件夹中获取所有文件，除非它们通过各自的启动标志明确指定。
+
+* ``--input_path`` Fuzzer 创建的输入向量的路径
+
+* ``--sql_path`` Fuzzer 创建的 SQL 表达式的路径
+
+* ``--registry`` 用于评估表达式的函数注册表。“presto”（默认）或“spark”之一。
+
+* ``--complex_constant_path`` 可选路径，指向无法用 SQL 准确表达的复杂常量（数组、映射、结构体等）。此路径用于 SQL 文件，以重现精确的表达式，当表达式不包含复杂常量时无需使用。
+
+* ``--input_row_metadata_path`` 可选路径，指向存储在磁盘上的文件，该文件包含一个包含输入行元数据的结构体。这包括输入行向量中需要包装成惰性向量和/或字典
+编码的列。它还可能包含需要字典编码的列的字典剥离。当失败的测试包含惰性向量和/或使用普通字典包装的列时，使用此路径。
+
+* ``--result_path`` 可选路径，指向由 Fuzzer 创建的结果向量。结果向量用于重现 Fuzzer 将脏向量作为结果缓冲区传递给表达式求值的情况。这确保函数在考虑脏结果缓冲区的情况下正确实现。
+
+*`--mode`` 运行模式。“verify”、“common”（默认）、“simplified” 之一。
+
+    - ``verify`` 使用通用路径和简化路径对表达式进行求值，并比较结果。这与模糊测试运行相同。
+
+    - ``common`` 使用通用路径对表达式进行求值，并将结果打印到标准输出。
+
+    - ``simplified`` 使用简化路径对表达式进行求值，并将结果打印到标准输出。
+
+    - ``query`` 执行 --sql 或 --sql_path 中指定的 SQL 查询并打印结果。如果指定了 --input_path，查询可能会将其引用为表“t”。
+
+* ``--num_rows`` 可选，在普通模式和简化模式下处理的行数。默认值：10。0 表示所有行。此标志在“验证”模式下被忽略。
+
+* ``--store_result_path`` 可选，用于在“普通”、“简化”或“查询”模式下存储 SQL 表达式或查询求值结果的目录路径。
+
+* ``--findMinimalSubExpression`` 可选，在结果不匹配时是否查找最小失败子表达式。默认设置为 false。
+
+* ``--useSeperatePoolForInput`` 可选，如果设置为 true（默认值），表达式求值器和输入向量将使用不同的内存池。这有助于触发依赖于
+具有不同内存池的向量的代码路径。例如，复制扁平字符串向量时，需要创建存储在字符串缓冲区中的字符串的副本。然而，如果向量之
+间的池是相同的，那么缓冲区就可以简单地在它们之间共享。
+
+命令示例：
+
+```text
+    pollux/expression/tests:pollux_expression_runner_test --input_path "/path/to/input" --sql_path "/path/to/sql" --result_path "/path/to/result"
+```
+
+为了协助调试工作负载，ExpressionRunner 支持使用 ``--sql`` 在命令行中指定 SQL 表达式。``--sql`` 选项可以单独用于计算常量表达式，也可
+以与 ``--input_path`` 一起使用来计算向量上的表达式。``--sql`` 和 ``--sql_path`` 标志互斥。如果同时
+指定了 ``--sql``，则使用 ``--sql`` 而忽略 ``--sql_path``。``--sql`` 选项允许指定多个以逗号分隔的 SQL 表达式。
+
+```text
+
+    $ pollux/expression/tests:pollux_expression_runner_test --sql "pow(2, 3), ceil(1.3)"
+
+    I1101 11:32:51.955689 2306506 ExpressionRunner.cpp:127] Evaluating SQL expression(s): pow(2, 3), ceil(1.3)
+    Result: ROW<_col0:DOUBLE,_col1:DOUBLE>
+    8 | 2
+
+    $ pollux/expression/tests:pollux_expression_runner_test --sql "pow(2, 3)"
+
+    Evaluating SQL expression(s): pow(2, 3)
+    Result: ROW<_col0:DOUBLE>
+    8
+
+    $ pollux/expression/tests:pollux_expression_runner_test --sql "array_sort(array[3,6,1,null,2])"
+    Building: finished in 0.3 sec (100%) 817/3213 jobs, 0/3213 updated
+
+    Evaluating SQL expression(s): array_sort(array[3,6,1,null,2])
+    Result: ROW<_col0:ARRAY<INTEGER>>
+    [1,2,3,6,null]
+
+    $ pollux/expression/tests:pollux_expression_runner_test --sql "array_sort(array[3,6,1,null,2]), filter(array[1, 2, 3, 4], x -> (x % 2 == 0))"
+
+    Evaluating SQL expression(s): array_sort(array[3,6,1,null,2]), filter(array[1, 2, 3, 4], x -> (x % 2 == 0))
+    Result: ROW<_col0:ARRAY<INTEGER>,_col1:ARRAY<INTEGER>>
+    [1,2,3,6,null] | [2,4]
+```

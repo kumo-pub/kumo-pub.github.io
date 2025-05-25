@@ -1,0 +1,202 @@
+# Types(数据类型)
+
+Pollux 支持标量类型和复杂类型。标量类型分为一组固定的物理类型和一组可扩展的逻辑类型。
+物理类型决定了数据的内存布局。逻辑类型为物理类型添加了额外的语义。
+
+## 物理了类型 {#physical-types}
+
+每种物理类型都使用 C++ 类型实现。下表列出了支持的物理类型、其对应的 C++ 类型以及每个值所需的固定宽度字节数。
+
+| Physical Type | C++ Type               | Fixed Width (bytes)       |
+|---------------|------------------------|---------------------------|
+| BOOLEAN       | bool                   | 0.125 (i.e. 1 bit)        |
+| TINYINT       | int8_t                 | 1                         |
+| SMALLINT      | int16_t                | 2                         |
+| INTEGER       | int32_t                | 4                         |
+| BIGINT        | int64_t                | 8                         |
+| HUGEINT       | int128_t               | 16                        |
+| REAL          | float                  | 4                         |
+| DOUBLE        | double                 | 8                         |
+| TIMESTAMP     | struct Timestamp       | 16                        |
+| VARCHAR       | struct StringView      | 16                        |
+| VARBINARY     | struct StringView      | 16                        |
+| OPAQUE        | `std::shared_ptr<void>`  | 16                        |
+| UNKNOWN       | struct UnknownValue    | 0                         |
+
+
+除 VARCHAR 和 VARBINARY 之外，所有物理类型都与其 C++ 类型一一对应。
+C++ 类型也用作向量类的模板参数。
+例如，64 位整数向量表示为 `FlatVector<int64_t>`，其类型为 `BIGINT`。
+
+OPAQUE 类型可用于定义自定义类型。
+必须使用唯一的 `std::type_index` 指定 OPAQUE 类型。
+此类型的值必须以 `std::shared_ptr<T>` 的形式提供，其中 T 是 C++ 类型。
+有关何时使用 OPAQUE 类型定义自定义类型的更多详细信息，请参见下文。
+
+VARCHAR、VARBINARY 和 OPAQUE 每个值使用可变的字节数。
+这些类型在 C++ 类型中存储固定宽度部分，并在其他位置存储可变宽度部分。
+所有其他类型都使用固定宽度的字节数，如上表所示。
+例如：VARCHAR 和 VARBINARY :doc:`FlatVectors </develop/vectors>` 将每个值的固定宽度部分存储在 StringView 中。
+StringView 是一个结构体，包含一个 4 字节大小的字段、一个 4 字节前缀字段，
+以及一个指向可变宽度部分的 8 字节字段指针。
+每个值的可变宽度部分存储在 `stringBuffers` 中。
+OPAQUE 类型将可变宽度部分存储在 FlatVector 之外。
+
+UNKNOWN 类型用于表示未知类型的空向量或全为空的向量。
+例如，SELECT array() 返回 ARRAY(UNKNOWN())，因为无法确定元素的类型。这是因为没有元素。
+
+TIMESTAMP 类型用于表示特定的时间点。
+TIMESTAMP 定义为自 UNIX 纪元以来的秒数和纳秒数之和。
+`struct Timestamp` 包含一个 64 位有符号整数表示秒数，以及另一个 64 位无符号整数表示纳秒数。纳秒表示时间戳的高精度部分，小于 1 秒。纳秒的有效范围为 [0, 10^9)。
+纪元之前的时间戳使用负值表示秒数。
+示例：
+
+* Timestamp(0, 0) 表示 1970-01-01 T00:00:00（纪元）。
+* Timestamp(10*24*60*60 + 125, 0) 表示 1970-01-11 00:02:05（纪元后 10 天 125 秒）。
+* Timestamp(19524*24*60*60 + 500, 38726411) 表示 2023-06-16 08:08:20.038726411
+（纪元后 19524 天 500 秒 38726411 纳秒）。
+* Timestamp(-10*24*60*60 - 125, 0) 表示 1969-12-21 23:57:55（纪元前 10 天 125 秒）。
+* Timestamp(-5000*24*60*60 - 1000, 123456) 表示 1956-04-24 07:43:20.000123456
+（纪元前 5000 天 1000 秒加上 123456 纳秒）。
+
+浮点类型（REAL、DOUBLE）具有特殊值：负无穷、正无穷和非数字 (NaN)。
+
+NaN 的语义与 C++ 标准浮点语义不同：
+
+* 不同类型的 NaN（+/-、信令/静默）被视为规范的 NaN（+、静默）。
+* `NaN = NaN` 返回 true。
+* 在连接和分组键中，NaN 被视为普通数值。
+* 排序时，NaN 值被认为大于任何其他值。按升序排序时，NaN 值显示在最后。按降序排序时，NaN 值显示在最前面。
+* 对于数字 N：`N > NaN` 为 false，`NaN > N` 为 true。
+
+对于负无穷和正无穷，以下 C++ 标准浮点语义适用：
+
+假设 N 为正有限数。
+
+* +inf * N = +inf
+* -inf * N = -inf
+* +inf * -N = -inf
+* -inf * -N = +inf
+* +inf * 0 = NaN
+* -inf * 0 = NaN
+* +inf = +inf 返回 true。
+* -inf = -inf 返回 true。
+* 在连接和分组键中，正无穷大和负无穷大被视为普通数值。
+* 正无穷大的排序低于 NaN，但高于任何其他值。
+* 负无穷大的排序低于任何其他值。
+
+## 逻辑类型 {#logical-types}
+
+逻辑类型由物理类型支持，并包含额外的语义。
+同一种物理类型可以支持多种逻辑类型。
+因此，仅了解 C++ 类型不足以推断逻辑类型。
+下表列出了支持的逻辑类型及其对应的物理类型。
+
+| Logical Type           | Physical Type                              |
+|------------------------|--------------------------------------------|
+| DATE                   | INTEGER                                   |
+| DECIMAL                | BIGINT (if precision ≤ 18), HUGEINT (if precision ≥ 19) |
+| INTERVAL DAY TO SECOND | BIGINT                                    |
+| INTERVAL YEAR TO MONTH | INTEGER                                   |
+
+
+DECIMAL 类型带有额外的“精度”和“小数位数”信息。“精度”是指数字的位数。“小数位数”是指数字小数点右边的位数。例如，数字“123.45”的精度为“5”，
+小数位数为“2”。DECIMAL 类型由“BIGINT”和“HUGEINT”物理类型支持，它们存储未缩放的值。例如，十进制“123.45”的未缩放值为“12345”。“BIGINT”的精度最高为 18 位，取值范围为
+:math:`[-10^{18} + 1, +10^{18} - 1]`。 `HUGEINT` 的精度从 19 到 38，范围为 :math:`[-10^{38} + 1, +10^{38} - 1]`。
+
+要表示十进制值，精度、小数位数、非标度值这三个值都是必需的。
+
+## 自定义类型 {#custom-types}
+
+大多数自定义类型都可以表示为逻辑类型，并且可以通过扩展现有的物理类型来构建。例如，下文描述的 Presto 类型就是通过扩展物理类型实现的。
+当没有可用的物理类型支持逻辑类型时，必须使用 OPAQUE 类型。
+
+扩展现有物理类型时，如果需要不同于底层原生 C++ 类型提供的比较和/或哈希语义，可以通过执行以下操作来实现：
+* 在自定义类型的基类构造函数中，将 `providesCustomComparison` 参数设置为 `true`。
+* 覆盖从 `TypeBase` 类继承的 `compare` 和 `hash` 函数（必须同时实现这两个函数）。
+请注意，目前仅支持扩展原始和固定宽度物理类型的自定义类型。
+
+## 复杂类型 {#complex-types}
+
+Pollux 支持 ARRAY、MAP 和 ROW 复杂类型。
+复杂类型由标量类型组成，并且可以与其他复杂类型嵌套。
+
+例如：`MAP<INTEGER, ARRAY<BIGINT>>` 是一个复杂类型，其键是标量类型 INTEGER，值是元素类型为 BIGINT 的复杂类型 ARRAY。
+
+数组类型包含其元素类型。
+映射类型包含键类型和值类型。
+行类型包含其字段类型及其名称。
+
+## Presto 类型 {#presto-types}
+
+Pollux 支持多种 Presto 特定的逻辑类型。
+下表列出了支持的 Presto 类型。
+
+| Presto Type              | Physical Type          |
+|--------------------------|------------------------|
+| HYPERLOGLOG              | VARBINARY              |
+| JSON                     | VARCHAR                |
+| TIMESTAMP WITH TIME ZONE | BIGINT                 |
+| UUID                     | HUGEINT                |
+| IPADDRESS                | HUGEINT                |
+| IPPREFIX                 | ROW(HUGEINT,TINYINT)   |
+| GEOMETRY                 | VARBINARY              |
+
+
+TIMESTAMP WITH TIME ZONE 表示一个以毫秒为精度的时间点，基于 UNIX 纪元，并包含时区信息。其物理类型为 BIGINT。
+Bigint 的高 52 位存储有符号整数，表示 UTC 毫秒数。
+支持的毫秒数范围为 `[0xFFF8000000000000L, 0x7FFFFFFFFFFFF]`
+（或 `[-69387-04-22T03:45:14.752, 73326-09-11T20:14:45.247]`）。低 12 位存储时区 ID。支持的时区 ID 范围为 `[1, 1680]`。
+时区 ID 的定义可在“TimeZoneDatabase.cpp”中找到。
+
+IPADDRESS 表示 IPv6 或 IPv4 格式的 IPv6 地址。其物理类型为 HUGEINT。该地址的存储格式定义在 [`RFC 4291#section-2.5.5.2`](https://datatracker.ietf.org/doc/html/rfc4291.html#section-2.5.5.2) 中。
+由于 Pollux 运行在 Little Endian 系统上，并且标准是网络字节（Big Endian）顺序，因此我们将字节反转，以便在 `IPADDRESS/IPPREFIX` 相关函数中使用掩码和其他位操作。此类型可用于
+创建 IPPREFIX 网络以及检查 IPPREFIX 网络内的 IPADDRESS 有效性。
+
+IPPREFIX 表示 IPv6 或 IPv4 格式的 IPv6 地址，并带有一个字节的前缀长度。其物理类型为 ROW(HUGEINT, TINYINT)。IPADDRESS 存储在 HUGEINT 中，
+其格式定义在 [`RFC 4291#section-2.5.5.2`](https://datatracker.ietf.org/doc/html/rfc4291.html#section-2.5.5.2) 中。前缀长度存储在 TINYINT 中。存储的 IP 地址是子网范围内的规范（最小）IP 地址。此类型可用于 IP 子网函数。
+
+示例：
+
+本例中，前 32 位 `(*FFFF:FFFF*)` 代表网络前缀。
+因此，IPPREFIX 对象存储了 `*FFFF:FFFF::*` 以及这两个 IPPREFIX 对象的长度 32。
+
+```
+
+   IPPREFIX 'FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF/32' -- IPPREFIX 'FFFF:FFFF:0000:0000:0000:0000:0000:0000/32'
+   IPPREFIX 'FFFF:FFFF:4455:6677:8899:AABB:CCDD:EEFF/32' -- IPPREFIX 'FFFF:FFFF:0000:0000:0000:0000:0000:0000/32'
+```
+
+## Spark Types {#spark-types}
+
+Spark 中的[数据类型](https://spark.apache.org/docs/latest/sql-ref-datatypes.html)与 Presto
+中的数据类型存在一些语义差异。这些差异要求我们在 Pollux 中为每个系统分别实现相同的函数，例如 min、max 和 collect_set。以下列出了主要差异。
+
+* Spark 以`微秒`精度对时间戳进行操作，而 Presto 以`毫秒`精度对时间戳进行操作。
+Example:
+
+```sql
+    SELECT min(ts)
+    FROM (
+    VALUES
+    (cast('2014-03-08 09:00:00.123456789' as timestamp)),
+    (cast('2014-03-08 09:00:00.012345678' as timestamp))
+    ) AS t(ts);
+```
+
+* 在函数比较中，嵌套的空值被视为值。
+Example:
+```sql
+    SELECT equalto(ARRAY[1, null], ARRAY[1, null]); -- true
+
+    SELECT min(a)
+    FROM (
+    VALUES
+    (ARRAY[1, 2]),
+    (ARRAY[1, null])
+    ) AS t(a);
+    -- ARRAY[1, null]
+```
+
+
+* 在 Spark 中，MAP 类型不可比较且不可排序。在 Presto 中，MAP 类型同样不可排序，但如果键和值类型均可比较，则 MAP 类型是可比较的。这意味着 MAP 类型在 Spark 中不能用作 join、group by 或 order by 键。

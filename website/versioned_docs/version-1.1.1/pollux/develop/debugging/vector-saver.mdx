@@ -1,0 +1,166 @@
+# VectorSaver: Encoding-Preserving Serialization
+
+当表达式求值过程中发生错误时，保存输入向量和表达式会很有用，这样可以单独重现和调试错误。当运算符中发生错误时，保存输入向
+量也很有用。保存向量时，保留编码非常重要，因为通常只有使用特定的字典或常量包装器组合才能重现错误。因此，我们无法重用 Presto 的 SerializedPage 格式，而需要创建其他序列化格式。
+
+在本文档中，我们描述了一种保留编码的二进制序列化格式。此格式的实现可以在 VectorSaver.h/cpp 中找到。
+使用示例可以在 VectorSaverTest.cpp 中找到。此功能
+在 `2563` 中引入。
+
+在继续描述该格式之前，我们想展示一个示例用例。
+
+## Use Case
+
+当表达式求值过程中发生错误时，我们会将输入向量保存到一个文件中，并将文件路径与被求值的表达式一起添加到异常的 Context 字段中。异常可能如下所示：
+
+```text
+
+  Error Source: RUNTIME
+  Error Code: INVALID_STATE
+  Reason: (8 vs. 12) Malformed dictionary, index array is shorter than DictionaryVector
+  Retriable: False
+  Expression: dictionaryIndices->size() >= length * sizeof(vector_size_t)
+  Context: concat(cast((c0) as VARCHAR), ,:VARCHAR). Input: /tmp/pollux_vector_f7dneH.
+  Function: DictionaryVector
+  File: …/pollux/vector/DictionaryVector-inl.h
+  Line: 107
+```
+`Context:` 字段中的 **Input: /tmp/pollux_vector_f7dneH** 显示了包含表达式输入数据的文件路径
+。我们可以在单元测试或独立程序中将此文件加载到向量中：
+
+```cpp
+
+  #include <fstream>
+  #include <pollux/vector/VectorSaver.h>
+
+  std::ifstream inputFile("/tmp/pollux_vector_f7dneH", std::ifstream::binary);
+  auto data = restoreVector(inputFile, pool());
+  inputFile.close();
+
+  std::cout << data->toString() << std::endl;
+  std::cout << data->toString(0, 5) << std::endl;
+```
+
+**concat(cast((c0) as VARCHAR), ,:VARCHAR)** 显示了该表达式。我们可以在输入向量上对其进行求值（只需进
+行少量调整，将 `,:VARCHAR` 替换为 `‘,’`），以重现并调试错误：
+
+```cpp
+
+  auto result = evaluate(
+      "concat(cast((c0) as VARCHAR), ',')",
+      std::dynamic_pointer_cast<RowVector>(data));
+```
+
+## Serialization Format
+
+
+支持平面向量、常量向量和字典向量的序列化。
+不支持惰性向量、偏置向量和序列向量的序列化。大多数类型均受支持。
+不支持 Decimal 类型、opaque 类型和函数类型。
+
+### Header
+
+
+Vector serialization starts with a header:
+
+* Encoding. 4 bytes
+    * 0 - FLAT, 1 - CONSTANT, 2 - DICTIONARY, 3 - LAZY
+* Type. Variable number of bytes.
+* Size. 4 bytes.
+
+### Type
+
+
+标量类型完全由 TypeKind 枚举定义。这些标量类型被序列化为 4 个字节，其中包含 TypeKind 的整数值。
+
+复杂类型以递归方式序列化。数组类型被序列化为 4 个字节，表示 TypeKind，然后序列化元素的类型。映射类型被序列化为 4 个字
+节，表示 TypeKind，然后序列化键的类型，然后序列化值的类型。行类型被序列化为 4 个字节，表示 TypeKind，然后是 4 个字节的子级数量，
+然后是第一个子级名称、第一个子级类型、第二个子级名称、第二个子级类型，
+等等。子级名称的序列化首先以 4 个字节的长度开始，
+然后是名称本身的相同字节数。
+
+不支持序列化十进制、不透明类型和函数类型。
+
+### Buffer
+
+
+空值、值、字符串、索引、偏移量和大小缓冲区的序列化
+首先以 4 个字节表示缓冲区大小，然后是相同字节的缓冲区内容。
+
+### Flat Vector of Scalar Type
+
+
+* 标头
+* 布尔值，指示是否存在空值缓冲区。1 个字节。
+* 空值缓冲区（如果存在）。
+* 布尔值，指示是否存在值缓冲区。1 个字节。
+* 值缓冲区（如果存在）
+* 字符串缓冲区数量。4 个字节。
+* 字符串缓冲区。
+
+StringView 值使用类似[指针交换](https://en.wikipedia.org/wiki/Pointer_swizzling)的机制进行序列化。
+内联字符串视图按原样序列化。
+
+要序列化非内联字符串，我们需要计算一段连续内存中的偏移量。这段内存由按 stringBuffers 向量中存储的顺序依次排列的字符串缓冲
+区组成。然后，将字符串视图序列化为 4 个字节的大小、4 个字节的零值和 8 个字节的偏移量。
+
+内联和非内联字符串视图均序列化为 16 个字节。
+
+### Flat Row Vector
+
+* 标头
+* 布尔值，指示是否存在空缓冲区。1 个字节。
+* 空缓冲区（如果存在）。
+* 子节点数量。4 个字节。
+* 子向量。每个向量前面都有一个布尔值，指示该向量是否为空。
+
+### Flat Array Vector
+
+
+* 标头
+* 布尔值，指示是否存在空值缓冲区。1 个字节。
+* 空值缓冲区（如果存在）。
+* 缓冲区大小。
+* 缓冲区偏移量。
+* 元素向量。
+
+### Flat Map Vector
+
+
+* 标头
+* 布尔值，指示是否存在空值缓冲区。1 个字节。
+* 空值缓冲区（如果存在）。
+* 键向量。
+* 值向量。
+
+### Constant Vector
+
+
+* 标头
+* Is-null 标志。1 个字节。
+* Is-scalar-value 布尔值。1 个字节。
+* 如果是标量类型：
+* 标量值。
+* 如果值是非内联字符串，则字符串大小占用 4 个字节，后跟字符串本身。
+* 如果是复杂类型：
+* 基向量
+* 基向量的索引。4 个字节。
+
+### Dictionary Vector
+
+* 标头
+* 布尔值，指示是否存在空值缓冲区。1 个字节。
+* 空值缓冲区（如果存在）。
+* 索引缓冲区。
+* 基向量。
+
+### Lazy Vector
+
+
+* 标头
+* 布尔值，指示已加载向量是否存在。1 个字节。
+* 已加载向量（如果存在）。
+
+序列化惰性向量的目的仅仅是重现这些向量在序列化时的状态。这有助于快速重现错误（导致其序列化的错误），因为如果执行最初导致错误的相同步骤，惰性向量最终将处于相同的状态。
+这也意味着，当加载反序列化的惰性向量时，它将加载序列化的已加载向量，无论要求加载哪些行。
+此外，如果向量在序列化时未加载，则在尝试加载反序列化的实例时将抛出异常。因此，它应该仅用于重现错误，而不能用于任何其他情况，例如测试修复。

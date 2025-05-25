@@ -17,6 +17,7 @@ yarn-error.log
 coverage
 .docusaurus
 .cache-loader
+build
 types
 test-website
 test-website-in-workspace

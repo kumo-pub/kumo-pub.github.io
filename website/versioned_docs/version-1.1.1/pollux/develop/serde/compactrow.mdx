@@ -1,0 +1,106 @@
+# CompactRow
+
+CompactRow 是 Pollux 提供的一种行式序列化格式，用于替代 UnsafeRow 格式。CompactRow 比 UnsafeRow 更节省空间，并且减少了字节重排，从而对 CPU 使用率（用于压缩和校验和）和内存（用于缓冲）产生级联效应。
+
+行是一个连续的缓冲区，以空标志开头，后跟各个字段。
+
+```text
+nulls | field1 | field 2 | …
+```
+
+空值部分使用每个字段一位来指示哪些字段为空。如果有 10 个字段，则将有 2 个字节的空值标志（总共 16 位，其中 10 位已使用，6 位未使用）。
+
+固定宽度字段（整数、布尔值、浮点数）无论是否为空，都会占用固定数量的字节。包含 10 个 Bigint 字段的行占用 `2 + 10 * 8 = 82` 个字节。空
+值标志占用 2 个字节，每个字段占用 8 个字节。
+
+固定宽度字段的大小如下：
+
+| Type        | Number of bytes used for serialization |
+|-------------|----------------------------------------|
+| BOOLEAN     | 1                                      |
+| TINYINT     | 1                                      |
+| SMALLINT    | 2                                      |
+| INTEGER     | 4                                      |
+| BIGINT      | 8                                      |
+| HUGEINT     | 16                                     |
+| REAL        | 4                                      |
+| DOUBLE      | 8                                      |
+| TIMESTAMP   | 8                                      |
+| UNKNOWN     | 0                                      |
+
+
+时间戳以微秒精度进行序列化，以与 Spark 的时间戳处理保持一致。
+
+字符串（VARCHAR 和 VARBINARY）使用 4 个字节表示大小加上字符串的长度。空字符串使用 4 个字节。单字符字符串使用 5 个字节。
+20 个字符的 ASCII 字符串使用 24 个字节。空字符串不占用空间（空值部分中的一位除外）。
+
+固定宽度值或字符串的数组（例如整数数组）使用 4 个字节表示数组大小，几个字节用于指示元素是否为空的空值标志（每个元素 1 位），加上元素本身占用的空间。
+
+例如，一个包含 5 个整数 [1, 2, 3, 4, 5] 的数组使用 4 个字节表示大小，1 个字节用于表示 5 个空值标志，5 个值占用 5 * 4 个字节。共25个字节。
+
+```text
+============    ====    ========    ======  ======  ======  ======  ======
+Description     Size    Nulls       Elem 1  Elem 2  Elem 3  Elem 4  Elem 5
+============    ====    ========    ======  ======  ======  ======  ======
+# of bytes      4       1           4       4       4       4       4
+Value           5       00000000    1       2       3       4       5
+============    ====    ========    ======  ======  ======  ======  ======
+```
+一个包含 4 个字符串的数组 `[null, “Abc”, null, “Mountains and rivers”]` 使用 36 个字节：
+
+```text
+============    ====    ========    =======     ======  =======     =====================
+Description     Size    Nulls       Size s2     s2      Size s4     s4
+============    ====    ========    =======     ======  =======     =====================
+# of bytes      4       1           4           3       4           20
+Value           4       10100000    1           Abc     20          Mountains and rivers
+============    ====    ========    =======     ======  =======     =====================
+```
+
+复杂类型元素数组（例如数组、映射或结构体数组）的序列化包含一些附加字段：序列化后的总大小加上序列化缓冲区中每个元素的偏移量。
+
+- 4 个字节 - 数组大小。
+- N 个字节 - 空值标志，每个元素 1 位。
+- 4 个字节 - 数组的序列化后总大小（不包括前两个字段（大小和空值））。
+- 每个元素 4 个字节 - 序列化缓冲区中元素相对于序列化后总大小后位置的偏移量。
+- 元素。
+
+例如，整数数组 `[[1, 2, 3], [4, 5], [6]]` 使用 N 个字节：
+
+- 4 bytes - size - 3
+- 1 byte - nulls - 00000000
+- 4 bytes - total serialized size - 55
+- 4 bytes - offset of the 1st element - 12
+- 4 bytes - offset of the 2nd element - 29
+- 4 bytes - offset of the 3rd element - 42
+- —-- Start of the 1st element: [1, 2, 3]
+- 4 bytes - size - 3
+- 1 byte - nulls - 00000000
+- 4 bytes - element 1 - 1
+- 4 bytes - element 2 - 2
+- 4 bytes - element 3 - 3
+- —-- Start of the 2nd element: [4, 5]
+- 4 bytes - size - 2
+- 1 byte - nulls - 00000000
+- 4 bytes - element 1 - 4
+- 4 bytes - element 2 - 5
+- —-- Start of the 2nd element: [6]
+- 4 bytes - size - 1
+- 1 byte - nulls - 00000000
+- 4 bytes - element 1 - 6
+
+Map 序列化为键数组，后接值数组。
+
+结构体的序列化方式与顶层行相同。
+
+与 UnsafeRow 相比，CompactRow 的序列化时间平均缩短了大约一半。以下是一些示例：
+
+| Type               | UnsafeRow | CompactRow |
+|--------------------|-----------|------------|
+| INTEGER            | 8         | 4          |
+| BIGINT             | 8         | 8          |
+| REAL               | 8         | 4          |
+| DOUBLE             | 8         | 8          |
+| VARCHAR: "" (empty)| 8         | 4          |
+| VARCHAR: "Abc"     | 16        | 7          |
+

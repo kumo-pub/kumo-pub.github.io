@@ -296,7 +296,7 @@ export default async function createConfigAsync() {
           remarkPlugins: [
               npm2yarn,[require('docusaurus-remark-plugin-codetabs'), {
                        // options
-            }],
+            }]
           ],
           editCurrentVersion: true,
           sidebarPath: './sidebarsCommunity.js',
@@ -514,6 +514,7 @@ export default async function createConfigAsync() {
     ],
 
     themeConfig: {
+      lastUpdated: true,
       liveCodeBlock: {
         playgroundPosition: 'bottom',
       },

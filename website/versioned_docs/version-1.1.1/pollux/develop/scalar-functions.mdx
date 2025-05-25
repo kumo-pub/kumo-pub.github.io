@@ -1,0 +1,993 @@
+# 如何添加标量函数？
+
+
+## 简单的功能 {#simple-functions}
+
+本文档介绍了 Pollux 中简单函数 API 的主要概念、功能和示例。如需更多实际 API 使用示例，请查看 **pollux/example/simple_functions.cpp**。
+
+一个简单的标量函数，例如：`数学函数</functions/presto/math>`，可以通过将 C++ 函数包装到模板类中来添加。例如，ceil 函数可以实现如下：
+
+```cpp
+
+  template <typename TExec>
+  struct CeilFunction {
+    POLLUX_DEFINE_FUNCTION_TYPES(TExec);
+
+    template <typename T>
+    MELON_ALWAYS_INLINE void call(T& result, const T& a) {
+      result = std::ceil(a);
+    }
+  };
+```
+
+所有简单函数类都需要模板化，并提供一个“call”方法（或下文描述的变体之一）。顶级模板参数提供了类型系统适配器，允许开发者使用非原始
+类型，例如字符串、数组、映射和结构体（请参阅下文的示例）。虽然顶级模板参数不用于操作原始类型的函数（例如上例中的函数），但仍需要指定它。
+
+调用方法本身也可以模板化或重载，以便针对不同的输入类型（例如 float 和 double）调用该函数。请注意，
+模板实例化只会在函数注册期间进行，具体操作请参见下文的`注册`部分。
+
+请勿使用旧版 POLLUX_UDF_BEGIN 和 POLLUX_UDF_END 宏。
+
+`call`函数（或其变体）可能返回 (a) void 值，表示该函数永远不会返回空值；或者 (b) boolean 值，表示计算结果是否为空。返回
+的布尔值的含义是“结果已设置”，即 true 表示已填充非空结果，false 表示无（空）结果。如果`ceil(0)`返回空值，则该函数可以重写如下：
+
+```cpp
+
+  template <typename TExec>
+  struct NullableCeilFunction {
+    POLLUX_DEFINE_FUNCTION_TYPES(TExec);
+
+    template <typename T>
+    MELON_ALWAYS_INLINE bool call(T& result, const T& a) {
+      result = std::ceil(a);
+      return a != 0; // Return NULL if input is zero.
+    }
+  };
+```
+
+参数列表必须以输出参数“result”开头，后跟函数参数。“result”参数必须是引用。函数参数必须是 const 引用。函数参数和结果参数的 C++
+类型必须与 :doc:`Pollux 类型</develop/types>` 匹配。
+
+| Pollux Type | C++ Argument Type           | C++ Result Type            |
+|-------------|-----------------------------|----------------------------|
+| BOOLEAN     | `arg_type<bool>`            | `out_type<bool>`           |
+| TINYINT     | `arg_type<int8_t>`          | `out_type<int8_t>`         |
+| SMALLINT    | `arg_type<int16_t>`         | `out_type<int16_t>`        |
+| INTEGER     | `arg_type<int32_t>`         | `out_type<int32_t>`        |
+| BIGINT      | `arg_type<int64_t>`         | `out_type<int64_t>`        |
+| REAL        | `arg_type<float>`           | `out_type<float>`          |
+| DOUBLE      | `arg_type<double>`          | `out_type<double>`         |
+| TIMESTAMP   | `arg_type<Timestamp>`       | `out_type<Timestamp>`      |
+| DATE        | `arg_type<Date>`            | `out_type<Date>`           |
+| VARCHAR     | `arg_type<Varchar>`         | `out_type<Varchar>`        |
+| VARBINARY   | `arg_type<Varbinary>`       | `out_type<Varbinary>`      |
+| ARRAY       | `arg_type<Array<E>>`        | `out_type<Array<E>>`       |
+| MAP         | `arg_type<Map<K,V>>`        | `out_type<Map<K,V>>`       |
+| ROW         | `arg_type<Row<T1,T2,...>>`  | `out_type<Row<T1,T2,...>>` |
+
+
+arg_type 和 out_type 模板由结构体定义中的
+`POLLUX_DEFINE_FUNCTION_TYPES(TExec)` 宏定义。对于原始类型，`arg_type<T>` 与 `out_type<T>` 和 `T` 相同。
+这适用于布尔值、整数、浮点类型和时间戳。
+对于 DATE，`arg_type<Date>` 与 `out_type<Date>` 相同，定义为 int32_t。
+
+一个接受整数和双精度数并返回双精度数的函数的签名如下：
+
+```cpp
+
+    void call(arg_type<double>& result, const arg_type<int32_t>& a, const arg_type<double>& b)
+```
+这相当于
+
+```cpp
+
+    void call(double& result, const int32_t& a, const double& b)
+```
+对于字符串，`arg_type<Varchar>` 定义为 `StringView`，而 `out_type<Varchar>` 定义为 `StringWriter`。
+
+Varchar、Array、Map 和 Row 类型的 arg_type 和 out_type 提供类似于 `std::string`、`std::vector`、`melon::F14FastMap`
+和 `std::tuple` 的接口。底层实现经过优化，无需额外复制即可从列式表示中读取和写入数据。更多关于字符串和复杂类型的 arg_type
+和 out_type 的解释和 API，请参阅 `view-and-writer-types`。
+
+注意：目前不要过多关注复杂类型映射。
+为了完整性起见，这里只包含它们。
+
+## 空行为 {#null-behavior}
+
+大多数函数都有默认的空值行为，例如，任何参数中的空值都会产生空值结果。表达式求值引擎会自动为此类输入生成空值，从而避免调用
+实际函数。如果给定函数对空值输入有不同的行为，则必须定义一个`callNullable`函数，而不是`call`函数。以下是一个 ceil 函数的
+人工示例，该函数对空值输入返回 0：
+
+```cpp
+
+  template <typename TExec>
+  struct CeilFunction {
+    template <typename T>
+    MELON_ALWAYS_INLINE void callNullable(T& result, const T* a) {
+      // Return 0 if input is null.
+      if (a) {
+        result = std::ceil(*a);
+      } else {
+        result = 0;
+      }
+    }
+  };
+```
+
+请注意，callNullable 函数接受的参数是原始指针而非引用，以便可以指定空值。`callNullable()` 也可以返回 `void`，以指示该函数不产生空值。
+
+## 无空快速路径 {#null-free-fast-path}
+
+
+`callNullFree`函数可以代替`call`和/或`callNullable`函数实现，或与其同时实现。如果仅实现`callNullFree`函数，则如果任何输入
+参数为空（类似默认的空值行为），或者任何输入参数为复杂类型且其值中包含空值（例如，包含空值元素的数组），则将跳过对该函数的求值，并自动生成空值。
+如果`callNullFree`与`call`和/或`callNullable`函数同时实现，则将对批处理应用 `O(N * D)` 检查，以检查是否有任何输入参数可能为空或包含空
+值，其中 N 是输入参数的数量，D 是复杂类型嵌套的深度。只有当能够明确确定不存在空值时，才会调用`callNullFree`。在这种情况下，
+`callNullFree` 可以充当快速路径，避免任何每行的空值检查。
+
+以下是 array_min 函数的示例，该函数返回数组中的最小值：
+
+```cpp
+
+  template <typename TExec>
+  struct ArrayMinFunction {
+    POLLUX_DEFINE_FUNCTION_TYPES(TExec);
+
+    template <typename TInput>
+    MELON_ALWAYS_INLINE bool callNullFree(
+        TInput& out,
+        const null_free_arg_type<Array<TInput>>& array) {
+      out = INT32_MAX;
+      for (auto i = 0; i < array.size(); i++) {
+        if (array[i] < out) {
+          out = array[i]
+        }
+      }
+      return true;
+    }
+  };
+```
+
+请注意，在`callNullFree`中，我们可以访问`array`元素而无需检查其是否为空。另请注意，我们将输入类型包装在
+`null_free_arg_type<...>` 模板中，而不是 `arg_type<...>` 模板中。这是必需的，因为在`callNullFree`函数中，
+复杂类型的输入类型与访问时不包装在类似 `std::optional` 的接口中的复杂类型不同。
+
+
+## 决定论 {#determinism}
+
+默认情况下，简单函数被假定为确定性的，例如，给定相同的输入，它们总是产生相同的结果。如果不是这样，
+该函数必须定义一个 `static constexpr bool is_deterministic` 成员：
+
+```cpp
+
+  static constexpr bool is_deterministic = false;
+```
+此类函数的一个例子是 `rand()`：
+
+```cpp
+
+  template <typename TExec>
+  struct RandFunction {
+    static constexpr bool is_deterministic = false;
+
+    MELON_ALWAYS_INLINE bool call(double& result) {
+      result = melon::Random::randDouble01();
+      return true;
+    }
+  };
+```
+## 全 ASCII 快速路径 {#all-ascii-fast-path}
+
+处理字符串输入的函数必须能够正确处理 UTF-8 输入。
+但是，如果已知输入仅包含 ASCII 字符，这些函数通常可以更高效地实现。此类函数可以提供`call`方法来处理 UTF-8 字符串，
+以及`callAscii`方法来处理纯 ASCII 字符串。引擎将检查输入字符串，如果输入全部为 ASCII，则调用`callAscii`方法；如果输入可能包含多字节字符，则调用`call`。
+
+此外，大多数接受字符串输入并生成字符串输出的函数都具有所谓的默认 ASCII 行为，例如，全 ASCII 输入保证全 ASCII 输出。如果是这种情况，函数可以通过定
+义 is_default_ascii_behavior 成员变量并将其初始化为 true 来指示。引擎会自动将结果字符串标记为全 ASCII。当这些字符串作为输入传递给
+其他函数时，引擎无需扫描这些字符串来确定它们是否为 ASCII。
+
+以下是修剪函数的示例：
+
+```cpp
+
+  template <typename TExec>
+  struct TrimFunction {
+    POLLUX_DEFINE_FUNCTION_TYPES(TExec);
+
+    // ASCII input always produces ASCII result.
+    static constexpr bool is_default_ascii_behavior = true;
+
+    // Properly handles multi-byte characters.
+    MELON_ALWAYS_INLINE bool call(
+        out_type<Varchar>& result,
+        const arg_type<Varchar>& input) {
+      stringImpl::trimUnicodeWhiteSpace<leftTrim, rightTrim>(result, input);
+      return true;
+    }
+
+    // Assumes input is all ASCII.
+    MELON_ALWAYS_INLINE bool callAscii(
+        out_type<Varchar>& result,
+        const arg_type<Varchar>& input) {
+      stringImpl::trimAsciiWhiteSpace<leftTrim, rightTrim>(result, input);
+      return true;
+    }
+  };
+```
+## 零拷贝字符串结果 {#zero-copy-string-result}
+
+`substr` 和 :func:`trim` 等函数可以通过引用输入字符串来生成零拷贝结果。为此，它们必须定义一个 reuse_strings_from_arg 成员变量，
+并将其初始化为在结果中重复使用其字符串的参数的索引。这将允许引擎将对输入字符串缓冲区的引用添加到结果向量，并确保这些缓冲区不会过早消失。输出类
+型可以是标量字符串（varchar 和 varbinaries），也可以是包含字符串的复杂类型，例如数组、映射和行。
+
+out_type 模板的 setNoCopy 方法可用于将结果设置为输入参数中的字符串，而无需进行复制。setEmpty 方法可用于将结果设置为空字符串。
+
+```cpp
+
+  // Results refer to strings in the first argument.
+  static constexpr int32_t reuse_strings_from_arg = 0;
+```
+
+以下是零拷贝函数的示例：
+
+```cpp
+
+  template <typename TExec>
+  struct TrimFunction {
+    POLLUX_DEFINE_FUNCTION_TYPES(TExec);
+
+    // Results refer to strings in the first argument.
+    static constexpr int32_t reuse_strings_from_arg = 0;
+
+    MELON_ALWAYS_INLINE void call(
+        out_type<Varchar>& result,
+        const arg_type<Varchar>& input) {
+      if (input.size() == 0) {
+        result.setEmpty();
+        return;
+      }
+      result.setNoCopy(stringImpl::trimUnicodeWhiteSpace(input));
+    }
+  };
+```
+
+## 访问会话属性和常量输入 {#access-to-session-properties-and-constant-inputs}
+
+某些函数需要访问会话属性，例如会话的时区。
+例如 Presto 的 :func:`day`、:func:`hour` 和 :func:`minute` 函数。其他函数可以通过预处理某些常量输入来获益，例如编译正则表达
+式模式或解析日期和时间单位。为了访问会话属性和常量输入，函数必须定义一个初始化方法，该方法接收一个指向 QueryConfig 的常量引用以及每个输入
+参数的常量指针列表。常量输入将指定其值。非常量输入将作为 nullptr 传递。初始化方法的签名类似于 callNullable 方法，但第一个参数为
+`const core::QueryConfig&`。引擎会在每次查询和执行线程中调用一次初始化方法。
+
+下面是一个小时函数的示例，它从会话属性中提取时区，并在处理输入时使用它。
+
+```cpp
+
+  template <typename TExec>
+  struct HourFunction {
+    POLLUX_DEFINE_FUNCTION_TYPES(TExec);
+
+    const tz::TimeZone* timeZone_ = nullptr;
+
+    MELON_ALWAYS_INLINE void initialize(
+        const std::vector<TypePtr>& inputTypes,
+        const core::QueryConfig& config,
+        const arg_type<Timestamp>* /*timestamp*/) {
+      timeZone_ = getTimeZoneFromConfig(config);
+    }
+
+    MELON_ALWAYS_INLINE bool call(
+        int64_t& result,
+        const arg_type<Timestamp>& timestamp) {
+      int64_t seconds = getSeconds(timestamp, timeZone_);
+      std::tm dateTime;
+      gmtime_r((const time_t*)&seconds, &dateTime);
+      result = dateTime.tm_hour;
+      return true;
+    }
+  };
+```
+下面是另一个示例，说明`date_trunc` 函数在初始化期间解析常量单位参数，并在处理单个行时重用解析后的值。
+
+```cpp
+
+  template <typename TExec>
+  struct DateTruncFunction {
+    POLLUX_DEFINE_FUNCTION_TYPES(TExec);
+
+    const tz::TimeZone* timeZone_ = nullptr;
+    std::optional<DateTimeUnit> unit_;
+
+    MELON_ALWAYS_INLINE void initialize(
+        const std::vector<TypePtr>& inputTypes,
+        const core::QueryConfig& config,
+        const arg_type<Varchar>* unitString,
+        const arg_type<Timestamp>* /*timestamp*/) {
+      timeZone_ = getTimeZoneFromConfig(config);
+      if (unitString != nullptr) {
+        unit_ = fromDateTimeUnitString(*unitString);
+      }
+    }
+
+    MELON_ALWAYS_INLINE bool call(
+        out_type<Timestamp>& result,
+        const arg_type<Varchar>& unitString,
+        const arg_type<Timestamp>& timestamp) {
+      const auto unit =
+          unit_.has_value() ? unit_.value() : fromDateTimeUnitString(unitString);
+      ...<use unit enum>...
+    }
+  };
+```
+如果 `initialize` 方法抛出异常，该异常将被捕获并报告为每一行活动行的输出。如果没有活动行，则不会引发异常。
+
+## 函数注册 {#registration}
+
+使用`register_function`模板来注册简单函数。
+
+```cpp
+
+  template <template <class> typename Func, typename TReturn, typename... TArgs>
+  void register_function(
+      const std::vector<std::string>& aliases = {},
+      std::shared_ptr<const Type> returnType = nullptr)
+```
+第一个模板参数是类名，下一个模板参数是返回类型，其余模板参数是参数类型。别名
+参数允许开发者为同一个函数指定多个名称，
+但每个函数注册至少需要提供一个名称。上面定义的“ceil”函数可以使用以下函数调用进行注册：
+
+```cpp
+
+  register_function<CeilFunction, double, double>({"ceil", "ceiling"});
+```
+
+这里，我们注册了一个 CeilFunction 函数，它接受一个双精度浮点数并返回一个双精度浮点数。如果我们想允许 ceil 函数在浮点数输入上调用，
+我们需要再次调用 register_function 函数：
+
+```cpp
+
+  register_function<CeilFunction, float, float>({"ceil", "ceiling"});
+```
+
+我们需要为每个想要支持的签名调用 register_function。
+
+这是一个从 Pollux 类型到 C++ 类型的映射，应该在注册期间用于参数和返回类型。
+
+| Pollux Type | C++ Type            |
+|-------------|---------------------|
+| BOOLEAN     | `bool`              |
+| TINYINT     | `int8_t`            |
+| SMALLINT    | `int16_t`           |
+| INTEGER     | `int32_t`           |
+| BIGINT      | `int64_t`           |
+| REAL        | `float`             |
+| DOUBLE      | `double`            |
+| TIMESTAMP   | `Timestamp`         |
+| DATE        | `Date`              |
+| VARCHAR     | `Varchar`           |
+| VARBINARY   | `Varbinary`         |
+| ARRAY       | `Array<E>`          |
+| MAP         | `Map<K,V>`          |
+| ROW         | `Row<T1,T2,...>`    |
+
+
+例如，为字符串输入注册 array_min 函数：
+
+```cpp
+
+    register_function<ArrayMinFunction, Varchar, Array<Varchar>>({"array_min"});
+```
+
+要为任何类型的数组注册 array_min 函数，请使用 `Generic<T1>` 作为元素类型：
+
+```cpp
+
+    register_function<ArrayMinFunction, Generic<T1>, Array<Generic<T1>>>({"array_min"});
+```
+
+由于 array_min 需要对元素进行排序以找到最小值，因此元素类型需要是可排序的。您可以使用 `Orderable<T1>` 将数组元素限制为可排序的类型。
+
+```cpp
+
+    register_function<ArrayMinFunction, Orderable<T1>, Array<Orderable<T1>>>({"array_min"});
+```
+
+你可以在函数签名中使用多个泛型类型。例如，要注册 map_top_n 函数：
+
+```cpp
+
+    register_function<
+        MapTopNFunction,
+        Map<Generic<T1>, Orderable<T2>>,    // result map type
+        Map<Generic<T1>, Orderable<T2>>,    // input map type
+        int64_t                             // type of N argument
+    >({"map_top_n"});
+```
+
+泛型类型必须使用 T1、T2、T3…… 命名。
+
+最后，您可以使用 `Constant<T>` 指定参数必须是常量。
+例如，要使用常量种子参数指定随机签名：
+
+```cpp
+
+    register_function<RandFunction, double, Constant<int32_t>>({"rand"});
+```
+
+## 可变参数 {#variadic-arguments}
+
+简单函数的最后一个参数可以标记为`可变参数`。这意味着，
+调用此函数时，可以在调用结束时包含 0 到 N 个该类型的参数。虽然“可变参数”在 Pollux 中并非真正的类型，但它可以被视为一种语法类型，其行为与数组有些类似。
+
+| C++ Argument Type               | C++ Actual Argument Type      |
+|----------------------------------|-------------------------------|
+| `arg_type<Variadic<E>>`         | `NullableVariadicView<E>`     |
+| `null_free_arg_type<Variadic<E>>`| `NullFreeVariadicView<E>`     |
+
+
+与 `NullableArrayView` 和 `NullFreeArrayView` 类似，`VariadicViews` 的接口类似于
+*`const std::vector<std::optional<V>>`*。
+
+`NullableVariadicView 和 `NullFreeVariadicView` 支持以下函数：
+
+- `size_t size()`：返回函数调用中作为`Variadic`类型传递的参数数量。
+
+- operand[](size_t index)：访问索引处的参数值。它返回 `null_free_arg_type<E>` 或 `OptionalAccessor<E>`。
+
+- `VariadicView<T>::Iterator begin()`：指向第一个参数的迭代器。
+
+- `VariadicView<T>::Iterator end()`：指示迭代结束的迭代器。
+
+- `bool mayHaveNulls()`：检查参数是否为空（注意，这需要的时间与参数数量成正比）。如果返回 `false`，则肯定不存在空值；如果返回 `true`，则不保证存在空值。
+
+- `VariadicView<T>::SkipNullsContainer SkipNulls()`：返回一个可迭代容器，该容器可直接访问每个具有非空值的参数。
+
+以下代码展示了一个连接可变数量字符串的函数示例：
+
+```cpp
+
+     template <typename T>
+     struct VariadicArgsReaderFunction {
+       POLLUX_DEFINE_FUNCTION_TYPES(T);
+
+       MELON_ALWAYS_INLINE bool call(
+           out_type<Varchar>& out,
+           const arg_type<Variadic<Varchar>>& inputs) {
+         for (const auto& input : inputs) {
+           if (input.has_value()) {
+             output += input.value();
+           }
+         }
+
+         return true;
+       }
+     };
+```
+
+## 向量函数 {#vector-functions}
+
+简单函数处理单行并生成单个值。
+向量函数处理一批或多行数据并生成一个向量结果。
+在实现函数时，除非向量函数的实现能够显著提升性能，并且可以通过基准测试证明，否则优先使用简单函数。
+向量函数的一些定义特性包括：
+
+- 将向量作为输入并生成向量结果；
+- 可以访问向量编码和元数据；
+- 可以针对通用输入类型进行定义，例如通用数组、映射和结构体；
+- 允许实现 `lambda 函数 <lambda-functions>`；
+
+向量函数接口允许进行许多简单函数无法进行的优化。这些优化通常利用不同的向量编码和向量的列式表示。以下是一些示例：
+
+- `map_keys` 函数利用 ArrayVector 的表示形式，直接返回内部的`keys`向量，不进行任何计算。同样，`map_values` 函数直接返回内部的`values`向量。
+- `map_entries` 函数获取输入向量的各个部分，包括`nulls`、`sizes`和`offsets`缓冲区以及`keys`和`values`向量，并将它们重新打包为 RowVector 的形式。
+- `cardinality` 函数利用 ArrayVector 和 MapVector 的表示形式，直接返回输入向量的“sizes”缓冲区。
+- `is_null` 函数复制输入向量的`nulls`缓冲区，批量翻转位并返回结果。
+- `element_at` 函数和数组及映射的下标运算符使用字典编码来表示输入`元素`或`值`向量的子集，而无需复制。
+
+要定义向量函数，请创建 `exec::VectorFunction` 的子类并
+实现`apply`方法。
+
+```cpp
+
+        void apply(
+              const SelectivityVector& rows,
+              std::vector<VectorPtr>& args,
+              Expr* caller,
+              EvalCtx& context,
+              VectorPtr& result) const
+```
+
+### 输入行 {#input-rows}
+
+`rows`参数指定传入批次中要处理的行集。此集合可能不包含所有行。默认情况下，向量函数被假定具有默认的空
+值行为，例如，任何输入中的空值都会产生空值结果。在这种情况下，表达式求值引擎将从`apply`调用中指定的`行`
+中排除包含空值的行。如果函数对空值输入有不同的行为，则必须在注册期间指定。
+有关更多详细信息，请参阅:`vector function registry<Registration>`。
+
+在这种情况下，“rows”参数将包含包含空值输入的行，并且函数需要处理这些行。默认情况下，函数可以假定并非所有“行”的所有输入都为空。
+
+当将函数作为条件表达式的一部分进行求值时，例如 AND、OR、IF、SWITCH，则“行”集表示需要求值的行的子集。请考虑一些示例。
+
+```cpp
+
+    a > 5 AND b > 7
+```
+
+这里，`a > 5` 在所有 `a` 非空的行上进行求值，而 `b > 7` 则在 `b` 非空且 `a > 5` 为真的行上进行求值。
+
+```cpp
+
+    IF(condition, a + 5, b - 3)
+```
+
+这里，`a + 5` 在 a 非空且条件为真的行上求值，
+而 `b - 3` 在 b 非空且条件不真的行上求值。
+
+在某些情况下，“行”之外的值可能未定义、未初始化或包含垃圾数据。如果先前的过滤操作生成的字典编码
+向量的索引指向通过过滤的行子集，就会出现这种情况。在求值 `f(g(a))`（其中 `a = Dict(a0)`）时，
+函数`g`会在`a0`中的行子集上求值，并可能生成仅填充该行子集的结果。然后，函数`f`会在`g`的结果中对相同的行子集求值。`f`的输入将包含`行`之外未定义、未初始化或包含垃圾数据的值。
+
+请注意，`SelectivityVector::applyToSelected` 方法可用于循环遍历指定的行，其方式与标准 `for` 循环非常相似。
+
+```cpp
+
+    rows.applyToSelected([&] (auto row) {
+        // row is the 0-based row number
+        // .... process the row
+    });
+```
+
+### 输入向量 {#input-vectors}
+
+`args` 参数是一个 Pollux 向量的 `std::vector`，其中包含函数参数的值。这些向量不一定是平面向量，可以是字典或常量编
+码。但是，如果一个确定性函数接受单个参数，并且默认为空，则保证其唯一输入是平面向量或常量向量。默认情况下，函数被假定为确定
+性的。如果不是，则必须在注册期间指定非确定性行为。有关更多详细信息，请参阅 `vector function registry<Registration>`。
+
+请注意，`decoded-vector` 可用于获取任何向量的平面向量式接口。辅助类 `exec::DecodedArgs` 可用于解码多个参数。
+
+```cpp
+    exec::DecodedArgs decodedArgs(rows, args, context);
+    auto firstArg = decodedArgs.at(0);
+    auto secondArg = decodedArgs.at(1);
+```
+
+### 结果向量 {#result-vector}
+
+`result` 参数是一个指向 VectorPtr 的原始指针，而 VectorPtr 是一个指向 BaseVector 的
+`std::shared_ptr`。它可以为空，也可以指向一个可重用的临时向量，或者一个必须保留内容的部分填充向量。
+
+在执行 IF 语句的`else`分支时，会指定一个部分填充的向量。在这种情况下，`then`分支的结果必须保留。这可以通过以下两种模式之一轻松实现。
+
+将所有行或指定行的结果计算到一个新的向量中，
+然后使用 `EvalCtx::moveOrCopyResult` 方法将向量 `std::move` 到`result`中，或将单个行复制到部分填充的`result`中。
+
+以下是使用 moveOrCopyResult 实现 map_keys 函数的示例：
+
+```cpp
+
+    void apply(
+        const SelectivityVector& rows,
+        std::vector<VectorPtr>& args,
+        exec::Expr* /* caller */,
+        exec::EvalCtx& context,
+        VectorPtr& result) const override {
+      auto mapVector = args[0]->as<MapVector>();
+      auto mapKeys = mapVector->mapKeys();
+
+      auto localResult = std::make_shared<ArrayVector>(
+          context.pool(),
+          ARRAY(mapKeys->type()),
+          mapVector->nulls(),
+          rows.end(),
+          mapVector->offsets(),
+          mapVector->sizes(),
+          mapKeys,
+          mapVector->getNullCount());
+
+      context.moveOrCopyResult(localResult, rows, result);
+    }
+```
+
+使用 `BaseVector::ensureWritable` 方法将`result`初始化为一个扁平的、唯一引用的向量，同时保留`rows`中未指定的行的值。然后，计算并填充`result`中的`rows`。
+如果`result`为空，`BaseVector::ensureWritable` 会创建一个新的向量。如果
+result 不为空，但非扁平或非单引用，`BaseVector::ensureWritable` 会创建一个新的向量，并将`result`中非`rows`的值
+复制到新创建的向量中。如果`result`不为空且为扁平，`BaseVector::ensureWritable` 会检查内部缓冲区，如果它们不是单引用，则复制这些缓
+冲区。`BaseVector::ensureWritable` 还会对内部向量（数组的元素向量、映射的键和值、结构体的字段）递归调用自身，以确保向量始终处于`可写`状态。
+
+以下是使用 `BaseVector::ensureWritable` 实现地图基数函数的示例：
+
+```cpp
+
+    void apply(
+        const SelectivityVector& rows,
+        std::vector<VectorPtr>& args,
+        exec::Expr* /* caller */,
+        exec::EvalCtx& context,
+        VectorPtr& result) const override {
+
+      BaseVector::ensureWritable(rows, BIGINT(), context.pool(), result);
+      BufferPtr resultValues =
+           result->as<FlatVector<int64_t>>()->mutableValues(rows.size());
+      auto rawResult = resultValues->asMutable<int64_t>();
+
+      auto mapVector = args[0]->as<MapVector>();
+      auto rawSizes = mapVector->rawSizes();
+
+      rows.applyToSelected([&](vector_size_t row) {
+        rawResult[row] = rawSizes[row];
+      });
+    }
+```
+
+## 简单实现 {#simple-implementation}
+
+向量函数接口非常灵活，允许进行许多有趣的优化。但它也可能让人感觉非常复杂。让我们看看如何使用
+`DecodedVector` 和 `BaseVector::ensureWritable` 将`power(a, b)`函数实现为向量函数，其
+复杂程度不会比简单函数复杂太多。需要说明的是，最好将`power`函数实现为简单函数。我在这里使用它仅用于说明目的。
+
+```cpp
+
+    // Initialize flat results vector.
+    BaseVector::ensureWritable(rows, DOUBLE(), context.pool(), result);
+    auto rawResults = result->as<FlatVector<int64_t>>()->mutableRawValues();
+
+    // Decode the arguments.
+    DecodedArgs decodedArgs(rows, args, context);
+    auto base = decodedArgs.at(0);
+    auto exp = decodedArgs.at(1);
+
+    // Loop over rows and calculate the results.
+    rows.applyToSelected([&](int row) {
+      rawResults[row] =
+          std::pow(base->valueAt<double>(row), exp->valueAt<double>(row));
+    });
+```
+
+您可能需要针对底数和指数均为平坦的情况进行优化，并消除调用 `DecodedVector::valueAt` 模板的开销。
+
+```cpp
+
+    if (base->isIdentityMapping() && exp->isIdentityMapping()) {
+      auto baseValues = base->data<double>();
+      auto expValues = exp->data<double>();
+      rows.applyToSelected([&](int row) {
+        rawResults[row] = std::pow(baseValues[row], expValues[row]);
+      });
+    } else {
+      rows.applyToSelected([&](int row) {
+        rawResults[row] =
+            std::pow(base->valueAt<double>(row), exp->valueAt<double>(row));
+      });
+    }
+```
+
+您可能决定针对平底和常数指数的情况进行进一步优化。
+
+```cpp
+
+    if (base->isIdentityMapping() && exp->isIdentityMapping()) {
+      auto baseValues = base->data<double>();
+      auto expValues = exp->data<double>();
+      rows.applyToSelected([&](int row) {
+        rawResults[row] = std::pow(baseValues[row], expValues[row]);
+      });
+    } else if (base->isIdentityMapping() && exp->isConstantMapping()) {
+      auto baseValues = base->data<double>();
+      auto expValue = exp->valueAt<double>(0);
+      rows.applyToSelected([&](int row) {
+        rawResults[row] = std::pow(baseValues[row], expValue);
+      });
+    } else {
+      rows.applyToSelected([&](int row) {
+        rawResults[row] =
+            std::pow(base->valueAt<double>(row), exp->valueAt<double>(row));
+      });
+    }
+```
+
+希望您现在已经明白，实现过程中的额外复杂性仅仅来自于引入优化路径。开发人员需要根据具体情况来判断
+这种复杂性是否合理。
+
+## TRY 表达式支持 {#try-expression-support}
+
+内置的 TRY 表达式会评估输入表达式，并通过返回 NULL 来处理某些类型的错误。它用于以下情况：当遇到损坏或无效数据时，查询最好返回 NULL 或默认值，而不是失败。要指定默认值，可以将 TRY 表达式与 COALESCE 函数结合使用。
+
+TRY 表达式的实现依赖于 `VectorFunction` 的实现，以调用 `EvalCtx::setError(row, exception)` 而不是直接抛出异常。
+
+```cpp
+
+    void setError(vector_size_t index, const std::exception_ptr& exceptionPtr);
+```
+
+一种典型的模式是循环遍历行，应用一个包裹在 `try-catch` 中的函数，并从 catch 块中调用 `context->setError(row, std::current_exception())`; 。
+
+```cpp
+
+    rows.applyToSelected([&](auto row) {
+      try {
+        // ... calculate and store the result for the row
+      } catch (const std::exception& e) {
+        context.setError(row, std::current_exception());
+      }
+    });
+```
+
+有一个便捷方法 `EvalCtx::applyToSelectedNoThrow` 可以用来代替上面显式的 `try-catch` 块：
+
+```cpp
+
+    context.applyToSelectedNoThrow(rows, [&](auto row) {
+      // ... calculate and store the result for the row
+    });
+```
+
+
+简单函数默认兼容 TRY 表达式。框架将`call`和`callNullable`方法封装在 `try-catch` 中，并使用 `context.setError` 报告错误。
+
+
+## 注册 {#egistration}
+
+使用 `exec::registerVectorFunction` 注册无状态向量函数。
+
+```cpp
+
+    bool registerVectorFunction(
+        const std::string& name,
+        std::vector<FunctionSignaturePtr> signatures,
+        std::unique_ptr<VectorFunction> func,
+        VectorFunctionMetadata metadata = {},
+        bool overwrite = true)
+```
+
+`exec::registerVectorFunction` 接受一个名称、一个受支持的签名列表，以及指向该函数实
+例的 unique_ptr。它接受一个可选的“元数据”参数，用于指定函数是否具有确定性、是否具有默认的空行为以
+及其他属性。辅助类 VectorFunctionMetadataBuilder 允许轻松构建“元数据”。例如，
+
+```cpp
+
+    VectorFunctionMetadataBuilder().defaultNullBehavior(false).build();
+```
+
+
+可选的`overwrite`标志指定如果指定名称的函数已存在，是否覆盖该函数。
+
+使用 `exec::registerStatefulVectorFunction` 注册一个有状态向量函数。
+
+注意：在解析期间，向量函数将优先于简单函数。
+这是因为在某些情况下，编写优化的向量函数是合理的，因此向量函数的优先级高于等效的简单函数。
+
+```cpp
+
+    bool registerStatefulVectorFunction(
+        const std::string& name,
+        std::vector<FunctionSignaturePtr> signatures,
+        VectorFunctionFactory factory,
+        VectorFunctionMetadata metadata = {},
+        bool overwrite = true)
+```
+
+`exec::registerStatefulVectorFunction` 接受一个名称、一个受支持的签名列表以及一个可用于创建向量函数实例的工
+厂函数。表达式求值引擎使用工厂函数为每个执行线程创建一个新的向量函数实例。在单线程执行中，该函数的单个实例用于处理
+所有批次数据。在多线程执行中，每个线程都会创建一个单独的函数实例。工厂函数的调用参数包括函数名称、类型以及可选的常
+量值。例如，正则表达式函数通常使用常量正则表达式进行调用。有状态向量函数可以编译一次正则表达式（每个执行线程），并
+将编译后的表达式重用于多个批次数据。同样，与常量 IN 列表一起使用的 IN 表达式可以创建一次值的哈希集，并将其重用于所有批次数据。
+
+```cpp
+
+    // Represents arguments for stateful vector functions. Stores element type, and
+    // the constant value (if supplied).
+    struct VectorFunctionArg {
+      const TypePtr type;
+      const VectorPtr constantValue;
+    };
+
+    using VectorFunctionFactory = std::function<std::shared_ptr<VectorFunction>(
+        const std::string& name,
+        const std::vector<VectorFunctionArg>& inputArgs)>;
+```
+
+
+## 函数签名 {#function-signature}
+
+建议使用 FunctionSignatureBuilder 来创建 FunctionSignature 实例。FunctionSignatureBuilder 和 FunctionSignature
+支持类似 Java 的泛型、可变数量的参数和 lambda 表达式。以下是一些示例。
+
+length 函数接受一个 varchar 类型的参数，并返回一个 bigint 类型的值：
+
+```cpp
+
+    // varchar -> bigint
+    exec::FunctionSignatureBuilder()
+      .returnType("bigint")
+      .argumentType("varchar")
+      .build()
+```
+
+substr 函数接受一个 varchar 类型和两个整数作为起始值和长度。要指定多个参数的类型，请按顺序为每个参数调用 argumentType() 方法。
+
+```cpp
+
+    // varchar, integer, integer -> bigint
+    exec::FunctionSignatureBuilder()
+      .returnType("varchar")
+      .argumentType("varchar")
+      .argumentType("integer")
+      .argumentType("integer")
+      .build()
+```
+
+concat 函数接受任意数量的 varchar 输入并返回一个 varchar 值。FunctionSignatureBuilder 允许通过调用`variableArity("varchar")`
+方法指定最后一个增强项可能出现零次或多次。
+
+```cpp
+
+    // varchar... -> varchar
+    exec::FunctionSignatureBuilder()
+        .returnType("varchar")
+        .variableArity("varchar")
+        .build()
+```
+
+map_keys 函数接受任何映射并返回映射键的数组。
+
+```cpp
+
+    // map(K,V) -> array(K)
+    exec::FunctionSignatureBuilder()
+      .knownTypeVariable("K")
+      .typeVariable("V")
+      .returnType("array(K)")
+      .argumentType("map(K,V)")
+      .build()
+```
+
+transform 函数接受一个数组和一个 lambda 表达式，将 lambda 表达式应用于数组的每个元素，并返回一个新的结果数组。
+
+```cpp
+
+    // array(T), function(T, U) -> array(U)
+    exec::FunctionSignatureBuilder()
+      .typeVariable("T")
+      .typeVariable("U")
+      .returnType("array(U)")
+      .argumentType("array(T)")
+      .argumentType("function(T, U)")
+      .build();
+```
+
+处理 DECIMAL 类型的函数签名还可以接受变量和约束来表示精度和小数位数。
+这些约束使用基于 Flex 和 Bison 工具构建的类型计算器进行评估。十进制算术加法函数的签名如下：
+
+```cpp
+
+    // decimal, decimal -> decimal
+    exec::FunctionSignatureBuilder()
+      .returnType("DECIMAL(r_precision, r_scale)")
+      .argumentType("DECIMAL(a_precision, a_scale)")
+      .argumentType("DECIMAL(b_precision, b_scale)")
+      .variableConstraint(
+          "r_precision",
+          "min(38, max(a_precision - a_scale, b_precision - b_scale) + max(a_scale, b_scale) + 1)")
+      .variableConstraint("r_scale", "max(a_scale, b_scale)")
+      .build();
+```
+
+FunctionSignatureBuilder 中使用的类型名称可以是小写的标准类型、特殊类型`any`，或者通过调用 typeVariable() 方法定义的类
+型。`any`类型可用于指定一个类似 printf 的函数，该函数接受任意数量的参数，且参数类型可能不匹配。
+
+## 测试 {#testing}
+
+添加一个使用 `tests/functions/prestosql/utils/FunctionBaseTest.h` 文件中的 FunctionBaseTest 作为基类的测试。
+将测试和 .cpp 文件命名为 `<function-name>Test`，例如，`CardinalityTest.cpp` 中的 `CardinalityTest` 或 `IsNullTest.cpp` 中的 `IsNullTest`。
+
+FunctionBaseTest 有许多用于生成测试向量的辅助方法。它还提供了一个 `evaluate()` 方法，该方法接受 SQL 表达式和输入数据，
+计算表达式的值并返回结果向量。SQL 表达式使用 DuckDB 进行解析，类型解析逻辑利用注册期间指定的函数签名。`assertEqualVectors()`
+方法接受两个向量（预期向量和实际向量），并断言它们表示相同的值。这两个向量的编码可能不同。
+
+以下是向量函数“contains”的测试示例：
+
+```cpp
+
+    TEST_F(ArrayContainsTest, integerWithNulls) {
+      auto arrayVector = makeNullableArrayVector<int64_t>(
+          {{1, 2, 3, 4},
+           {3, 4, 5},
+           {},
+           {5, 6, std::nullopt, 7, 8, 9},
+           {7, std::nullopt},
+           {10, 9, 8, 7}});
+
+      auto testContains = [&](std::optional<int64_t> search,
+                              const std::vector<std::optional<bool>>& expected) {
+        auto result = evaluate<SimpleVector<bool>>(
+            "contains(c0, c1)",
+            makeRowVector({
+                arrayVector,
+                makeConstant(search, arrayVector->size()),
+            }));
+
+        assertEqualVectors(makeNullableFlatVector<bool>(expected), result);
+      };
+
+      testContains(1, {true, false, false, std::nullopt, std::nullopt, false});
+      testContains(3, {true, true, false, std::nullopt, std::nullopt, false});
+      testContains(5, {false, true, false, true, std::nullopt, false});
+      testContains(7, {false, false, false, true, true, true});
+      testContains(-2, {false, false, false, std::nullopt, std::nullopt, false});
+    }
+```
+
+简单函数的测试可以受益于使用`evaluateOnce()`模板，该模板接受SQL表达式和标量值作为输入，
+对长度为1的向量求值，并返回标量结果。以下是简单函数“sqrt”的测试示例：
+
+```cpp
+
+    TEST_F(ArithmeticTest, sqrt) {
+      constexpr double kDoubleMax = std::numeric_limits<double>::max();
+      const double kNan = std::numeric_limits<double>::quiet_NaN();
+
+      const auto sqrt = [&](std::optional<double> a) {
+        return evaluateOnce<double>("sqrt(c0)", a);
+      };
+
+      EXPECT_EQ(1.0, sqrt(1));
+      EXPECT_THAT(sqrt(-1.0), IsNan());
+      EXPECT_EQ(0, sqrt(0));
+
+      EXPECT_EQ(2, sqrt(4));
+      EXPECT_EQ(3, sqrt(9));
+      EXPECT_FLOAT_EQ(1.34078e+154, sqrt(kDoubleMax).value_or(-1));
+      EXPECT_EQ(std::nullopt, sqrt(std::nullopt));
+      EXPECT_THAT(sqrt(kNan), IsNan());
+    }
+```
+
+## 函数命名 {#function-names}
+
+
+简单函数和向量函数的名称均不区分大小写。函数名称在注册时以及根据给定表达式解析时会自动转换为小写。
+
+以下名称为特殊形式保留，不能用作函数名：
+
+* and
+* or
+* cast
+* if
+* switch
+* coalesce
+* try
+* row_constructor
+
+## 函数解析顺序 {#function-resolution-order}
+
+在函数解析过程中，向量函数优先于简单函数。如果函数 `foo` 有多个实现，则函数解析的顺序如下：
+
+    1. Vector Function
+    2. Simple Function which are generic free and variadic free
+    3. Simple Function has variadic but generic free
+    4. Simple Function has generic but no variadic of generic
+    5. Simple function has variadic of generic
+
+在函数解析过程中，会选取排名最低的可用函数。如果有多个函数的排名相同，我们会计算签名中具体类型的数量，
+并返回具体类型数量最高的签名。（具体类型是指除可变参数或泛型之外的任何类型）。
+
+例如：考虑以下两个类型均为 4 的签名。
+
+```cpp
+
+    void call(bool& out, const int& , const Any& , const& Variadic<int>)    // concrete types = 2
+    void call(bool& out, const int& , const Any& ,const Any&)               // concrete types = 1
+```
+
+当两个函数对于给定输入都有效时，将选择第一个函数，因为它具有更多具体类型。当具体类型数量相同时，调用会产生歧义，并且调用哪个函数是不确定的。
+
+
+## 性能压测 {#benchmarking}
+
+使用 `melon::Benchmark` 框架和 `functionBenchmarkBase`（位于 `pollux/functions/lib/benchmarks/function_benchmark_base.h`）作为基类添加基准测试。
+基准测试是检查优化是否有效、评估其带来的好处以及决定是否值得增加额外复杂性的绝佳方法。
+
+## 文档 {#documenting}
+
+如果某个函数实现了 Presto 语义，请通过在 `pollux/docs/functions` 目录下的 `*.mdx` 文件中添加条目来记录该函数。每个文件都记录
+了一组相关的函数。例如，`math.mdx` 包含所有数学函数，而 `array.mdx` 文件包含所有数组函数。在文件中，函数按字母顺序排列。

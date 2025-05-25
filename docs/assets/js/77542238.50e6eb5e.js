@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[99727],{26164:(e,u,s)=>{s.r(u),s.d(u,{default:()=>n});s(96540);var t=s(91156),k=s(74848);function n(){return(0,k.jsx)(t.A,{})}}}]);

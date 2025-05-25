@@ -1,0 +1,50 @@
+# RowNumber Fuzzer
+
+RowNumberFuzzer 是一款测试工具，可自动生成等效查询计划，并执行这些计划来验证结果的一致性。其工作原理如下：
+
+1. 数据生成：首先生成一组随机输入数据，也称为向量。这些数据可以采用多种编码和数据布局，以确保测试的全面性。
+2. 计划生成：生成两个等效查询计划，一个基于 ValuesNode 的行号作为基础计划，
+另一个基于 TableScanNode 的更改计划。
+3. 查询执行：使用生成的数据执行这两个等效查询计划，并断言不同计划之间的结果一致。
+i. 执行基础计划，将结果与参考（DuckDB 或 Presto）进行比较，并将其作为预期结果。
+#. 多次执行更改计划（包含和不包含溢出），并将每个结果与预期结果进行比较。
+4. 迭代：此过程重复多次，以确保可靠性和稳健性。
+
+## How to run
+
+使用 pollux_row_number_fuzzer 二进制文件运行 rowNumber 模糊测试器：
+
+```shell
+
+    pollux/exec/fuzzer/pollux_row_number_fuzzer --seed 123 --duration_sec 60
+```
+
+默认情况下，模糊测试器将进行 10 次迭代。使用 --steps
+或 --duration-sec 参数可以延长模糊测试器的运行时间。使用 --seed 参数可以
+重现模糊测试器的失败。
+
+以下是受支持的命令行参数的完整列表。
+
+* ``–-steps``：要运行的迭代次数。每次迭代生成并计算一个表达式或聚合。默认值为 10。
+
+* ``–-duration_sec``：运行时间（秒）。如果同时指定了 ``-–steps`` 和 ``-–duration_sec``，则以 –duration_sec 为准。
+
+* ``–-seed``：用于生成随机表达式和输入向量的种子。
+
+* ``–-verbosity=1``：详细日志记录（来自 [turbo Logging Library](https://github.com/gottingen/turbo)）。
+
+* ``–-batch_size``：要生成的输入向量的大小。默认值为 100。
+
+* ``--num_batches``：要生成的 `--batch_size` 大小的输入向量数量。默认值为 5。
+
+* ``--enable_spill``：是否测试溢出。默认值为 true。
+
+* ``--presto_url`` PrestoQueryRunner 的 URL 及其端口号。
+
+* ``--req_timeout_ms`` 向 PrestoQueryRunner 发出 HTTP 请求的超时时间（毫秒）。
+
+* ``--arbitrator_capacity``：仲裁器容量（以字节为单位）。默认值为 `6L << 30`。
+
+* ``--allocator_capacity``：分配器容量（以字节为单位）。默认值为 `8L << 30`。
+
+如果从 CLion IDE 运行，请添加 ``--logtostderr=1`` 以查看完整输出。

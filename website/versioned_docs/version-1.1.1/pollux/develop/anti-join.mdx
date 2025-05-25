@@ -1,0 +1,517 @@
+
+# Anti joins
+
+反连接可用于高效地实现带有 NOT IN `<subquery>` 和 NOT EXISTS `<subquery>` 子句的查询。当外部查询或子查询
+中存在 NULL 时，这些查询的语义会有所不同。NOT IN 语义由
+空值感知反连接实现。NOT EXISTS 语义由
+常规反连接实现。
+
+Pollux 通过 ``JoinType::kAnti`` 提供常规反连接，并通过 ``JoinType::kNullAwareAnti`` 提供空值感知反连接。
+
+本文解释了 NOT IN 和 NOT EXISTS 之间的语义差异
+查询并讨论这些在空感知和常规中的实现
+反连接。
+
+注意：Presto 优化器不会使用 anti 来计划 NOT IN 和 NOT EXISTS 查询
+加入。作为补偿，Prestissimo 中的查询计划翻译会检测到 NOT IN
+模式和 `转换 <https://github.com/prestodb/presto/blob/master/presto-native-execution/presto_cpp/main/types/PrestoToPolluxQueryPlan.cpp#L1031>`_
+将其纳入Pollux反加入计划节点。
+
+注意：`Substrait <https://substrait.io/relations/logical_relations/#join-types>`_
+目前仅定义了一种反连接类型，并且未指定
+其语义是 NOT IN 还是 NOT EXISTS。此主题正在积极[讨论中](https://github.com/substrait-io/substrait/issues/325)。
+
+通过示例更容易理解语义差异。
+
+考虑表 t：
+```
+==== =====
+id   value
+==== =====
+NULL 0
+1    1
+2    2
+==== =====
+```
+和表 u：
+```
+==== =====
+id   value
+==== =====
+NULL 0
+2    2
+3    3
+==== =====
+```
+
+在进行查询实验时，使用 WITH 子句和 UNNEST 子句组合来创建临时数据集非常方便。以下是如何创建和使用上述数据集：
+
+```sql
+
+	WITH
+	     t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+	     u as (SELECT * FROM unnest(array[null, 2, 3], array[0, 2, 3]) as _t(id, value))
+	<query that uses t and u>
+
+	> SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value);
+
+	  id  | value
+	------+-------
+	 NULL |     0
+	    1 |     1
+	    2 |     2
+	(3 rows)
+
+	> SELECT * FROM unnest(array[null, 2, 3], array[0, 2, 3]) as _t(id, value);
+
+	  id  | value
+	------+-------
+	 NULL |     0
+	    2 |     2
+	    3 |     3
+	(3 rows)
+
+	> WITH
+	     t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+	     u as (SELECT * FROM unnest(array[null, 2, 3], array[0, 1, 2]) as _t(id, value))
+	SELECT * FROM t FULL JOIN u ON t.id = u.id;
+
+	  id  | value |  id  | value
+	------+-------+------+-------
+	    1 |     1 | NULL | NULL
+	    2 |     2 |    2 |     1
+	 NULL | NULL  |    3 |     2
+	 NULL |     0 | NULL | NULL
+	 NULL | NULL  | NULL |     0
+	(5 rows)
+```
+
+## NOT IN `<subquery>` Semantics
+
+
+我们需要考虑三种 NOT IN 查询的情况：
+
+* 子查询返回包含 NULL 值的行。
+* 子查询不返回任何行。
+* 子查询返回一行或多行，且没有包含 NULL 值的行。
+
+## NOT IN with NULLs in the subquery
+
+
+Consider NOT IN query:
+
+```sql
+
+	SELECT * FROM t WHERE t.id NOT IN (SELECT * FROM u)
+```
+This query returns an empty result.
+
+```sql
+
+	> WITH
+	     t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+	     u as (SELECT * FROM unnest(array[null, 2, 3], array[0, 2, 3]) as _t(id, value))
+	SELECT * from t WHERE t.id NOT IN (SELECT id FROM u);
+
+	 id | value
+	----+-------
+	(0 rows)
+
+```
+这是因为 IN LIST 包含 3 个值：NULL、2、3。在 SQL 中，NULL 被视为未知值。在这种情况下，IN LIST 包含未知值，
+我们无法确定任何给定值是否在列表中。
+因此，NOT IN 谓词返回 NULL（未知），因此查询不返回任何结果。您可以使用以下查询来确认
+NOT IN 谓词的语义。
+
+```sql
+
+	> SELECT 1 not in (null, 2, 3);
+
+	 _col0
+	-------
+	 NULL
+	(1 row)
+
+	> SELECT null not in (null, 2, 3);
+
+	 _col0
+	-------
+	 NULL
+	(1 row)
+```
+### NOT IN without NULLs in the subquery
+
+
+现在，考虑 NOT IN 查询，其中子查询不返回 NULL（通过从 u 表中删除 NULL 或在子查询中添加 u.id IS NOT NULL 谓词）。
+
+
+```sql
+
+	SELECT * FROM t WHERE t.id NOT IN (
+		SELECT * FROM u WHERE u.id IS NOT NULL
+	)
+```
+此查询返回 ID 为 1 的单行。
+
+```sql
+
+	> WITH
+	     t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+	     u as (SELECT * FROM unnest(array[2, 3], array[1, 2]) as _t(id, value))
+	SELECT * from t WHERE t.id NOT IN (SELECT id FROM u);
+
+	 id | value
+	----+-------
+	  1 |     1
+	(1 row)
+```
+在本例中，IN LIST 包含两个值：2 和 3。NULL NOT IN (2, 3) 返回
+NULL，因为我们无法确定未知值是否属于集合，因此不包含在结果中。1 NOT IN (2, 3) 返回 true，因此包含在结果中。2 NOT IN (2, 3) 返回 false，因此不包含在结果中。
+
+### NOT IN with empty subquery
+
+
+现在，考虑一个 NOT IN 查询，其中包含一个返回空结果的子查询（通过从 u 表中删除所有行，或在子查询中添加一个始终为假的谓词）。
+
+```sql
+
+	SELECT * FROM t WHERE t.id NOT IN (
+		SELECT * FROM u WHERE u.id < 0
+	)
+```
+此查询返回来自 t 的所有行，包括具有 NULL id 的行。
+
+```sql
+
+    > WITH
+        t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+        u as (SELECT * FROM unnest(array[], array[]) as _t(id, value))
+    SELECT * from t WHERE t.id NOT IN (SELECT id FROM u);
+
+	  id  | value
+	------+-------
+	    1 |     1
+	    2 |     2
+	 NULL |     0
+	(3 rows)
+```
+这里，IN LIST 为空。因此，所有值，包括未知值 (NULL)，都可以确定不属于该集合。
+
+## NOT EXISTS `<subquery>` Semantics
+
+
+与 NOT IN 查询类似，我们考虑以下三种情况：
+
+* 子查询返回包含 NULL 值的行。
+* 子查询不返回任何行。
+* 子查询返回一行或多行，且没有包含 NULL 值的行。
+
+### NOT EXISTS with NULLs in the subquery
+
+
+考虑不存在查询：
+```sql
+
+	SELECT * FROM t WHERE NOT EXISTS (SELECT id FROM u WHERE u.id = t.id)
+```
+此查询返回 2 行，ID 分别为 NULL 和 1。
+
+```sql
+
+	> WITH
+	     t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+	     u as (SELECT * FROM unnest(array[null, 2, 3], array[0, 1, 2]) as _t(id, value))
+	SELECT * from t WHERE NOT EXISTS (SELECT * FROM u WHERE u.id = t.id);
+
+	  id  | value
+	------+-------
+	 NULL |     0
+	    1 |     1
+	(2 rows)
+```
+这里，我们有一个相关子查询，例如包含外部查询中的列的子查询。此子查询针对不同的外部查询行返回不同的结果。
+
+对于 ID 为 NULL 的行，子查询为
+
+```sql
+
+	SELECT * FROM u WHERE u.id = NULL
+```
+
+u.id = NULL 谓词始终返回 NULL，因此子查询返回空结果，因此 NOT EXISTS `<subquery>` 子句的计算结果为 true。
+
+对于 id 为 1 的行，子查询为
+
+```sql
+
+	SELECT * FROM u WHERE u.id = 1
+```
+当 u.id 为 null 时，u.id = 1 的计算结果为 NULL；当 u.id 为 2 或 3 时，u.id = 1 的计算结果为 false。
+因此，子查询结果为空，因此 NOT EXISTS `<subquery>` 子句的计算结果为 true。
+
+对于 id 为 2 的行，子查询如下：
+
+```sql
+
+	SELECT * FROM u WHERE u.id = 2
+```
+对于 u.id 为 2 的行，u.id = 2 谓词的计算结果为 true，因此子查询的结果不为空，因此 NOT EXISTS `<subquery>` 子句的计算结果为 false。
+
+### NOT EXISTS without NULLs in the subquery
+
+
+现在，考虑子查询中没有空值的 NOT EXISTS 查询：
+
+```sql
+
+	SELECT * FROM t WHERE NOT EXISTS (
+		SELECT id FROM u WHERE u.id = t.id AND u.id IS NOT NULL
+	)
+```
+此查询返回两行，ID 分别为 NULL 和 1。实际上，子查询中是否存在 NULL 值不会影
+响 NOT EXISTS 子句的结果。这是因为，当 u.id 为 NULL 时，谓词 u.id = t.id 的计算
+结果为 NULL，因此，包含 NULL 值的行会被排除在子查询之外。与 NOT IN 查询不同，NOT EXISTS 查询对子查询中的 NULL 值不敏感。
+
+
+```sql
+
+    > WITH
+        t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+        u as (SELECT * FROM unnest(array[2, 3], array[1, 2]) as _t(id, value))
+    SELECT * from t WHERE NOT EXISTS (SELECT * FROM u WHERE u.id = t.id);
+
+	  id  | value
+	------+-------
+	    1 |     1
+	 NULL |     0
+	(2 rows)
+```
+### NOT EXISTS with empty subquery
+
+
+现在，考虑一个带有返回空结果的子查询的 NOT EXISTS 查询。
+
+```sql
+
+	SELECT * FROM t WHERE NOT EXISTS (
+		SELECT id FROM u WHERE u.id = t.id AND u.id < 0
+	)
+```
+此查询返回 t 中的所有行，因为子查询总是返回空结果集。当子查询为空时，NOT IN 和 NOT EXISTS 查询的结果相同。
+
+```sql
+
+    > WITH
+        t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+        u as (SELECT * FROM unnest(array[], array[]) as _t(id, value))
+    SELECT * from t WHERE NOT EXISTS (SELECT * FROM u WHERE u.id = t.id);
+
+	  id  | value
+	------+-------
+	    2 |     2
+	    1 |     1
+	 NULL |     0
+	(3 rows)
+```
+## Implementation
+
+
+使用反连接可以高效地实现 NOT IN 和 NOT EXISTS 查询。
+NOT IN 查询使用 NULL AWARE ANTI JOIN 实现。NOT EXISTS 查询
+使用常规 ANTI JOIN 实现。
+
+### NULL AWARE ANTI JOIN
+
+
+NULL AWARE ANTI JOIN 用于实现 NOT IN 查询。
+
+```sql
+
+	SELECT * FROM t WHERE t.id NOT IN (SELECT id FROM u)
+```
+表 t 中的行放在连接操作的左侧。子查询中的行放在连接操作的右侧。子查询中的行被加载到以“id”为键的哈希表中。如果在构建
+哈希表时遇到 NULL，连接操作将提前完成，且不返回任何结果。如果哈希表为空（即子查询未返回任何结果），连接操作将返回左
+侧的所有行，包括连接键为 NULL 的行。如果哈希表不为空且没有 NULL，则以流式方式处理左侧连接键中没有 NULL 的行。对于每一
+行，连接操作都会在哈希表中查找匹配项，并且只有在没有匹配项时才返回该行。左侧连接键为 NULL 的行将不返回。
+
+该算法可以轻松扩展到多个连接键和NOT IN查询，如下所示：
+
+```sql
+
+	SELECT * FROM t WHERE (t.id1, t.id2) NOT IN (SELECT id1, id2 FROM u)
+```
+总而言之，NULL AWARE ANTI JOIN 语义包括：
+
+* 当右侧连接键包含空值时，返回空结果。
+* 仅当右侧为空时，才返回左侧连接键包含空值的行。
+
+在分布式设置中，评估上述条件需要每个节点
+知道组合后的右侧是否为空，以及是否包含
+连接键包含空值的行。如果查询
+广播右侧或使用 replicate-nulls-and-any 分区策略，则可以获取此信息。
+
+注意：Replicate-null-and-any 分区策略会将分区键为空的所有行复制到所有目标，同时还会复制一个分区键不为空的任意选定行。
+
+### ANTI JOIN
+
+
+常规 ANTI JOIN 用于实现 NOT EXISTS 查询。
+
+```sql
+
+	SELECT * FROM t WHERE NOT EXISTS (SELECT * FROM u WHERE u.id = t.id)
+```
+首先，我们重写子查询以返回等值连接子句 u.id = t.id。
+
+表 t 中的行放在连接的左侧。修改后的子查询中的行放在连接的右侧。子查询中的行
+被加载到以“id”为键的哈希表中。子查询中连接键为 NULL 的行将被跳过。如果哈希表为空（即子查询未返回任
+何结果，或所有结果的连接键均为 NULL），则连接将返回左侧的所有行，包括连接键为 NULL 的行。此逻辑在常规反连接和
+支持空值感知的反连接之间相同。如果哈希表不为空，则左侧的行将以流式方式处理。所有连接键为 NULL 的行都将无条件地包含在
+结果集中。对于具有非 NULL 连接键的每一行，连接都会在哈希表中查找匹配项，并且仅在没有匹配项时才返回该行。
+
+该算法可轻松扩展到多个连接键和 NOT EXISTS 查询，如下所示：
+
+```sql
+
+	SELECT * FROM t WHERE NOT EXISTS (
+		SELECT * FROM u WHERE u.id1 = t.id1 AND u.id2 = t.id2
+	)
+```
+
+常规反连接和空值感知反连接之间的区别可以概括为：
+
+* 当右侧连接键中包含 NULL 值时，常规连接不会自动返回空结果。
+* 常规连接无条件返回左侧连接键中包含 NULL 值的行。
+
+
+## ANTI JOINs with Extra Filter
+
+
+NOT IN 和 NOT EXISTS 查询可能包含非等式条件，这些条件会在子查询中使用外部查询中的列。例如，
+
+```sql
+
+	SELECT * FROM t WHERE t.id NOT IN (SELECT id FROM u WHERE u.value > t.value)
+```
+or
+
+```sql
+
+	SELECT * FROM t WHERE NOT EXISTS (
+		SELECT * FROM u WHERE u.id = t.id AND u.value > t.value
+	)
+```
+
+在这种情况下，子查询的连接键是否包含 NULL 取决于外部行的值，因此不同的外部行可能有所不同。因此，右侧连接键为 NULL 的行不会自动使支持空值的反连接返回空结果。
+
+这可以通过一个示例来说明。
+
+```sql
+
+	> WITH
+	     t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+	     u as (SELECT * FROM unnest(array[null, 2, 3], array[0, 1, 2]) as _t(id, value))
+	SELECT * from t WHERE t.id NOT IN (SELECT id FROM u WHERE u.value > t.value);
+
+	 id | value
+	----+-------
+	  1 |     1
+	  2 |     2
+	(2 rows)
+```
+
+在此查询中，具有 NULL id 的行的子查询是
+
+```sql
+
+	SELECT id FROM u WHERE u.value > 0
+```
+
+此子查询返回 ID 为 2 和 3 的行。ID 为 NULL 的行的哈希值等于
+0，因此不通过 `u.value > 0` 谓词。`NULL NOT IN (2, 3)` 返回 NULL，
+因此，左侧的 NULL 行不包含在查询结果中。
+
+针对 `ID = 1` 的行的子查询如下：
+
+
+```sql
+
+	SELECT id FROM u WHERE u.value > 1
+```
+
+此子查询返回 ID 分别为 2 和 3 的两行数据。`NOT IN (2, 3)` 返回 true，因此 ID 为 1 的行包含在查询结果中。
+
+`ID = 2` 的行的子查询如下：
+
+```sql
+
+	SELECT id FROM u WHERE u.value > 2
+```
+此子查询返回 ID 为 3 的一行。2 NOT IN (3) 返回 true，因此，
+ID 为 2 的行包含在查询结果中。
+
+让我们考虑一个结果中包含 NULL 行的不同示例。
+
+```sql
+
+	> WITH
+	     t as (SELECT * FROM unnest(array[null, 1, 2], array[0, 1, 2]) as _t(id, value)),
+	     u as (SELECT * FROM unnest(array[null, 2, 3], array[0, 1, 2]) as _t(id, value))
+	 SELECT * from t WHERE t.id NOT IN (SELECT id FROM u WHERE u.value * t.value > 0);
+
+	  id  | value
+	------+-------
+	 NULL |     0
+	    1 |     1
+	(2 rows)
+```
+
+此查询返回包含 NULL 的行。该行的子查询为：
+
+
+```sql
+
+	SELECT id FROM u WHERE u.value * 0 > 0
+```
+
+该谓词对于 u 中的所有行都计算为 false，因此 IN LIST 为空，
+因此 NULL NOT IN `<subquery>` 计算为 true。
+
+这些查询是使用带有额外过滤器的反连接实现的。在上面的示例中，实现使用了带有额外过滤器 `u.value > t.value` 和 `u.value * t.value > 0` 的空值感知反连接。
+
+额外过滤器的存在会改变反连接的实现。
+
+
+### NULL AWARE ANTI JOIN with Filter
+
+
+如果存在额外的过滤器，当右侧的连接键为空时，支持空值的反连接无法提前完成。
+连接必须完成哈希表的构建并包含所有行，即使是连接键为空的行。
+
+在评估左侧行时，连接需要首先从构建端收集所有匹配项，
+并将它们与右侧所有连接键为空的行合并，
+然后对匹配项执行过滤器。如果过滤器结果为空，
+则该行将包含在结果中。否则，该行将不包含在结果中。
+
+此逻辑的更详细描述如下：
+
+#. 收集匹配项。
+#. 如果左侧行的连接键不为空，则包含右侧的所有匹配项。
+#. 如果左侧行的连接键为空，则包含右侧的所有行。
+#. 对于所有左侧行，包含右侧所有连接键为空的行。
+#.根据上一步收集到的匹配结果评估过滤器。
+#. 如果过滤器结果为空，则仅将左侧行包含在结果中。
+
+步骤 1.2 要求对连接键中左侧行包含空值的行与所有右侧行进行交叉连接时，评估过滤器。这意味着在分布式设置中，
+右侧必须复制（广播）到所有评估连接的节点，而左侧可以使用任何便捷的策略分布在各个节点上。
+
+步骤 1.3 要求将连接键中右侧行包含空值的行复制（广播）到所有评估连接的节点。这可以通过使用“复制空值和任意值”分区策略来实现。
+
+### ANTI JOIN with Filter
+
+
+即使存在额外的过滤器，常规反连接仍然可以无条件地
+返回连接键中为空的左侧行。带有额外过滤器的子查询仍然会对这些行返回空结果。
+
+对于连接键中不为空的左侧行，连接需要从右侧收集匹配项。如果没有匹配项，则该行将包含在结果中。如果有匹配项，则需要评估额外的过滤器。
+如果过滤器结果为空，则该行将包含在结果中。

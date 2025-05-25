@@ -1,0 +1,287 @@
+
+# Window functions
+
+
+Pollux 支持使用 Window 运算符来计算窗口函数。在本指南中，我们将讨论此运算符中一些复杂的设计问题。
+
+本文档假设您熟悉
+:doc:`../functions/presto/window` 中描述的窗口函数。
+
+
+## Window frames
+
+
+窗口函数可以选择性地包含 FRAME 子句。FRAME 子句
+可以被认为是行滑动窗口的规范，它约束了给定行的窗口函数计算。
+
+并非所有窗口函数都受 FRAME 子句的约束。
+
+- 作为窗口函数和值函数 :func:`first_value`、
+:func:`last_value` 和 :func:`nth_value` 计算的聚合遵循窗口框架。
+- 排名函数 :func:`row_number`、:func:`rank`、:func:`dense_rank`、
+:func:`percent_rank`、:func:`ntile`、:func:`cume_dist` 以及值函数
+:func:`lead` 和 :func:`lag` 不受窗口框架的影响。
+
+框架可以是 ROWS 类型或 RANGE 类型，它从 frame_start 运行到 frame_end。 FRAME 子句是
+
+```text
+
+   {RANGE|ROWS} frame_start
+   {RANGE|ROWS} BETWEEN frame_start AND frame_end
+```
+
+frame_start 和 frame_end 可以是以下任意一种：
+
+```text
+
+   UNBOUNDED PRECEDING
+   expression PRECEDING
+   CURRENT ROW
+   expression FOLLOWING
+   UNBOUNDED FOLLOWING
+```
+
+**ROWS 模式**
+
+ROWS 模式可以解释为行在窗口分区中按其出现顺序排列的索引。此顺序由 ORDER BY 子句决定。在 ROWS 模式下，CURRENT ROW 指的是函数正在执行的当前行。每个连续行的帧编号都会递增。
+帧编号从 0 开始，每行递增 1。
+
+**RANGE 模式**
+
+在 RANGE 模式下，所有对等行具有相同的帧编号。
+如果行的 ORDER BY 字段值相同，则这些行对等。
+CURRENT ROW 的帧起始指向当前行的第一个对等行，
+而 CURRENT ROW 的帧结束指向当前行的最后一个对等行。
+如果未指定 ORDER BY，则所有行均视为当前行的对等行。
+
+**其他**
+
+无论在哪种模式下，UNBOUNDED PRECEDING 和 UNBOUNDED FOLLOWING 始终指向分区的第一行和最后一行。
+
+
+## Window frame indices
+
+
+由于窗口函数会针对每一行进行求值，因此 Window 运算符会在每次调用 WindowFunction::apply 时为每个函数提供一个包含 frame_start 和 frame_end 索引的缓冲区。
+
+**注意**：在计算过程中，帧索引可能位于分区行之前或之后。在这种情况下，帧索引将绑定到分区的第一行和最后一行。
+
+例如，对于帧 *ROWS BETWEEEN 2 PRECEDING AND 2 FOLLOWING*，帧索引将如下所示：
+
+```text
+
+  row_index    partition_col        order_by_col        frame_start         frame_end
+       0            1                     1                   0                 2
+       1            1                     2                   0                 3
+       2            1                     2                   0                 4
+       3            1                     3                   1                 5
+       4            1                     4                   2                 6
+       5            1                     4                   3                 7
+       6            1                     4                   4                 7
+       7            1                     5                   5                 7
+```
+
+另一方面，对于帧*RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING*，
+帧索引将如下所示
+
+```text
+
+  row_index    partition_col        order_by_col        frame_start         frame_end
+       0            1                     1                   0                 3
+       1            1                     2                   0                 6
+       2            1                     2                   0                 6
+       3            1                     3                   0                 7
+       4            1                     4                   1                 7
+       5            1                     4                   1                 7
+       6            1                     4                   1                 7
+       7            1                     5                   3                 7
+```
+
+## k Range frames
+
+
+K 范围窗口框架是一种特殊的基于值的窗口框架。
+
+K 范围框架的一个例子是 *RANGE BETWEEEN 5 PRECEDING AND 2 FOLLOWING*。
+此框架包含 order_by 键值介于
+*(current_row order_by key - 5)* 到 *(current_row order_by key + 2)* 之间的所有行。
+
+使用示例表进行详细说明：
+
+```text
+
+  row_index    partition_col    order_by_col    start_frame   end_frame    frame_start    frame_end
+       0            1                2               -3           4             0             1
+       1            1                3               -2           5             0             2
+       2            1                5                0           7             0             3
+       3            1                5                0           7             0             3
+       4            1                9                4           11            2             5
+       5            1                10               5           12            2             5
+       6            1                15               10          17            5             6
+       7            1                21               16          23            7             7
+```
+
+计算帧索引时，还有一些方面需要考虑。
+
+其中一个细微的差别与 *PRECEDING* 和 *FOLLOWING* 的用法有关。
+
+- *PRECEDING* 范围表示在从当前行到分区起始行的行中进行搜索。
+- *FOLLOWING* 范围表示在从当前行到分区结束行的行中进行搜索。
+
+这意味着：
+
+- 如果 ORDER BY 子句为 *ASCENDING*，则前一行的值小于当前行，后一行的值大于当前行。
+因此，*RANGE BETWEEN 5 PRECEDING AND 2 FOLLOWING* 框架适用于 [order_by - 5] 到 [order_by + 2] 之间的值。
+上表就是此类框架的一个示例。
+
+- 但是，如果 ORDER BY 子句为 *DESCENDING*，则前一行的值大于当前行，后一行的值小于当前行。
+
+因此，对于同一个框架，*RANGE BETWEEN 5 PRECEDING AND 2 FOLLOWING*，按降序排列，值介于 [order_by + 5] 到 [order_by - 2] 之间。
+
+将上例翻转，进行降序排列，将得到以下表格。
+
+```text
+
+  row_index    partition_col    order_by_col    start_frame    end_frame    frame_start    frame_end
+       0            1                21              26            19            0             0
+       1            1                15              20            13            1             1
+       2            1                10              15             8            1             2
+       3            1                9               14             7            2             3
+       4            1                5               10             3            2             6
+       5            1                5               10             3            2             6
+       6            1                3               8              1            4             7
+       7            1                2               7             -1            4             7
+```
+
+范围框中的 **k** 可以是常量、列引用或表达式（例如，日期范围的边界可以是日期 + 某个间隔）。Pollux 将 start_value 和 end_value 边
+界的计算推迟到先前的项目节点，并期望用户将这些计算值发送到 k 个范围框的列引用中。即使 k 是常量，用户也需要计算 WindowNode 的 start_value 和 end_value 列。
+
+在 WindowNode 中，kRange 框如下所示：
+
+```cpp
+
+    struct Frame {
+      WindowType type;
+      BoundType startType;
+      TypedExprPtr startValue;
+      BoundType endType;
+      TypedExprPtr endValue;
+    };
+    Frame kRange = { kRange, kPreceding, start_value_col, kFollowing, end_value_col};
+```
+
+对于 k 个 Range 框架，将执行以下验证：
+
+- 只有一个 ORDER BY 列用于比较 k 个 Range 值。
+
+- 如果绑定类型分别为 kPreceding 或 kFollowing，则 WindowNode::Frame 中的 start(或 end)Value 不能为常量。
+
+- start(end)Value TypedExprPtr 的类型必须与 ORDER BY 列的类型相同。
+
+Pollux Window 运算符通过在 ORDER BY 列中搜索 start(end)Value 来计算框架索引缓冲区，并将该缓冲区传递给 WindowFunction::apply() 调用。
+
+**RANGE 框架中的空值**
+
+ORDER BY 列可以包含 NULL 值。NULL 值仅与 Range 框架的其他 NULL 值匹配。
+
+NULL 值根据所使用的
+*NULLS FIRST/LAST* 模式放置在 ORDER BY 列的开头或结尾。因此，对于包含 NULL 值的行，frame_start 索引是第一个
+包含 NULL 值的对等行，frame_end 索引是最后一个包含 NULL 值的对等行。
+
+包含 NULL 值的行不参与其他行的框架。
+
+
+## Empty frames
+
+在窗口函数处理过程中，窗口框架可以是有效的、部分的或空的。
+
+当窗口框架中所有行（从 frame_start 到 frame_end）按顺序位于分区边界内时，默认为有效框架。但是，某些行的窗口框架可能仅部分填充或为空。
+虽然部分框架不需要函数作者进行任何特殊处理，但空框架需要一些考虑。
+
+在以下情况下会出现空框架：
+
+* frame_start 和 frame_end 均位于第一个分区行之前。
+
+例如，在 *ROWS BETWEEN 5 PRECEDING and 2 PRECEDING* 帧中，前两行
+的帧边界均位于第一个分区行之前。
+
+* frame_start 和 frame_end 均位于分区结束行之后。
+
+例如，在 *ROWS BETWEEN 2 FOLLOWING and 5 FOLLOWING* 帧中，后两行
+的帧边界均位于最后一个分区行之后。
+
+* frame_start > frame_end 行（因为帧范围定义为从 frame_start 到 frame_end）。
+
+例如，在 *ROWS BETWEEN UNBOUNDED PRECEDING AND 2 PRECEDING* 帧中，目的
+是计算从分区起始行到当前行之前两行的聚合。然而，对于前两行，frameStart（无界前置帧的帧索引为 0）位于 2 个前置帧（索引为 -2 和 -1）之前。
+
+* For frames like *ROWS BETWEEN 2 PRECEDING AND 5 PRECEDING* or
+  *ROWS BETWEEN 5 FOLLOWING AND 2 FOLLOWING*, frame_start > frame_end for
+  all rows. So all frames are empty.
+
+**部分框架**
+
+如上例所示，行可能包含部分窗口框架。
+
+部分框架在以下情况下发生：
+
+- frame_start < frame_end（因此它不是空框架）
+- 一个框架端点在分区边界内，而另一个端点在分区边界外。
+
+这意味着：
+
+- frame_start 位于第一个分区行之前，而 frame_end 位于分区内。在这种情况下，frame_start 被限制在第一个分区行。
+
+- frame_start 位于分区内，而 frame_end 位于分区外。
+在这种情况下，frame_end 被限制在最后一个分区行。
+
+在滑动窗口中，部分帧通常跟在空帧之后。
+
+例如，在帧 *ROWS BETWEEN 5 PRECEDING AND 2 PRECEDING* 中，前两行的 frame_start 和 frame_end 位于第一个分区行之前，因此它们是空的。
+但从第 3 行到第 5 行，前 5 个 frame_start 的边界位于分区外，但前 2 个 frame_end 位于分区内。因此，对于这
+3 行，frame_start 被限制在第一个分区行。
+
+同样，对于 *ROWS BETWEEN 2 FOLLOWING AND 5 FOLLOWING* 框架，最后 3-5 行的 frame_start 在分区内，但 frame_end 在分区外。因此它们是部分框架。最后两行的边界都在分区外，因此是空框架。
+
+空、部分和有效窗口框架可以如下所示进行可视化。
+
+import empty_frames from '@site/static/img/pollux/images/empty_frames.png';
+
+<img width="800" align="center" src={empty_frames}/>
+
+
+具有恒定帧边界的帧（例如前面的 2 帧）具有严格的滑动行为。
+因此，空帧、部分帧和有效帧会聚集在一起，并相互跟随（或先后）。
+
+使用列值作为边界的临时帧（例如前面的 c1 帧）可以在分区行中的任何位置拥有空帧、部分帧或有效帧。
+
+**在窗口函数中处理空帧**
+
+如前所述，只有值窗口函数和聚合窗口函数在求值时使用框架。值函数对空框架返回空值。
+聚合函数对空框架返回默认聚合值。
+排名函数不受空框架的影响。
+
+处理空框架最简单的方法是在窗口函数逻辑中检查框架索引是否为空框架（基于前面描述的条件），并返回空输出。然而，
+在所有函数中实现此操作可能会重复。
+
+为了辅助计算，Window 运算符会在每次
+WindowFunction::apply(..) 调用中为具有有效框架的行计算一个
+*SelectivityVector*。函数逻辑可以
+迭代此 SelectivityVector 中设置位的行进行求值。
+
+此 SelectivityVector 在 WindowFunction::apply() 签名的 validFrames 参数中传递。
+
+```cpp
+
+    virtual void apply(
+       const BufferPtr& peerGroupStarts,
+       const BufferPtr& peerGroupEnds,
+       const BufferPtr& frameStarts,
+       const BufferPtr& frameEnds,
+       const SelectivityVector& validFrames,
+       vector_size_t resultOffset,
+       const VectorPtr& result) = 0;
+```
+Window 运算符还会将*部分*窗口框架索引限制到
+第一个或最后一个分区行，然后再将它们传递给函数。
+因此，Window 函数不需要任何针对部分框架的特殊逻辑。

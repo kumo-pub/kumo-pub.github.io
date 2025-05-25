@@ -1,0 +1,48 @@
+# MemoryArbitration Fuzzer
+
+
+MemoryArbitrationFuzzer 是一款测试工具，旨在在总内存预算紧张的情况下，自动并行生成并执行多个查询计划。它旨在对内存仲裁处
+理进行压力测试，并验证在并发查询执行模式下是否出现崩溃或挂起。查询要么成功，要么失败并出现预期的错误。
+它的工作原理如下：
+
+1. 数据生成：首先生成一组随机的输入数据，也称为向量。这些数据可以采用多种编码和数据布局，以确保测试的全面性。
+2. 计划生成：生成具有不同查询形状的多个计划。目前，它支持 HashJoin 和 HashAggregation 计划。
+3. 查询执行：创建多个线程，每个线程随机选择一个启用或未启用溢出的计划，并重复执行此过程，直至 `${iteration_duration_sec}` 秒。查询
+线程预期查询成功或失败并出现查询 OOM 或中止错误，否则将抛出异常。
+4. 迭代：此过程重复多次以确保可靠性和稳健性。
+
+## How to run
+
+使用 pollux_memory_arbitration_fuzzer_test 二进制文件运行此模糊测试器：
+
+```text
+    tests/exec/pollux_memory_arbitration_fuzzer_test --seed 123 --duration_sec 60
+```
+
+默认情况下，模糊测试器将进行 10 次迭代。使用 --steps
+或 --duration-sec 参数可以延长模糊测试器的运行时间。使用 --seed 参数可以
+重现模糊测试器的失败。
+
+以下是受支持的命令行参数的完整列表。
+
+* ``–-steps``：要运行的迭代次数。每次迭代生成并计算一个表达式或聚合。默认值为 10。
+
+* ``–-duration_sec``：运行时间（以秒为单位）。如果同时指定了 ``-–steps`` 和 ``-–duration_sec``，则以 –duration_sec 为准。
+
+* ``–-seed``：用于生成随机表达式和输入向量的种子。
+
+* ``–-verbosity=1``：详细日志记录（来自 [turbo Logging Library](https://github.com/gottingen/turbo)）。
+
+* ``–-batch_size``：要生成的输入向量的大小。默认值为 100。
+
+* ``–num_batches``：要生成的 `--batch_size` 大小的输入向量数量。默认值为 5。
+
+* ``--iteration_duration_sec``：每次迭代应运行的时间（以秒为单位）。
+
+* ``--arbitrator_capacity``：仲裁器容量（以字节为单位）。
+
+* ``--allocator_capacity``：分配器容量（以字节为单位）。
+
+* ``--num_threads``：每次迭代并行运行查询的线程数。
+
+如果从 CLion IDE 运行，请添加 ``--logtostderr=1`` 以查看完整输出。

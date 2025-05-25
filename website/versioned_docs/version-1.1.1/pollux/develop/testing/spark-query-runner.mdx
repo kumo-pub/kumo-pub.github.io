@@ -1,0 +1,61 @@
+
+# Spark Query Runner
+
+## Introduction
+
+Spark Query Runner 是一款旨在方便测试 Pollux 的工具。
+它有助于确保 Pollux 针对 Spark 进行计算的正确性，并
+提供了一种识别 Pollux 实现中潜在问题的方法。
+Spark Query Runner 旨在针对 Spark-3.5.1 运行。
+
+## How It Works
+
+
+Spark Query Runner 的工作原理是在 Spark 上执行给定的 SQL 查询，并以 Pollux 数据格式返回结果，从而允许在 Pollux 和 Spark 之间比较结果。
+
+自 Spark 3.4 起，Spark Connect 为 Spark 引入了解耦的客户端-服务器架构，允许远程连接到 Spark 集群。从客户端的角度来看，
+Spark Connect 的行为与其他 gRPC 客户端基本相同，具备多语言和跨平台特性。在执行过程中，嵌入在 Spark Server 上的 Spark Connect 端
+点接收查询并将其解析为 Spark 的逻辑计划运算符。然后，标准的 Spark 执行流程启动，确保 Spark Connect 充分利用 Spark 的所有优化和增
+强功能。结果将通过 gRPC 以 Arrow 编码的行批次形式流式传输回客户端。
+
+在 Spark Query Runner 中，我们使用 Spark Connect 向 Spark 提交查询，并将结果返回到 Pollux。此过程的步骤如下：
+
+1. 提供要执行的 Spark SQL 查询。该查询可以从 Pollux 计划节点生成，也可以手动编写。
+2. 根据 SQL 查询创建一条 protobuf 消息 `ExecutePlanRequest`。Spark Connect 使用的协议
+定义在 [Apache Spark](https://github.com/apache/spark/tree/v3.5.1/connector/connect/common/src/main/protobuf/spark/connect) 中。
+3. 通过 gRPC API `ExecutePlan` 将消息提交给 SparkConnectService。
+4. 从执行响应中获取 Spark 的结果。结果为 Arrow IPC 流格式，
+可以通过 `arrow::ipc::RecordBatchReader` 读取为 Arrow RecordBatch。
+5. 将 Arrow RecordBatch 转换为 Pollux 向量，以便与 Pollux 的结果进行比较。
+
+## Usage
+
+
+要使用 Spark Query Runner，您需要部署一个可执行的 Spark 并使用以下命令启动 Spark Connect 服务器。
+
+```shell
+
+    "$SPARK_HOME"/sbin/start-connect-server.sh --jars "$JAR_PATH"/spark-connect_2.12-3.5.1.jar
+```
+
+Spark Connect 的 jar 包可以从 `maven 仓库 <https://repo1.maven.org/maven2/org/apache/spark/spark-connect_2.12/3.5.1/>`_ 下载。
+如果 Spark Connect 服务器启动成功，您将看到如下日志。服务器将在 `localhost:15002` 上启动。
+
+```shell
+
+    INFO SparkConnectServer: Spark Connect server started at: 0:0:0:0:0:0:0:0%0:15002
+```
+
+另一个选择是使用 Pollux 提供的 Docker 镜像 `ghcr.io/facebookincubator/pollux-dev:spark-server` 中的
+Spark Query Runner。它包含一个可执行的 Spark 程序和启动脚本。您可以下载该镜像并运行以下命令来启动其中的 Spark Connect 服务器。
+
+```shell
+
+    bash /opt/start-spark.sh
+```
+
+然后，您可以向 Spark Query Runner 提供 SQL 查询和运行查询所需的数据。该工具将在 Spark 上执行查询，并以 Pollux 数据格式返回结果。
+
+目前，仅在聚合模糊测试中支持使用 Spark 作为参考数据库。在聚合模糊测试中，会比较 Pollux 和 Spark 的结果以
+检查是否存在差异。如果结果匹配，则表明 Pollux 生成的输出正确。如果结果不同，则表明 Pollux 中存在潜在问题，需要进行调查。
+您可以参考 :doc:`Fuzzer <fuzzer>` 来触发测试。

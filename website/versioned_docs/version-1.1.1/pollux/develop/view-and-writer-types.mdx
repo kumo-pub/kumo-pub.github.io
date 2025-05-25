@@ -1,0 +1,324 @@
+# 视图和编写器类型
+
+在标量函数和聚合函数的简单函数接口中，视图类型和写入器类型分别用作复杂类型和字符串类型的输入和输出参数类型。
+
+## Inputs (View Type)
+
+输入复杂类型在简单函数接口中使用轻量级惰性访问抽象来表示，这些抽象能够高效地直接访问 Pollux 向量中的底层数据。
+如前所述，辅助别名 arg_type 和 null_free_arg_type 可用于函数签名，将 Pollux 类型映射到相应的输入类型。下表
+显示了用于表示不同复杂类型输入的实际类型。
+
+| C++ Argument Type               | C++ Actual Argument Type | Corresponding `std` type             |
+|---------------------------------|--------------------------|--------------------------------------|
+| `arg_type<Array<E>>`            | `NullableArrayView<E>>`  | `std::vector<std::optional<V>>`      |
+| `arg_type<Map<K,V>>`            | `NullableMapView<K, V>`  | `std::map<K, std::optional<V>>`      |
+| `arg_type<Row<T...>>`           | `NullableRowView<T...>`  | `std::tuple<std::optional<T>...`     |
+| `null_free_arg_type<Array<E>>`  | `NullFreeArrayView<E>`   | `std::vector<V>`                     |
+| `null_free_arg_type<Map<K,V>>`  | `NullFreeMapView<K, V>`  | `std::map<K, V>`                     |
+| `null_free_arg_type<Row<T...>>` | `NullFreeRowView<T...>`  | `std::tuple<T...>`                   |
+
+
+
+视图类型的接口设计与 std::containers 类似，实际上在大多数情况下，它们可以作为直接替代品使用。上表显示了 Pollux 类
+型与相应 std 类型之间的映射。例如：*`Map<Row<int, int>, Array<float>>`* 对应于 const
+*`std::map<std:::tuple<int, int>, std::vector<float>>`*。
+
+所有视图类型的对象复制成本都很低，例如 ArrayView 的大小最大为 16 字节。
+
+**`OptionalAccessor<E>`**：
+
+OptionalAccessor 是一个类似 *`std::optional`* 的对象，它提供对底层 Pollux 向量中特定索引处的 null 值和值的惰性访问。目前，
+它用于表示可空输入数组的元素，以及可空输入映射的值。请注意，在 Pollux 中，映射中的键始终被假定为不可空。
+
+该对象支持以下方法：
+
+- `arg_type<E>` value()：对底层值的未受检查访问。
+
+- `arg_type<E>` operands()：对底层值的未受检查访问。
+
+- `bool has_value()`：如果值不为 null，则返回 true。
+
+- `bool operands()`：如果值不为 null，则返回 true。
+
+空值和值访问是解耦的，因此如果有人知道输入不为空，访问值就不会有检查空值的开销。检查空值也是如此。
+注意，与 `std::container` 不同，对 value() 和 `operator*` 的函数调用是右值（临时值）而不是左值，
+它们可以绑定到常量引用和左值，但不能绑定到引用。
+
+`OptionalAccessor<E>` 可以赋值给原始类型，并且可以与 `std::optional<arg_type<E>>` 进行比较。
+以下表达式有效，其中 `array[0]` 是可选访问器。
+
+```cpp
+
+    std::optional<int> = array[0];
+    if(array[0] == std::nullopt) ...
+    if(std::nullopt == array[0]) ...
+    if(array[0]== std::optional<int>{1}) ...
+```
+
+**`NullableArrayView<T>` 和 `NullFreeArrayView<T>`**
+
+NullableArrayView 和 NullFreeArrayView 的接口与 *`std::vector<std::optional<V>>`* 和 *`std::vector<V>`* 类似。
+以下代码展示了 arraySum 函数，它使用范围循环来迭代值。
+
+```cpp
+
+  template <typename T>
+  struct ArraySum {
+    POLLUX_DEFINE_FUNCTION_TYPES(T);
+
+    bool call(const int64_t& output, const arg_type<Array<int64_t>>& array) {
+      output = 0;
+      for(const auto& element : array) {
+        if (element.has_value()) {
+          output += element.value();
+        }
+      }
+      return true;
+    }
+  };
+```
+
+ArrayView 支持以下操作：
+
+- size_t **size** ()：返回数组中元素的数量。
+
+- **`operator[]`** `(size_t index)`：访问索引处的元素。它返回 `null_free_arg_type<T>` 或 `OptionalAccessor<T>`。
+
+- `ArrayView<T>::Iterator` **`begin()`**：指向第一个元素的迭代器。
+
+- `ArrayView<T>::Iterator` **`end()`**：指示迭代结束的迭代器。
+
+- bool **mayHaveNulls** ()：对底层向量是否为空进行常量时间检查。返回 false 时，表示肯定不存在空值；返回 true 时，并不保证存在空值。
+
+- `ArrayView<T>::SkipNullsContainer` **`skipNulls()`**：返回一个可迭代容器，可直接访问底层数组中的非空值。例如，上面的函数可以写成：
+
+```cpp
+
+  template <typename T>
+  struct ArraySum {
+    POLLUX_DEFINE_FUNCTION_TYPES(T);
+
+    bool call(const int64_t& output, const arg_type<Array<int64_t>>& array) {
+      output = 0;
+      for (const auto& value : array.skipNulls()) {
+        output += value;
+      }
+      return true;
+    }
+  };
+```
+
+skipNulls 迭代器将检查每个索引处的空值并跳过空值。更高性能的实现是，当 `mayHaveNulls()` 为 false 时，跳过读取空值。
+
+```cpp
+
+  template <typename T>
+  struct ArraySum {
+      POLLUX_DEFINE_FUNCTION_TYPES(T);
+
+      bool call(const int64_t& output, const arg_type<Array<int64_t>>& array) {
+        output = 0;
+        if (array.mayHaveNulls()) {
+          for(const auto& value : array.skipNulls()) {
+            output += value;
+          }
+          return true;
+        }
+
+        // No nulls, skip reading nullity.
+        for (const auto& element : array) {
+          output += element.value();
+        }
+        return true;
+      }
+  };
+```
+
+注意：对 `operator[]` 的调用、迭代器解引用和迭代器指针解引用都是右值（临时值），
+而 STD 容器中的左值则不然。因此，这些可以绑定到常量引用或左值，但不能绑定到普通引用。
+
+**`NullableMapView<K, V>` 和 `NullFreeMapView<K, V>`**
+
+NullableMapView 和 NullFreeMapView 具有类似于 `std::map<K, std::optional<V>>` 和 `std::map<K, V>` 的接口。
+以下代码展示了一个示例函数 mapSum，用于对键和值进行求和。
+
+```cpp
+  template <typename T>
+  struct MapSum{
+    bool call(const int64_t& output, const arg_type<Map<int64_t, int64_t>>& map) {
+      output = 0;
+      for (const auto& [key, value] : map) {
+        output += key;
+        if (value.has_value()) {
+          value += value.value();
+        }
+      }
+      return true;
+    }
+  };
+```
+
+MapView 支持以下方法：
+
+- `MapView<K,V>::Element` **begin** ()：指向第一个 Map 元素的迭代器。
+
+- `MapView<K,V>::Element` **end** ()：指示迭代结束的迭代器。
+
+- size_t **size** ()：Map 中的元素数量。
+
+- `MapView<K,V>::Iterator` **find** (const key_t& key)：对键执行线性搜索，如果找到，则返回指向元素的迭代器，否则返回 end()。仅支持原始键类型。
+
+- `MapView<K,V>::Iterator` **`operator[]`** (const key_t& key)：与 find 相同，如果未找到元素，则抛出异常。
+
+- `MapView<K,V>::Element`
+
+`MapView<K, V>::Element` 是解引用 `MapView<K, V>::Iterator` 所返回的类型。它有两个成员：
+
+- 第一个：`arg_type<K>` | `null_free_arg_type<K>`
+
+- 第二个：`OptionalAccessor<V>` | `null_free_arg_type<V>`
+
+- `MapView<K, V>::Element` 参与结构体绑定：`auto [v, k] = map.begin()`;
+
+注意：迭代器解引用和迭代器指针解引用会产生临时变量。因此，这些临时变量可以绑定到
+const 引用或值变量，但不能绑定到普通引用。
+
+`Generic<T1>` 输入类型使用 GenericView 实现，它支持以下内容：
+
+- uint64_t **hash** () const ：返回值的哈希值；用于定义` std::hash<GenericView>()`；允许将 GenericView 存储在 `melon::F14` 集合和映射以及 STL 集合和映射中。
+- bool **isNull** () const : 如果值为 NULL，则返回 true
+- bool **operator==** (const GenericView& other) const : 与另一个 GenericView 进行相等性比较
+- `std::optional<int64_t>` **compare** (const GenericView& other, const CompareFlags flags) const : 与另一个 GenericView 进行比较
+- TypeKind **kind** () const : 返回值的 TypeKind
+- const TypePtr& **type** () const : 返回值的 Pollux 类型
+- std::string **toString** () const : 返回值的字符串表示形式，用于日志记录和调试
+- `template <typename ToType> typename VectorReader<ToType>::exec_in_t` **castTo** () const : 转换为具体视图类型
+- `template <typename ToType> std::optional<typename VectorReader<ToType>::exec_in_t>` **tryCastTo** () const : 尽力尝试转换为具体的视图类型
+
+**C++ 临时变量的生命周期**
+
+虽然 C++ 允许临时变量（右值）通过延长其生命周期来绑定到 const 引用，但必须注意，
+只有赋值的临时变量的生命周期会被延长，而并非 RHS 表达式链中的所有临时变量的生命周期都会被延长。
+换句话说，表达式中任何临时变量的生命周期都不会被延长。
+
+例如，对于表达式 `const auto& x = map.begin()->first`，
+C++ 不会延长 map.begin() 结果的生命周期，因为它不是被赋值的对象。在这种情况下，赋值的行为是未定义的。
+
+```cpp
+
+     // Safe assignments. single rhs temporary.
+     const auto& a = array[0];
+     const auto& b = *a;
+     const auto& c = map.begin();
+     const auto& d = c->first;
+
+     // Unsafe assignments. (undefined behaviours)
+     const auto& a = map.begin()->first;
+     const auto& b = **it;
+
+     // Safe and cheap to assign to value.
+     const auto a = map.begin()->first;
+     const auto b = **it;
+```
+注意，在范围循环中，范围表达式被赋值给了一个通用引用。因此，上述问题也适用于它。
+
+```cpp
+
+     // Unsafe range loop.
+     for(const auto& e : **it){..}
+
+     // Safe range loop.
+     auto itt = *it;
+     for(const auto& e : *itt){..}
+```
+
+## Outputs (Writer Types)
+
+
+复杂类型的输出使用特殊的写入器来表示，这些写入器的设计方式是通过直接写入 Pollux 向量来最大限度地减少数据复制。
+
+**`ArrayWriter<V>`**
+
+- `out_type<V>`& **add_item** ()：添加非空项并返回添加值的写入器。
+- **add_null** ()：添加空项。
+- **reserve** (vector_size_t size)：确保底层 Vector 中已分配用于 `size` 个项的空间。
+- Vector_size_t **size** ()：返回数组的长度。
+- **resize** (vector_size_t size)：更改数组的大小，并在需要时为新元素保留空间。
+
+- void **add_items** (const T& data)：从任何具有类似 std::vector 接口的容器中附加数据。
+- void **copy_from** (const T& data)：将数据赋值给任何具有类似 std::vector 接口的容器。
+
+- void **add_items** `(const NullFreeArrayView<V>& data)`：从数组视图附加数据（比逐项操作更快）。
+
+- void **copy_from** `(const NullFreeArrayView<V>& data)`：从数组视图分配数据（比逐项操作更快）。
+
+- void **add_items** `(const NullableArrayView<V>& data)`：从数组视图附加数据（比逐项操作更快）。
+
+- void **copy_from** `(const NullableArrayView<V>& data)`：从数组视图分配数据（比逐项操作更快）。
+
+当 V 为原始类型时，以下函数可用，使写入器可用作 `std::vector<V>`。
+
+- **push_back** `(std::optional<V>)`：添加项或返回 null。
+- `PrimitiveWriter<V>` **`operator[]`** (vector_size_t index)：返回一个原始写入器，该写入器可赋值给 `std::optional<V>`，用于索引处的项目（应在调整大小后调用）。
+- `PrimitiveWriter<V>` **back** ()：返回一个原始写入器，该写入器可赋值给 `std::optional<V>`，用于索引长度为 -1 的项目。
+**`MapWriter<K, V>`**
+
+- **reserve** (vector_size_t size)：确保在底层向量中已分配用于 `size` 个条目的空间。
+- `std::tuple<out_type<K>`&, `out_type<V>`&> **add_item()**：添加非空项，并以元组形式返回键和值的写入器。
+- `out_type<K>`& **add_null()**：添加空项并返回键的写入器。
+- Vector_size_t **size** ()：返回映射的长度。
+
+- void **add_items** (const T& data)：从任何具有类似 `std::vector<tuple<K, V>>` 接口的容器中附加数据。
+- void **copy_from** (const `NullFreeMapView<V>`& data)：从映射视图分配数据（比逐项分配更快）。
+- void **copy_from** (const `NullableMapView<V>`& data)：从地图视图分配数据（比逐项分配更快）。
+
+当 K 和 V 是原语时，可以使用以下函数，使编写器可用作 `std::vector<std::tuple<K, V>>`。
+
+- **resize** (vector_size_t size)：更改大小。
+- **emplace** (K, `std::optional<V>`)：向映射中添加元素。
+- `std::tuple<K&, PrimitiveWriter<V>>` **`operator[]`** (vector_size_t index)：返回索引处元素的写入器对。键写入器
+可赋值给 K，值写入器可赋值给 `std::optional<V>`。
+
+**`RowWriter<T...>`**
+
+- `template<vector_size_t I>` **set_null_at** ()：将索引 I 处的行项设置为 null。
+- `template<vector_size_t I>` **get_writer_at** ()：将索引 I 处的行项设置为非 null，并将 writer 返回到索引 I 处的行元素。
+
+当所有类型 T... 均为原语时，可使用以下函数。
+
+- void **operator=** (`const std::tuple<T...>`& input)：可赋值给 `std::tuple<T...>`。
+- void **operator=** (`const std::tuple<std::optional<T>...>& input`)：可赋值给 `std::tuple<std::optional<T>...>`。
+- void **copy_from** (`const std::tuple<K...>& input`)：与上述类似。
+
+当给定的 Ti 为原始类型时，以下代码有效。
+
+- `PrimitiveWriter<Ti>` `exec::get<I>(RowWriter<T...>)`：返回索引 I 处元素的原始写入器，该写入器可赋值给 `std::optional`。
+
+**`PrimitiveWriter<T>`**
+
+`Assignable to std::optional<T>` 允许将 null 或 value 写入原语。当写入可空原语时，由复杂的 writer 返回。
+
+**StringWriter**
+
+- void **reserve** (size_t newCapacity) : 为输出字符串预留至少为 newCapacity 大小的空间。
+- void **resize** (size_t newCapacity) : 设置字符串的大小。
+- char* **data** ()：返回指向字符串第一个字符的指针，可直接写入（写入 capacity()-1 处的索引是安全的）。
+-vector_size_t **capacity** ()：返回字符串的容量。
+-vector_size_t **size** ()：返回字符串的大小。
+-**operator+=** (const T& input)：使用 data() 和 size() 从 char* 或任意类型追加数据。
+-**append** (const T& input)：使用 data() 和 size() 从 char* 或任意类型追加数据。
+-**copy_from** (const T& input)：使用 data() 和 size() 从 char* 或任意类型追加数据。
+
+启用零拷贝优化后（参见上文的零拷贝字符串结果部分），可以使用以下函数。
+
+- void **setEmpty** ()：设置为空字符串。
+- void **setNoCopy** (const StringView& value)：将字符串设置为输入字符串，而不执行深度复制。
+
+**GenericWriter**
+
+- TypeKind **kind** () const：返回值的 TypeKind
+- const TypePtr& **type** () const：返回值的 Pollux 类型
+- void **copy_from** (const GenericView& view)：从另一个 GenericView 赋值
+- `template <typename ToType>` `typename VectorWriter<ToType, void>::exec_out_t`& **castTo** ()：转换为具体的 writer 类型
+- `template <typename ToType>` `typename VectorWriter<ToType, void>::exec_out_t`* **tryCastTo** ()：尽力尝试转换为具体的 writer 类型
+

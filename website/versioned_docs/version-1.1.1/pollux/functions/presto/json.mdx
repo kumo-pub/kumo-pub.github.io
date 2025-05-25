@@ -1,0 +1,199 @@
+# JSON Functions
+
+## JSON Format
+
+JSON 是一种独立于语言的数据格式，它将数据表示为
+人类可读的文本。JSON 文本可以表示数字、布尔值、
+字符串、数组、对象或 null，但语法略有不同。
+例如，表示字符串的 JSON 文本必须转义所有字符，
+并将字符串括在双引号中，例如“"123\n”；而表示数字的 JSON 文本则无需如此，例如“123”。表示数组的 JSON 文本必须将数组元素括在方括号中，
+例如“[1,2,3]”。更详细的语法请参阅
+“JSON 简介”。
+
+[简介](https://www.json.org)
+
+## Cast to JSON
+
+将值从受支持的类型转换为 JSON 会返回表示该值的 JSON 文本。支持从 BOOLEAN、TINYINT、SMALLINT、INTEGER、BIGINT、REAL、DOUBLE、DATE、
+TIMESTAMP 或 VARCHAR 进行转换。当数组的元素类型为受支持的类型之一，或者行的每个字段类型均为受支持的类型之一时，支持从 ARRAY 或 ROW 进行转
+换。当映射的键类型为 BOOLEAN、TINYINT、SMALLINT、INTEGER、BIGINT、REAL、DOUBLE 或 VARCHAR，且映射的值类型为受支持的类型之一时，支持从
+MAP 进行转换。此外，ARRAY 和 MAP 的元素类型以及 ROW 的字段类型也可以为 JSON。以下示例展示了转换的行为：
+
+```sql
+
+    SELECT CAST(NULL AS JSON); -- NULL
+    SELECT CAST(1 AS JSON); -- JSON '1'
+    SELECT CAST(9223372036854775807 AS JSON); -- JSON '9223372036854775807'
+    SELECT CAST('abc' AS JSON); -- JSON '"abc"'
+    SELECT CAST(true AS JSON); -- JSON 'true'
+    SELECT CAST(1.234 AS JSON); -- JSON '1.234'
+    SELECT CAST(-0.00012 AS JSON); -- JSON '-1.2E-4'
+    SELECT CAST(10000000.0 AS JSON); -- JSON '1.0E7'
+    SELECT CAST(ARRAY[1, 23, 456] AS JSON); -- JSON '[1,23,456]'
+    SELECT CAST(ARRAY[1, NULL, 456] AS JSON); -- JSON '[1,null,456]'
+    SELECT CAST(ARRAY[ARRAY[1, 23], ARRAY[456]] AS JSON); -- JSON '[[1,23],[456]]'
+    SELECT CAST(MAP_FROM_ENTRIES(ARRAY[('k1', 1), ('k2', 23), ('k3', 456)]) AS JSON); -- JSON '{"k1":1,"k2":23,"k3":456}'
+    SELECT CAST(CAST(ROW(123, 'abc', true, JSON '["a"]') AS ROW(v1 BIGINT, v2 VARCHAR, v3 BOOLEAN, v4 JSON)) AS JSON); -- JSON '[123,"abc",true,["a"]]'
+```
+
+请注意，从 NULL 转换为 JSON 并非易事。从独立的 NULL 进行转换将生成 SQL NULL，而不是 JSON 的“null”。但是，从包含 NULL 的数组或
+映射进行转换时，生成的 JSON 中将包含 null。
+
+另外需要注意的是，从 ROW 转换为 JSON 时，结果是一个 JSON 数组，而不是 JSON 对象。这是因为在 SQL 中，行的位置比名称更重要。
+
+还要注意，如果输入值的幅度大于或等于 10 -3 且小于 10 7，则从 REAL 或 DOUBLE 转换将返回以标准表示法表示的 JSON 文本，否则将返回以科学计
+数法表示的 JSON 文本。标准计数法和科学计数法始终包含小数部分，例如“10.0”。
+
+最后，请记住，将 VARCHAR 字符串转换为 JSON 并不会直接将原始字符串转换为 JSON 类型。相反，它会创建一个 JSON 文本来表示原始字
+符串。此 JSON 文本与原始字符串不同，因为它包含转义的特殊字符，并添加了额外的双引号。
+
+## Cast from JSON
+
+将 JSON 文本转换为受支持的类型将返回此 JSON 文本所表示的值。JSON 文本必须表示其所转换类型的有效值，否则将抛出错误。支持转换为 BOOLEAN、
+TINYINT、SMALLINT、INTEGER、BIGINT、REAL、DOUBLE 或 VARCHAR。当数组的元素类型为受支持的类型之一，或者映射的键类型为 BOOLEAN、TINYINT、
+SMALLINT、INTEGER、BIGINT、REAL、DOUBLE 或 VARCHAR，且映射的值类型为受支持的类型之一时，支持转换为 ARRAY 和 MAP。从 JSON 转换为 ROW 时，
+JSON 数组和 JSON 对象均受支持。从 JSON 对象转换为 ROW 时，JSON 键使用不区分大小写的匹配。
+以下示例展示了这些转换的行为：
+
+```sql
+
+    SELECT CAST(JSON 'null' AS VARCHAR); -- NULL
+    SELECT CAST(JSON '1' AS INTEGER); -- 1
+    SELECT CAST(JSON '9223372036854775807' AS BIGINT); -- 9223372036854775807
+    SELECT CAST(JSON '"abc"' AS VARCHAR); -- abc
+    SELECT CAST(JSON 'true' AS BOOLEAN); -- true
+    SELECT CAST(JSON '1.234' AS DOUBLE); -- 1.234
+    SELECT CAST(JSON '[1,23,456]' AS ARRAY(INTEGER)); -- [1, 23, 456]
+    SELECT CAST(JSON '[1,null,456]' AS ARRAY(INTEGER)); -- [1, NULL, 456]
+    SELECT CAST(JSON '[[1,23],[456]]' AS ARRAY(ARRAY(INTEGER))); -- [[1, 23], [456]]
+    SELECT CAST(JSON '{"k1":1,"k2":23,"k3":456}' AS MAP(VARCHAR, INTEGER)); -- {k1=1, k2=23, k3=456}
+    SELECT CAST(JSON '{"v1":123,"v2":"abc","v3":true}' AS ROW(v1 BIGINT, v2 VARCHAR, v3 BOOLEAN)); -- {v1=123, v2=abc, v3=true}
+    SELECT CAST(JSON '{"V1":123,"V2":"abc","V3":true}' AS ROW(v1 BIGINT, v2 VARCHAR, v3 BOOLEAN)); -- {v1=123, v2=abc, v3=true}
+    SELECT CAST(JSON '[123,"abc",true]' AS ROW(v1 BIGINT, v2 VARCHAR, v3 BOOLEAN)); -- {v1=123, v2=abc, v3=true}
+```
+
+请注意，将 JSON 文本转换为 VARCHAR 并不会将 JSON 文本直接转换为纯字符串。相反，它会返回 JSON 文本所表示的 VARCHAR 字符串。此字符串
+与 JSON 文本不同，因为它包含未转义的特殊字符，并且删除了双引号。
+
+## JSON Functions
+
+
+```cpp
+    is_json_scalar(json) -> boolean
+
+    判断 ``json`` 是否为标量（例如 JSON 数字、JSON 字符串、``true``、``false`` 或 ``null``）
+```
+```sql
+        SELECT is_json_scalar('1'); *-- true*
+        SELECT is_json_scalar('[1, 2, 3]'); *-- false*
+```
+```cpp
+    json_array_contains(json, value) -> boolean
+
+    判断 ``value`` 是否存在于 ``json``（包含 JSON 数组的字符串）中。``value`` 可以是布尔值、bigint、double 或 varchar。
+如果 ``json`` 不是数组，则返回 NULL
+```
+```sql
+
+        SELECT json_array_contains('[1, 2, 3]', 2);
+```
+```cpp
+    json_array_get(json_array, index) -> json
+
+    返回 ``json_array`` 中指定索引处的元素。
+    索引从零开始
+```
+```sql
+
+    SELECT json_array_get('[1, 2, 3]', 0); -- JSON '1'
+    SELECT json_array_get('[1, 2, 3]', 1); -- JSON '2'
+```
+此函数还支持使用负索引来获取数组末尾的元素：
+```sql
+    SELECT json_array_get('[1, 2, 3]', -1); -- JSON '3'
+    SELECT json_array_get('[1, 2, 3]', -2); -- JSON '2'
+```
+如果指定索引处的元素不存在，则该函数返回 null:
+```sql
+    SELECT json_array_get('[1, 2, 3]', 10); -- NULL
+    SELECT json_array_get('[1, 2, 3]', -10); -- NULL
+```
+如果“json_array”不是数组，则该函数返回null
+```sql
+
+   SELECT json_array_get('{"a": 10, "b": 11}', 1); -- NULL
+```
+```cpp
+    json_array_length(json) -> bigint
+
+    返回 ``json``（包含 JSON 数组的字符串）的数组长度。如果 ``json`` 不是数组，则返回 NULL
+```
+```sql
+        SELECT json_array_length('[1, 2, 3]');
+```
+```cpp
+    json_extract(json, json_path) -> json
+
+    对 ``json``（包含 JSON 的字符串）执行类似 ``JSONPath`` 的表达式 ``json_path``，并以 JSON 字符串形式返回结果：
+```
+```sql
+    SELECT json_extract(json, '$.store.book');
+```
+当前实现支持有限的 JSONPath 语法子集。
+如果 ``json`` 是 varchar 类型，则应符合 ``RFC 7159`` 规范，并在提取前转换为其规范格式。
+[JSONPath](http://goessner.net/articles/JsonPath/)
+
+```cpp
+    json_extract_scalar(json, json_path) -> varchar
+
+   对 ``json``（包含 JSON 的字符串）执行 ``jsonPath`` 类表达式 ``json_path``，并以字符串形式返回结果。``json_path`` 引用的值必须是标量（布尔值、数字或字符串）：
+```
+```sql
+        SELECT json_extract_scalar('[1, 2, 3]', '$[2]');
+        SELECT json_extract_scalar(json, '$.store.book[0].author');
+```
+    当前实现仅支持部分 JSONPath 语法子集。
+如果 ``json`` 是 varchar 类型，则预计它符合 `RFC 7159` 规范，并在提取前转换为其规范格式。
+[JSONPath](http://goessner.net/articles/JsonPath/)
+
+.. function:: json_format(json) -> varchar
+
+将输入的 JSON 值序列化为符合 `RFC 7159` 的 JSON 文本。
+JSON 值可以是 JSON 对象、JSON 数组、JSON 字符串、JSON 数字、``true``、``false`` 或 ``null``::
+
+```sql
+    SELECT json_format(JSON '[1, 2, 3]'); -- '[1,2,3]'
+    SELECT json_format(JSON '"a"'); -- '"a"'
+```
+[RFC 7159](https://datatracker.ietf.org/doc/html/rfc7159.html)
+
+```cpp
+    json_parse(varchar) -> json
+
+    接收符合 `RFC 7159` 的 JSON 文本，并返回 JSON 文本反序列化的 JSON 值（规范格式）。JSON 值可
+    以是 JSON 对象、JSON 数组、JSON 字符串、JSON 数字、``true``、``false`` 或 ``null``::
+```
+```sql
+    SELECT json_parse('[1, 2, 3]'); -- JSON '[1,2,3]'
+    SELECT json_parse('"abc"'); -- JSON '"abc"'
+```
+
+[RFC 7159](https://datatracker.ietf.org/doc/html/rfc7159.html)
+
+```cpp
+    json_size(json, value) -> bigint
+
+   返回“值”的大小。对于“对象”或“数组”，其大小是成员的数量，“标量”值的大小为零。
+```
+```sql
+    SELECT json_size('{"x": {"a": 1, "b": 2}}', '$.x'); -- 2
+    SELECT json_size('{"x": [1, 2, 3]}', '$.x'); -- 3
+    SELECT json_size('{"x": {"a": 1, "b": 2}}', '$.x.a'); -- 0
+```
+
+## JSON Vectors
+
+Presto 中有许多 JSON 函数需要 JSON 类型的输入或返回 JSON 类型的输出。因此，使用 Pollux 库的开发者可能需要使用
+JSON 类型的向量。在 Pollux 的内部实现中，JSON 类型继承了 VARCHAR 类型，因此这些向量的操作类似。要创建 JSON 类
+型的向量，可以使用 BaseVector::create(JSON(), size, pool) 创建一个扁平的 StringView 向量，即 `FlatVector<StringView>`。
+读取和写入 JSON 类型的向量与 VARCHAR 类型的向量相同，例如，通过 `VectorReader<StringView>` 和 StringWriter。

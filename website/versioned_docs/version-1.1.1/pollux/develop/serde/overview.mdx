@@ -1,0 +1,24 @@
+
+# Serialization Formats
+
+Pollux 支持三种可用于数据 shuffle 的数据序列化格式：
+[PrestoPage](https://prestodb.io/docs/current/develop/serialized-page.html)
+UnsafeRow 和 CompactRow。PrestoPage 是列式格式。UnsafeRow 和 CompactRow
+是行式格式。
+
+Pollux 应用程序也可以注册自己的格式。
+
+PrestoPage 格式在 [Presto 文档](https://prestodb.io/docs/current/develop/serialized-page.html) 中进行了描述。
+
+UnsafeRow 格式源自 [Apache Spark](https://jaceklaskowski.gitbooks.io/mastering-spark-sql/content/spark-sql-UnsafeRow.html)。
+
+CompactRow 与 UnsafeRow 类似，但 CompactRow 的空间效率更高，并且减少了
+shuffle 的字节数，这会对 CPU 使用率（用于压缩和校验）以及内存（用于缓冲）产生连锁反应。
+
+有关 UnsafeRow 和 CompactRow 格式的详细信息，请参阅以下文章。
+
+
+*  [unsaferow](unsaferow.mdx)
+*  [compactrow](compactrow.mdx)
+
+Pollux 还使用另一种行序列化格式 ContainerRowSerde，用于在聚合和连接运算符中存储数据。此格式类似于 CompactRow。

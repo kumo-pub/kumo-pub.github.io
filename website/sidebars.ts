@@ -743,6 +743,23 @@ const sidebars: SidebarsConfig = {
     },
     {
       "type": "category",
+      "label": "搜索统一执行引擎",
+      "link": {
+        "type": "generated-index",
+        "title": "搜索统一执行引擎",
+        "description": "搜索统一执行引擎教程!",
+        "keywords": [
+          "pollux",
+          "kmsearch"
+        ],
+        "image": "/img/favicon.png"
+      },
+      "items": [
+        "pollux/overview"
+      ]
+    },
+    {
+      "type": "category",
       "label": "搜索 UI",
       "link": {
         "type": "generated-index",

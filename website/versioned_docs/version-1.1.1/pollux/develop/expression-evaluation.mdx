@@ -1,0 +1,371 @@
+# 表达式计算 (Expression Evaluation)
+
+Pollux 具有矢量化表达式求值功能。它在 FilterProject 运算符中用于求值过滤器和项目表达式，在
+HiveConnector 中用于求值“剩余”的过滤器表达式。它也可以单独使用。
+
+查看 **pollux/example/ExpressionEval.cpp** 获取该 API 的示例用法。
+
+## 表达式树 {#expression-trees}
+
+
+表达式求值以表达式树作为输入。树中的每个节点都是 core::ITypedExpr 的一个子类，它指定返回类型以及零个或
+多个输入表达式（树中的子节点）。每个表达式可以是以下之一：
+
+* FieldAccessTypedExpr
+* ConstantTypedExpr
+* CallTypedExpr
+* CastTypedExpr
+* LambdaTypedExpr
+
+**FieldAccessTypedExpr** 表示输入 RowVector 的一列。该列由名称标识。这始终是树中的叶节点。
+
+**ConstantTypedExpr** 表示一个常量值（或字面量）。它始终是树中的叶节点。
+
+**CallTypedExpr** 表示一次函数调用。函数通过名称标识。输入表达式指定函数参数的数量和类型，从
+而可以明确地识别特定的函数实现。该函数可以是简单函数，也可以是向量化函数。
+
+**CallTypedExpr** 也可以通过指定预定义名称之一来表示特殊形式。这些名称不能用于简单函数或向量函数。
+
+与(and)
+
+```
+        AND 表达式。接受两个或多个布尔类型的输入表达式。如果所有输入都为真，则返回 true；如果至少一个输入为假，则返回 false；
+        否则，返回 null。
+        如果某个输入在某一行生成错误，而另一个输入返回 false，则该错误会被抑制。
+```
+
+或者(or)
+
+```
+        或表达式。接受两个或多个布尔类型的输入表达式。
+        如果至少一个输入为真，则返回 true；如果所有输入均为假，则返回 false；否则返回 null。
+
+        如果某个输入对某一行生成错误，而另一个输入返回 true，则该错误会被抑制。
+```
+if
+
+```
+        IF 表达式。接受 2 或 3 个输入表达式：布尔条件；then 子句；可选的 else 子句。
+
+        如果未指定 else 子句，则表达式对不满足条件的行返回 null。如果指定了 else 子句，则其返回类型必须与 then 子句的返回类型相同。
+```
+
+switch
+
+```
+        SWITCH 表达式是 IF 表达式的泛化。它接受
+        一个或多个 (条件，then 子句) 对和一个可选的 else 子句。
+
+        如果未指定 else 子句，则表达式将对未满足任何条件的行返回 null。
+
+        所有 then 子句和 else 子句的返回类型必须相同。
+```
+
+cast
+
+```
+        CAST 表达式。接受单个输入表达式。结果类型决定了转换的目标类型。
+```
+
+try
+
+```
+        TRY 表达式。接受单个输入表达式。通过为相应行返回 null 来处理输入表达式生成的错误。
+```
+
+coalesce
+
+```
+        COALESCE 表达式。接受多个相同类型的输入表达式。
+
+        返回参数列表中的第一个非空值。与 IF 或 SWITCH 表达式类似，仅在必要时才对参数进行求值。
+```
+
+
+在评估 AND 和 OR 表达式时，引擎会自适应地重新排序并联项，首先评估成本最低、最具决定性的并联项。例如，AND 表达式会选
+择评估成本最低、最常返回 FALSE 的并联项，而 OR 表达式则会选择评估成本最低、最常返回 TRUE 的并联项。
+
+AND 和 OR 表达式中的错误抑制逻辑旨在提供一致的结果，无论并联项的顺序如何。
+
+**CastTypedExpr** - 与上面的 CAST 表达式相同。
+
+**LambdaTypedExpr** 表示由输入类型（lambda 的签名）和表达式（lambda 的主体）指定的 lambda 表达式。这始终是树中的叶节点。
+
+
+## Expression Evaluation
+
+
+表达式求值分为两个步骤：编译和求值。
+编译步骤以 core::ITypedExpr 树的形式接收一个表达式列表，并以 exec::Expr 树的形式生
+成一个可执行表达式列表。求值步骤以 RowVector 的形式接收输入数据，对编译后的表达式求值并返回结果。
+求值步骤可以根据需要重复执行多次，直至处理完所有数据。
+
+### Compilation
+
+
+要编译表达式，需要创建一个 exec::ExprSet 实例。ExprSet 的构造函数接受一个表达式列表（指向表达式树
+根节点的 core::ITypedExpr ）和一个上下文（core::ExecCtx）。构造函数处理这些表达式并创建 exec::Expr 类实例树。
+
+ExprSet 接受多个表达式，并识别所有表达式中的公共子表达式，以便它们只需计算一次。FilterProject 运算符受益于此功能，因为它为所有过滤
+器和项目表达式创建单个 ExprSet。编译步骤还会展平相邻的 AND、OR 和连接行表达式，并执行常量折叠。
+
+表达式树中的每个节点都会转换为 exec::Expr 类的相应实例。
+
+| core::ITypedExpr node | exec::Expr instance                      |
+|-----------------------|-----------------------------------------|
+| FieldAccessTypedExpr  | FieldReference                          |
+| ConstantTypedExpr     | ConstantExpr                            |
+| CallTypedExpr         | * CastExpr if function name is "cast";<br/>* ConjunctExpr if function name is "and" or "or";<br/>* SwitchExpr if function name is "if" or "switch";<br/>* CoalesceExpr if function name is "coalesce";<br/>* TryExpr if function name is "try";<br/>* Expr if function name is none of the above |
+| CastTypedExpr         | CastExpr                                |
+| LambdaTypedExpr       | LambdaExpr                              |
+
+
+处理 CallTypedExpr 节点以确定函数名称是否引用特殊形式的表达式或函数（矢量化或简单）。查找按以下顺序执行，并在第一次匹配时停止：
+
+* 检查名称是否与某种特殊形式匹配。
+* 检查名称和签名（即输入类型）是否与某种矢量化函数匹配。
+* 检查名称和签名（即输入类型）是否与某种简单函数匹配。
+
+#### Common SubExpression Detection
+
+
+下图展示了 **strpos(upper
+(a), 'FOO') > 0 OR strpos(upper(a), 'BAR') > 0** 表达式的表达式树。其中，**upper
+(a)** 是一个公共子表达式。它由 Expr 类的一个实例表示，该实例在树中出现了两次。
+
+import cse_png from '@site/static/img/pollux/images/cse.png';
+
+<img width="600" align="center" src={cse_png}/>
+
+
+#### Flatten ANDs and ORs
+
+
+相邻的“与”节点合并为一个。同样，相邻的“或”节点也合并为一个。这最大限度地提高了“与”和“或”表达式执行过程中自适应连接重排序的效果。
+
+import flatten_and from '@site/static/img/pollux/images/flatten-and.png';
+
+<img width="600" align="center" src={flatten_and}/>
+
+
+#### Flatten concat-like functions
+
+
+行为类似于结合运算符的函数可以声明支持扁平化。在这种情况下，同一函数的相邻节点将被合并为一个。
+
+Presto 函数 concat(varchar,..) 就是一个很好的例子。执行 concat(a, b, c,
+d) 比执行 concat(a, concat(b, concat(c, d))) 更高效。
+一次连接 4 列可以计算最终结果所需的内存总量，将其分配到一个块中，然后将各个值复制到正确的偏移量。与一次连接两列相比，这节省了内存分配并减少了数据复制。
+
+Presto 函数 concat 声明支持扁平化，允许表达式编译器将 concat(a, concat(b, concat(c, d))) 表达式转换为 concat(a, b, c, d)。
+
+其他可以利用此优化的函数包括 `concat(array,..)` 和 `map_concat(map,..)`。但是，目前仅支持所有输入类型相同的签名。例如，`concat(array<T>, concat(array<T>, array<T>))`
+将被展平，但 `concat(T, concat(array<T>, array<T>))` 则不会。
+
+声明支持展平的函数必须具有包含相同类型的可变参数的签名，并且返回类型必须与输入类型相同。
+
+f(x,..) -> x
+
+展平会将像 f(x1, f(x2, f(x3, x4))) 这样的子表达式转换为
+f(x1, x2, x3, x4)。
+
+展平发生在常量折叠之前，因此，f(a, f(constant-x, Constant-y))
+变为 f(a, Constant-x, Constant-y)，而不是 f(a, Constant-z)，其中
+constant-z = f(constant-x, Constant-y)。
+
+展平还会影响公共子表达式的检测。如果不展平，在像 g(f(a, f(b, c)), f(d, f(b, c))) 这样的表达式中，编译器会
+将 f(b, c) 识别为公共子表达式。如果展平，该表达式
+将被重写为 g(f(a, b, c), f(d, b, c))，并且不会识别出任何公共子表达式。
+
+
+#### Constant Folding
+
+
+一旦我们拥有可执行表达式树 (exec::Expr)，ExprSet 就会识别
+不依赖于任何列的确定性子表达式，对其进行求值，并将其替换为单个常量表达式。这种优化称为常量折叠。
+
+例如，在表达式 **upper(a) > upper('Foo')** 中，子表达式 **upper
+('Foo')** 是确定性的，不依赖于任何列。它将在编译时进行求值，并替换为单个 ConstantExpr 节点 **FOO**。
+
+import constant_folding from '@site/static/img/pollux/images/constant-folding.png';
+
+<img width="600" align="center" src={constant_folding}/>
+
+#### Expression Metadata
+
+
+可执行表达式包含一组在求值过程中使用的元数据。
+这些元数据由 Expr::computeMetadata() 虚方法计算，并存储在 exec::Expr 类的成员变量中。
+
+* *distinctFields_* - 不同输入列的列表。
+* *multiplyReferencedFields_* - `distinctFields_` 的子集，可用作多个子表达式的输入。
+* *sameAsParentDistinctFields_* - 如果 `distinctFields_` 与父级 `distinctFields_`（父级引用将此表达式作为输入的表达式）之一匹配，则为 True。
+* *propagatesNulls_* - 布尔值，指示任何输入列中的 null 值是否会导致此表达式始终为该行返回 null。
+* *deterministic_* - 布尔值，指示此表达式及其所有子表达式是否具有确定性。
+* *hasConditionals_* - 布尔值，指示此表达式或其任何子表达式是否为 IF、SWITCH、AND 或 OR 表达式。
+* *isMultiplyReferenced_* - 布尔值，指示这是否为公共子表达式，例如，在 ExprSet 管理的表达式集合中出现多次的子表达式。
+
+以下是表达式 **`strpos(upper(a), ‘FOO’) > 0 OR strpos(upper(b), BAR) > 0`** 的 *distinctFields_* 示例。每个表达式的不同字段显示在表达式节点右侧的括号中。OR 节点有两个字段：a 和 b。每个大于等于 n 的节点都有一个字段：a 或
+b。对 strpos 和 upper 函数进行求值的节点具有一个空的不同字段列表，因为它们依赖于与其父节点完全相同的列。
+不同字段元数据会触发输入数据编码的剥离，并允许对唯一值的子集运行整个子表达式。
+
+
+import distinct_fields from '@site/static/img/pollux/images/distinct-fields.png';
+
+<img width="600" align="center" src={distinct_fields}/>
+
+
+#### Evaluation
+
+
+ExprSet 的一个实例代表一个或多个可执行表达式。
+ExprSet::eval() 方法可以重复调用，以对多个批次数据执行所有或部分表达式的求值。
+
+FilterProject 运算符使用单个 ExprSet 实例来处理所有过滤和投影表达式。对于每一批输入数据，该运算符首先对所有输入行执行过滤表达式，然
+后对通过过滤的行子集执行所有投影表达式。如果没有行通过过滤，则跳过投影表达式的求值。
+
+ExprSet::eval() 的输入是 EvalCtx，它包含一个表示输入数据的 RowVector 和一个用于标识要对其执行表达式的行子集的 SelectivityVector。
+
+#### Common SubExpressions (CSEs)
+
+
+ExprSet::eval() 会针对各个表达式调用 Expr::eval()。Expr::eval
+() 首先检查表达式是否为确定性公共子表达式
+(*isMultiplyReferenced_* == true)，如果是，则检查该表达式是否已被求值。如果是，则返回先前计算的结果并结束求值。
+
+先前求值中使用的行集可能小于
+当前的行集。在这种情况下，求值将继续计算缺失行的表达式。将结果与先前计算的值相结合，得出最终结果。
+
+各个表达式会递归地对输入表达式调用 Expr::eval()。
+这使得公共子表达式优化可以应用于树的任何层级，而不仅仅是根层级。
+
+#### Computing on Distinct Values Only
+
+
+当输入采用字典编码时，确定性表达式仅基于不同的值进行计算。具体方法是：检查输入列（*distinctFields_*）以识别共享的字典包装，
+剥离这些包装以提取一组内部向量，其中包含一组与原始行对应的索引，然后对这些内部向量求表达式的值，最后使用原始包装将结果包装到字典向量中。
+
+解释此机制的一种方法是考虑一个**upper
+(color)**表达式，该表达式对“color”列进行字典编码，使用一个包含3个值的字典：0 - 红色，1 - 绿色，2 - 蓝色。假设该字典向量有1000个条目。这些条目用一个包
+含1000个值（范围在[0, 2]之间）的索引缓冲区和一个大小为3的内部平面向量表示：[red, green,
+blue]。在计算**upper(color)**表达式时，Expr::peelEncodings
+() 方法用于剥离字典并生成一组新的输入：
+大小为3的内部平面向量和一组指向该向量的索引：[0, 1, 2]。然后，将“upper”函数应用于3个值 - [red, green, blue] - 以生成另一个大小为3的平面向量
+：[RED, GREEN, BLUE]。最后，使用原始索引将结果包装到字典向量中，生成一个表示 1000 个大写颜色值的字典向量。
+
+编码剥离发生在表达式树中依赖于给定列集的最高节点。这是通过将 peelEncodings 方法应用于 *distinctFields_* 来实现的，只有当列集与父表达式不同
+时，才会填充这些字段。例如，在表达式 f(g(color)) 中，字典编码在表达式树的最顶端被剥离，整个表达式仅基于 3 个不同的值进行求值。
+
+#### Memoizing the Dictionaries
+
+
+当输入向量来自 TableScan 时，我们可以有多个批次的输入字典向量引用同一个基向量。“颜色”列可能有数百万行引用相同的基值集：红色、绿色、蓝色。
+在这种情况下，每个批次的输入都有一个字典向量，该向量具有相同的基向量和不同的索引缓冲区。Expr::eval() 会记住在底层基向量上执行表达式
+的结果，并在后续批次中重复使用这些结果。对于每个新批次，它只是使用输入向量的索引缓冲区包装原始结果。此逻辑在 Expr::evalWithMemo() 方法
+中实现，并且仅适用于确定性表达式。
+
+#### Handling Nulls
+
+
+当表达式传播空值时（*propagatingNulls_* 元数据已在前面描述），该表达式仅对没有输入为空的行进行求值，并且结果会更新，为输入为空的
+行设置空值。这时，DictionaryVector 允许添加空值就派上用场了（例如，DictionaryVector 有一个与基向量的空值缓冲区分开的空值缓冲
+区）。因此，无论表达式求值的结果是平面编码还是字典编码，都可以高效地添加空值。
+
+#### Evaluation Algorithm
+
+
+表达式求值从根节点开始，按深度优先的顺序遍历表达式树。对每个节点执行一系列操作。
+
+import expression_evaluation from '@site/static/img/pollux/images/expression-evaluation.png';
+
+<img width="600" align="center" src={expression_evaluation}/>
+
+
+#. **Expr::eval** - 节点求值的入口点。检查表达式是否为已求值的共享子表达式。如果是，则检查是否已对所有必要的行求
+    值。如果是，则生成结果并提前终止求值。否则，将待求值的行设置为缺少结果的行子集，然后继续执行后续步骤。
+#. **Expr::evalEncodings** - 如果表达式是确定性的，且依赖的列少于其父代，则尝试剥离输入列的共享编码。如果剥离成功，则将输入列替换
+    为相应的内部向量，将待求值的行集更新为内部向量中的相应行，并存储剥离的包装以供后续使用。
+#. **Expr::evalWithNulls** - 如果表达式传播空值，则检查输入列并确定至少有一个输入为空的行。将这些行从待求值的行集中移除。
+#. **Expr::evalAll** - 表达式可以是特殊形式或函数调用。如果是特殊形式，则通过调用 Expr::evalSpecialForm() 来求值。如果是
+    函数调用，则通过在子节点上调用 Expr::eval() 递归求值所有输入表达式并生成输入向量。如果函数具有默认的空值行为，则识别所有输入向量为
+    空的行，并将其从待求值的行集合中移除。如果函数是确定性的且输入向量不是平坦的，则尝试剥离编码。如果剥离成功，则用相应的内部向量替换输入向
+    量，将待求值的行集合更新为内部向量中的相应行，并存储剥离后的包装以供后续使用。通过调用 VectorFunction::apply() 来求值函数。通过使用剥离后
+    的编码对结果进行包装，并对因输入为空而被移除的行设置空值来调整结果。注意：此步骤中对空值的处理和编码剥离似乎与 Expr::evalEncodings 和
+    Expr::evalWithNulls 中的类似步骤重复。区别在于，Expr::evalEncodings 和 Expr::evalWithNulls 处理的是整个表达式树提供的输入数据，
+    而此步骤处理的是通过计算输入表达式计算出的输入向量。
+#. **Finalize** - 将因输入为空而从求值中移除的行设置为空值。如果任何编码被剥离，则使用它来包装结果。如果表达式是共享子表达式，并且先前求
+    值的部分结果存在，则将其合并到最终结果中，然后保存结果以备将来使用。
+
+
+#### Flat No-Nulls Fast Path
+
+
+在对短向量（< 1000 行）执行简单表达式时，处理空值和编码的开销显而易见。为了优化这些用例，
+表达式求值采用平坦无空值的快速路径
+(Expr::evalFlatNoNulls)。当输入为平坦向量或无空值的常量时，此路径自动应用，并且所有子表达式都保证在给定平坦或常量无空值的输入的情况下生成平坦或常量无空值的结果。
+
+受益于此优化的工作负载示例之一是许多机器学习预处理工作负载中常见的非空浮点数基本算术运算。
+
+所有简单函数都保证对于平坦或常数无空值的输入返回平坦或常数无空值的结果。
+
+具有此属性的向量函数必须通过重写 supportFlatNoNullsFastPath 方法来指示这一点。
+
+```cpp
+
+  /// Returns true if (1) supports evaluation on all constant inputs of size >
+  /// 1; (2) returns flat or constant result when inputs are all flat, all
+  /// constant or a mix of flat and constant; (3) guarantees that if all inputs
+  /// are not null, the result is also not null.
+  virtual bool supportsFlatNoNullsFastPath() const {
+    return false;
+  }
+```
+
+
+特殊形式在某些情况下支持平坦无空快速路径，但并非所有情况都支持。
+
+* 如果所有子表达式都支持平坦无空快速路径，则 AND / OR 语句支持平坦无空快速路径。
+* 如果指定了 else 子句，且所有子表达式都支持平坦无空快速路径，则 IF 和 SWITCH 语句支持平坦无空快速路径。
+* 如果所有子表达式都支持平坦无空快速路径，则 COALESCE 语句支持平坦无空快速路径。
+* CAST 语句不支持平坦无空快速路径。
+* TRY 语句不支持平坦无空快速路径。
+
+某些子表达式可能采用快速路径，而其他子表达式则采用常规路径。
+
+#### Error Handling in AND, OR, TRY
+
+
+在评估 AND 表达式时，如果某个输入在某一行生成错误，而另一个输入在该行上返回 false，则该错误会被抑制。
+
+在评估 OR 表达式时，如果某个输入在某一行生成错误，而另一个输入在该行上返回 true，则该错误会被抑制。
+
+AND 和 OR 表达式中的错误抑制逻辑旨在提供一致的结果，无论连接操作的顺序如何。
+
+TRY 表达式通过将相应行的结果设置为 null 来处理异常。AND、OR 和 TRY 表达式中的错误处理依赖于所有
+表达式和向量函数是否正确支持 EvalCtx::throwOnError
+标志。当设置为 false 时，如果某行的数据无效，表达式和向量函数不应抛出异常，而是通过调用 EvalCtx::setError(row, exception) 来记录错误。
+
+#### Adaptive Conjunct Reordering in AND and OR
+
+
+AND 和 OR 表达式使用与 Selective ORC Reader 相同的机制来跟踪
+各个连接符的性能，并自适应地重新排序它们，以便
+首先评估最快丢弃最多行的连接符。
+
+AND 表达式首先评估最便宜、最常返回 FALSE 的连接符，而 OR 表达式首先评估最便宜、最常返回 TRUE 的连接符。
+
+#### Evaluation of IF, SWITCH
+
+
+SWITCH 表达式的执行步骤如下：
+
+* 对所有行执行第一个条件。
+* 对第一个条件为真的行子集执行第一个“then”子句，并生成部分填充的结果向量。
+* 对第一个条件不真的行执行第二个条件。
+* 对第二个条件为真的行子集执行第二个“then”子句。在执行“then”子句时，将部分填充的结果向量传递给
+    Expr::eval，并期望表达式使用指定行的计算值更新结果向量，同时保留已计算的结果。
+* 继续处理所有 (条件, then 子句) 对。如果行数不足，则提前终止。
+* 最后，对剩余行执行 else 子句。如果未指定 else 子句，则将剩余行设置为空值。
+
+SWITCH 表达式将 EvalCtx::isFinalSelection 标志设置为 false。表达式
+应该使用此标志来决定是否必须保留或覆盖部分填充的结果向量。

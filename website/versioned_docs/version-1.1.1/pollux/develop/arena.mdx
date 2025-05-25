@@ -1,0 +1,173 @@
+
+# Arena Allocation
+
+exec::HashStringAllocator 实现了一个由 memory::Allocation 支持的 arena，并支持连续和非连续分配。它用于存储聚
+合函数的可变宽度累加器，以及用于连接和聚合的哈希表。它还用于返回用于序列化和反序列化 shuffle 数据的字节流。
+
+该实现的灵感来自于`TLSF`：[一种用于实时系统的新型动态内存分配器论文](http://www.gii.upv.es/tlsf/files/ecrts04_tlsf.pdf)
+和[GitHub 实现](https://github.com/mattconte/tlsf)。
+
+如果您想使用可变宽度累加器实现聚合函数，了解 HashStringAllocator 将会很有帮助。
+
+## Layout
+
+内存以标准大小的连续 4KB 页为单位进行分配。可用大小包括：4、8、16、32、64、128、256 页。最小连续
+大小为 16KB，即 4 个页，每个页大小为 4KB。然后，系统会从这些页中分配单独的块。
+
+import arena_page_runs from '@site/static/img/pollux/images/arena-page-runs.png';
+
+<img width="800" align="center" src={arena_page_runs}/>
+
+exec::HashStringAllocator 在每个页面运行的末尾写入一个 4 字节的结束标记 (kArenaEnd)。块会逐
+个分配。每个块都以一个 4 字节的头开始，其中包含 1 位标志和大小。kFree 位指示块是否空闲。kContinued 指示
+块处于多部分非连续分配状态。kPreviousFree 指示紧接在此块之前的块是空闲的。
+
+import arena_block from '@site/static/img/pollux/images/arena-block.png';
+
+<img width="600" align="center" src={arena_block}/>
+
+当块被释放时，相邻的空闲块会被合并成更大的空闲块。
+
+空闲块被组织成一个循环双向链表。指向下一个和上一个空闲块的 6 字节指针存储在紧跟块头之后的 12 个字节中。
+空闲块的大小存储在块头中，也存储在块的最后 4 个字节中。
+
+import arena_free_block from '@site/static/img/pollux/images/arena-free-block.png';
+
+<img width="800" align="center" src={arena_free_block}/>
+
+
+写入块末尾的空闲块大小用于合并相邻的空闲块。当一个块被释放时，我们使用 kPreviousFree 位检查其前一个块是否空闲。通过
+读取当前块头前 4 个字节，我们找到前一个空闲块的大小。然后，我们通过从当前块的起始位置减去前一个空闲块的大小和 4 个字节的
+块头，计算出前一个空闲块的起始位置。为了合并这两个块，我们计算这两个块的总大小并将其写入第一个块的块头。我们还将新的大小存
+储在第二个块的最后 4 个字节中。存储在 CompactDoubleList 中的下一个块和上一个块的链接无需更新。
+
+多部分非连续分配中的块使用 kContinued 位来指示“下一个”块的存在，并将指向该块的指针存储在最后 8 个字节中。
+
+import arena_multipart_block from '@site/static/img/pollux/images/arena-multipart-block.png';
+
+<img width="600" align="center" src={arena_multipart_block}/>
+
+## API
+
+
+Allocate() 和 free() 方法用于分配和释放指定大小的连续块。当对多部分非连续分配的第一个块调用 free() 方法时，它会释放该分配中的所有块。
+
+```cpp
+
+      // Allocates 'size' contiguous bytes preceded by a Header. Returns
+      // the address of Header.
+      Header* allocate(int32_t size);
+
+      // Adds the allocation of 'header' and any extensions (if header has
+      // kContinued set) to the free list.
+      void free(Header* header);
+```
+
+StlAllocator 是一个基于 HashStringAllocator 的分配器，可与 STL 容器一起使用，它使用上述 allocate() 和 free() 方法实现。
+
+NewWrite()、extendWrite() 和 finishWrite() 方法允许使用 ByteOutputStream 序列化
+大小未知的可变宽度数据。使用 ByteOutputStream 时，底层数据可能来自多个不连续的块。ByteOutputStream 通过调用
+HashStringAllocator::newRange() 方法透明地管理额外块的分配。
+
+```cpp
+
+      // Sets stream to write to this pool. The write can span multiple
+      // non-contiguous runs. Each contiguous run will have at least
+      // kMinContiguous bytes of contiguous space. finishWrite finalizes
+      // the allocation information after the write is done.
+      // Returns the position at the start of the allocated block.
+      Position newWrite(ByteOutputStream& stream, int32_t preferredSize = kMinContiguous);
+
+      // Completes a write prepared with newWrite or
+      // extendWrite. Up to 'numReserveBytes' unused bytes, if available, are left
+      // after the end of the write to accommodate another write. Returns the
+      // position immediately after the last written byte.
+      Position finishWrite(ByteOutputStream& stream, int32_t numReserveBytes);
+
+      // Sets 'stream' to write starting at 'position'. If new ranges have to
+      // be allocated when writing, headers will be updated accordingly.
+      void extendWrite(Position position, ByteOutputStream& stream);
+```
+
+prepareRead() 方法允许使用 ByteInputStream 反序列化数据。
+
+```cpp
+
+    // Sets 'stream' to range over the data in the range of 'header' and
+    // possible continuation ranges.
+    static void prepareRead(
+        const Header* header,
+        ByteInputStream& stream);
+```
+
+## Examples of Usage
+
+
+聚合函数的可变宽度累加器使用 HashStringAllocator 来分配内存。
+
+### SingleValueAccumulator
+
+
+:func:`min`、:func:`max` 和 :func:`arbitrary` 函数使用的 SingleValueAccumulator 存储单个可变宽度类型的值，例如字符串、数组、映射或结构体。
+
+要写入第一个值，累加器会使用 newWrite() 分配一个新的块，并将块起始位置存储在成员变量中。
+重写值时，累加器会调用 extendsWrite() 并提供块起始位置。这样，数据就会被原地重写。
+写入值后，累加器会调用 finishWrite()。
+
+```cpp
+
+        // Write first value
+        ByteOutputStream stream(allocator);
+        auto begin = allocator->newWrite(stream);
+        // ... write to the stream
+        allocator->finishWrite(stream);
+
+        // Update the value
+        ByteOutputStream stream(allocator);
+        auto begin = allocator->extendWrite(begin, stream);
+        // ... write to the stream
+        allocator->finishWrite(stream);
+```
+
+累加器使用 prepareRead() 通过 ByteInputStream 读回数据。
+
+```cpp
+
+        ByteInputStream stream;
+        exec::HashStringAllocator::prepareRead(begin, stream);
+        // … read from the stream
+```
+
+### ValueList
+
+:func:`array_agg` 和 :func:`map_agg` 使用的 ValueList 仅追加累加器会累加一个值列表。ValueListReader 允许
+将 ValueList 中的值复制到一个扁平 Vector 中。
+
+此累加器首先使用 newWrite() 分配第一个块，并将位置存储在该第一个块的开头。它还会存储 finishWrite() 调用返回的最后一次写入操作之
+后的位置。为了追加数据，累加器会使用最后一次写入操作之后的位置调用 entendWrite()。
+
+```cpp
+
+        // Write first value
+        ByteOutputStream stream(allocator);
+        auto begin = allocator->newWrite(stream);
+        // ... write to the stream
+        auto current = allocator->finishWrite(stream);
+
+        // Update the value
+        ByteOutputStream stream(allocator);
+        auto begin = allocator->extendWrite(current, stream);
+        // ... write to the stream
+        allocator->finishWrite(stream);
+```
+### StlAllocator
+
+pollux/exec/HashStringAllocator.h 中定义的 StlAllocator 可用于创建
+STL 容器（例如 std::vector），这些容器由通过 HashStringAllocator 分配的内存支持。StlAllocator 本身不是累加器，但可用于
+设计使用 STL 容器的累加器。它被 :func:`approx_percentile`
+和 :func:`approx_distinct` 使用。
+
+```cpp
+
+        std::vector<double, exec::StlAllocator<double>> values{exec::StlAllocator<double>(allocator)};
+```

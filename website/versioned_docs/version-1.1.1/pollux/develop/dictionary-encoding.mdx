@@ -1,0 +1,307 @@
+
+# 字典编码(Dictionary Encoding)
+
+## Introduction
+
+Pollux 大量使用字典编码来避免数据复制。
+字典编码用于紧凑地表示重复值，并
+在不复制数据的情况下表示行子集。
+
+字典向量由一个空值缓冲区、一个索引缓冲区和一个基向量组成。
+
+假设我们有一张包含人们最喜欢的颜色的表格。第一列是人名。第二列是此人最喜欢的颜色。
+
+| name     | color |
+|----------|-------|
+| Michael  | red   |
+| Julia    | blue  |
+| Frank    | red   |
+| Melissa  | red   |
+| Jack     | blue  |
+| Samantha | green |
+
+
+颜色列包含大量重复值，可以表示为一个字典向量。首先，我们创建一个仅包含不同颜色的扁平基向量：
+[红色，蓝色，绿色]。然后，我们将每种颜色映射到基向量的一个索引：
+0 - 红色，1 - 蓝色，2 - 绿色。通过这种映射，我们将原始值转换为一个索引数组：[0, 1, 0, 0, 1, 2]。最后，我们将这些索引与
+基向量组合，得到一个字典向量。
+
+import dictionary_repeated from '@site/static/img/pollux/images/dictionary-repeated.png';
+
+<img width="400" align="center" src={dictionary_repeated}/>
+
+
+现在，假设我们想要表示最喜欢红色的人的一个子集。我们可以将原始的扁平姓名向量包装成一个字典向量，其中索引仅指向颜色 =“红色”的行，例如第 0、2 和 3 行。
+
+import dictionary_subset from '@site/static/img/pollux/images/dictionary-subset.png';
+
+<img width="400" align="center" src={dictionary_subset}/>
+
+
+如您所见，字典向量既可以用来表示基数的增加，也可以用来表示基数的减少。索引数组的大小可以小于或大于基向量的大小。索引可以重复，也可以不重复。
+
+我们称字典向量包裹了基向量。任何向量都可以被包裹在字典向量中，因此，一个向量可以在基向量之上包含多层字典。
+
+创建字典向量的一些操作示例如下：
+
+* ORC Reader 会为包含大量重复值的列生成字典向量。
+* Filter 运算符使用字典编码来表示通过过滤的输入行的子集。
+* Join 运算符使用字典编码来表示探测列的基数变化。
+* Unnest 运算符将使用字典编码“复制”输入行，但不复制数据。
+* 函数使用字典编码将结果表示为输入的子集。例如，:func:`element_at` 函数以及数组和映射的下标运算符使用字典编码将结果表示为输入数组元素或映射值的子集。
+
+对 ORC Reader 生成的字典列应用过滤器会使字典向量变为两层：Dict(Dict(Flat))。使用类似 :func:`element_at` 的函数进行投影可能会在其上添加另一层字典：Dict(Dict(Dict(Flat)))。
+
+## Nulls
+
+
+字典向量有一个与基向量的空值缓冲区相分离的空值缓冲区。这允许字典向量向可能不包含空值的基向量添加空值。这种灵活性在 element_at 函数的实现中非常有用，该函数在指定元素不存在时返回空值。
+
+字典向量中的空值缓冲区是可选的，如果字典不添加空值，则可以省略。即使基向量包含空值，没有空值缓冲区的字典向量也可能表示空值。
+
+在存在空值缓冲区的情况下，索引缓冲区中与空值条目对应的值是未定义的。
+
+BaseVector::wrapInDictionary() 是一个便捷方法，它根据空值缓冲区、索引缓冲区和基向量创建字典向量。
+
+
+## DecodedVector
+
+
+正如我们所见，一个向量可以包含多层字典：`Dict(Dict(....Dict(Flat)...))`。我们如何访问这种向量中的数据？我们使用 DecodedVector，
+它适用于所有类型，或者 `SimpleVector<T>`，它仅适用于原始类型。
+
+以下是使用 `SimpleVector<int32_t>` 访问 INTEGER 类型向量元素的示例：
+
+```cpp
+
+        auto intVector = vector->as<SimpleVector<int32_t>>();
+        rows.applyToSelected([&] (auto row) {
+            if (intVector->isNullAt(row)) {
+                // Process null value.
+            } else {
+                auto value = intVector->valueAt(row);
+                // Process non-null value of type int32_t.
+            }
+            return true;
+        });
+```
+`SimpleVector<T>` 的 `isNullAt(index)` 和 `valueAt(index)` 方法是虚函数，
+并且针对不同的编码有不同的实现。对于字典编码，
+这些方法会递归调用基向量的方法，直到
+读取返回值的最内层扁平向量。这非常低效，
+因此，性能敏感的代码路径应该使用 DecodedVector。
+
+DecodedVector 将多个包装合并为最多一个。它接受任意向量，
+并生成一个扁平基向量的引用和一个指向该向量的索引数组。DecodedVector 还会根据字典编码和基向量的空值缓冲区，生成一个组合的空值缓冲区。
+
+注意：上面提到的扁平基向量可能很容易与 `FlatVector<T>` 模板类混淆，后者表示原始类型的扁平向量。
+每个向量都有一个类型和编码。类型指的是向量存储的值的类型，
+例如INTEGER、MAP(INTEGER, DOUBLE)、ARRAY(REAL)。编码
+指的是值的压缩方式，例如扁平、字典、常量。
+ArrayVector、MapVector 和 RowVector 类分别表示 ARRAY、MAP 和 ROW 类型的扁平向量。`FlatVector<T>` 表示原始类型的扁平向量。扁平、字典和常量编码适用于所有类型。
+
+对于标量类型，valueAt(index) 和 isNullAt(index) 方法可以访问
+各个空值标志和值。以下是解码和访问 INTEGER 类型向量值的示例：
+
+```cpp
+
+        DecodedVector decoded(vector, rows);
+        rows.applyToSelected([&] (auto row) {
+            if (decoded.isNullAt(row)) {
+                // Process null value.
+            } else {
+                auto value = decoded.valueAt<int32_t>(row);
+                // Process non-null value of type int32_t.
+            }
+            return true;
+        });
+```
+DecodedVector 接受一个待解码的向量和一个 SelectivityVector，SelectivityVector 指定了待解码行的子集。这确保仅对必要的行进行解码。
+
+对于复杂类型，base() 和 indices() 方法提供对基向量的访问，并将行映射到基向量。isNullAt(index) 方法仍然可以用于检查顶层空值。以下是解码和访问 ARRAY(INTEGER) 类型向量值的示例。
+
+```cpp
+
+        // Decode top-level array vector.
+        DecodedVector decoded(vector, rows);
+        auto base = decoded.base()->as<ArrayVector>();
+        auto indices = decoded.indices();
+
+        // Access individual elements via SimpleVector<int32_t>. This is convenient, but not efficient.
+        auto elements = base->elements()->as<SimpleVector<int32_t>>();
+
+        rows.applyToSelected([&] (auto row) {
+            if (decoded.isNullAt(row)) {
+                // Process null array.
+            } else {
+                auto size = base->sizeAt(indices[row]);
+                auto offset = base->offsetAt(indices[row]);
+                // Process array elements stored in [offset, offset + size) slots of the elements vector.
+
+                for (auto i = 0; i < size; ++i) {
+                   if (elements->isNullAt(offset + i)) {
+                      // Process null element of the array.
+                   } else {
+                      auto value = elements->valueAt(offset + i);
+                      // Process non-null element of the array of type int32_t.
+                   }
+                }
+            }
+            return true;
+        });
+```
+注意：应用于复杂类型向量的 DecodedVector 仅处理顶层向量的包装，例如数组/映射/行。基向量的子向量（例如数组的元素向量、映射的键和值向量、行的字段）保持不变。可能需要单独解码这些子向量。
+
+在上面的示例中，我们使用 `SimpleVector<int32_t>` 的虚方法 isNullAt(index) 和 valueAt(index) 访问数组元素。为了避免
+在代码中性能敏感的部分调用虚函数，我们可以像这样对元素向量使用 DecodedVector。
+
+```cpp
+
+        // Decode top-level array vector.
+        DecodedVector decoded(vector, rows);
+        auto base = decoded.base()->as<ArrayVector>();
+        auto indices = decoded.indices();
+
+        // Decode nested elements vector.
+        SelectivityVector nestedRows(base->elements()->size());
+        DecodedVector decodedElements(base->elements(), nestedRows);
+
+        rows.applyToSelected([&] (auto row) {
+            if (decoded.isNullAt(row)) {
+                // Process null array.
+            } else {
+                auto size = base->sizeAt(indices[row]);
+                auto offset = base->offsetAt(indices[row]);
+                // Process array elements stored in [offset, offset + size) slots of the elements vector.
+
+                for (auto i = 0; i < size; ++i) {
+                   if (decodedElements.isNullAt(offset + i)) {
+                      // Process null element of the array.
+                   } else {
+                      auto value = decodedElements.valueAt<int32_t>(offset + i);
+                      // Process non-null element of the array of type int32_t.
+                   }
+                }
+            }
+            return true;
+        });
+```
+使用 Map 时，我们需要解码嵌套向量的键和值。对于 MAP(INTEGER, DOUBLE) 类型的向量，这可能如下所示。
+
+```cpp
+
+        // Decode top-level map vector.
+        DecodedVector decoded(vector, rows);
+        auto base = decoded.base()->as<MapVector>();
+        auto indices = decoded.indices();
+
+        // Decode nested keys and values vectors.
+        SelectivityVector nestedRows(base->mapKeys()->size());
+        DecodedVector decodedKeys(*base->mapKeys(), nestedRows);
+        DecodedVector decodedValues(*base->mapValues(), nestedRows);
+
+        rows.applyToSelected([&] (auto row) {
+            if (decoded.isNullAt(row)) {
+                // Process null map.
+            } else {
+                auto size = base->sizeAt(indices[row]);
+                auto offset = base->offsetAt(indices[row]);
+                // Process map elements stored in [offset, offset + size) slots of the keys and values vectors.
+
+                for (auto i = 0; i < size; ++i) {
+                   std::optional<int32_t> key;
+                   std::optional<double> value;
+                   if (!decodedKeys.isNullAt(offset + i)) {
+                      key = decodedKeys.valueAt<int32_t>(offset + i);
+                   }
+                   if (!decodedValues.isNullAt(offset + i)) {
+                      value = decodedValues.valueAt<double>(offset + i);
+                   }
+                   // Process (key, value) pair.
+                }
+            }
+            return true;
+        });
+```
+DecodedVector 透明地处理各种包装，例如常量、字典和序列，但这些的详细描述超出了本文的范围。
+
+## Optimizations
+
+
+### Memory Reuse
+
+
+DecodedVector 会分配内存。重用 DecodedVector 实例可以减少内存分配。
+
+实现 VectorFunction 时，请使用 LocalDecodedVector。LocalDecodedVector 会从存储在 EvalCtx 中的
+可重用实例池中获取 DecodedVector 实例。当 LocalDecodedVector 超出作用域时，该实例会自动返回到池中。
+
+```cpp
+
+        LocalDecodedVector holder(context, vector, rows);
+        auto decoded = holder.get();
+```
+
+实现聚合函数时，为每个输入向量使用一个 DecodedVector 成员变量。原始输入向量会有几个变量，中间输入向量也会有几个变量。
+
+```cpp
+
+        class ApproxDistinctAggregate : public exec::Aggregate {
+
+              // partial aggregation
+              void decodeArguments(
+                  const SelectivityVector& rows,
+                  const std::vector<VectorPtr>& args) {
+                decodedValue_.decode(*args[0], rows, true);
+                if (args.size() > 1) {
+                  decodedMaxStandardError_.decode(*args[1], rows, true);
+                  checkSetMaxStandardError();
+                }
+              }
+
+              // final aggregation
+              decodedHll_.decode(*args[0], rows, true);
+
+          DecodedVector decodedValue_;
+          DecodedVector decodedMaxStandardError_;
+          DecodedVector decodedHll_;
+        }
+```
+### Flat and Constant Encodings
+
+
+通常，为不包含空值的常量或平面向量提供单独的代码路径会很有用。使用 DecodedVector::isConstantMapping() 和
+DecodedVector::isFlatMapping() 来判断向量是常量向量还是平面向量，使用 DecodedVector::mayHaveNulls() 来判断向量在目标行中是否包含空值。
+
+例如，以下是对整数值和的优化计算。
+
+```cpp
+
+        int32_t sum = 0;
+
+        if (!decoded.mayHaveNulls() && decoded.isFlatMapping()) {
+            auto rawValues = decoded.values<int32_t>();
+
+            // Compiler can autoSIMDize this loop
+            rows.applyToSelected([&] (auto row) {
+                sum += rawValues[row];
+                return true;
+            });
+            return sum;
+        }
+
+        if (decoded.isConstantMapping()) {
+          if (!decoded.isNullAt(0)) {
+            sum += rows.countSelected() * decoded.valueAt(0);
+          }
+          return sum;
+        }
+
+        rows.applyToSelected([&] (auto row) {
+            if (!decoded.isNullAt(row)) {
+                sum += decoded.valueAt<int32_t>(row);
+            }
+            return true;
+        });
+        return sum;
+```
