@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[91890],{38420:s=>{s.exports=JSON.parse('{"blogBasePath":"/tests/blog","blogTitle":"Blog","authorsListPath":"/tests/blog/authors"}')}}]);

@@ -1,1 +1,0 @@
-(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[62138,10195],{10195:()=>{}}]);
