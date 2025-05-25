@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[21686],{87405:(e,s,i)=>{i.r(s),i.d(s,{default:()=>t});i(96540);var u=i(91156),n=i(74848);function t(){return(0,n.jsx)(u.A,{children:(0,n.jsx)("p",{id:"z-index-test",children:"This should have a z-index of 100"})})}}}]);

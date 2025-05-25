@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[86822],{89906:e=>{e.exports=JSON.parse('{"name":"changelog-plugin","id":"default"}')}}]);

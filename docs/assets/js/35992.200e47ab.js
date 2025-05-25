@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[35992],{35992:(e,t,n)=>{n.r(t),n.d(t,{default:()=>r});n(96540);var i=n(74848);function r(){return(0,i.jsx)("div",{style:{border:"solid",margin:10,padding:10},children:(0,i.jsx)("button",{type:"button",onClick:()=>alert("click"),children:"HeavyComponent"})})}}}]);

@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[14954],{27052:e=>{e.exports=JSON.parse('{"name":"docusaurus-theme-search-kumosearch","id":"default"}')}}]);
