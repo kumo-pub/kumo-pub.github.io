@@ -1,6 +1,6 @@
-# pollux
+# 概述
 
-# 什么是pollux
+##  什么是pollux
 
 
 
@@ -14,3 +14,23 @@ Pollux 是由 Kumo 研发的高性能向量化执行引擎，旨在为数据密�
 * ‌扩展性‌：支持自定义函数和数据类型。
 * Pollux 尤其适合实时分析、大规模 ETL, 搜索实时计算等场景，是 Kumo 内部及开源生态中提升数据处理效能的关键组件。
 
+## pollux依赖
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs>
+
+<TabItem value="shell" label="shell">
+
+```shell
+kmpkg depend-info pollux --format=dot --max-recurse=0 >pollux.dot
+dot -Tpng pollux.dot -opollux.png
+```
+</TabItem>
+
+</Tabs>
+
+import pollux from '@site/static/img/pollux/images/pollux.png';
+
+<img src={pollux}/>
