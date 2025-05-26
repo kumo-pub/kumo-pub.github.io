@@ -28,7 +28,7 @@ export default {
         blog: {
           routeBasePath: '/',
           path: 'blog',
-          editUrl: 'https://github.com/facebook/docusaurus/edit/main/website/',
+          editUrl: 'https://kumo-pub.github.com.io/',
           postsPerPage: 3,
           feedOptions: {
             type: 'all',
@@ -42,7 +42,7 @@ export default {
     ],
   ],
   themeConfig: {
-    image: 'img/docusaurus-social-card.jpg',
+    image: 'img/favicon.jpg',
     algolia: {
       appId: 'X1Z85QJPUV',
       apiKey: 'bf7211c161e8205da2f933a02534105a',
@@ -55,7 +55,7 @@ export default {
       logo: {
         alt: 'Docusaurus Logo',
         src: 'img/favicon.png',
-        srcDark: 'img/docusaurus_keytar.svg',
+        srcDark: 'img/kumo_logo_white.svg',
       },
     },
   },
