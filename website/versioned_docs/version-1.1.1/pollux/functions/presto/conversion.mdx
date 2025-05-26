@@ -869,8 +869,9 @@ IPv4 的前缀长度为 32，IPv6 的前缀长度为 128。
 ```cpp
     parse_presto_data_size(string) -> decimal(38)
 
-    Parses ``string`` of format ``value unit`` into a number, where ``value`` is the fractional number of unit values::
-
+   将格式为“value unit”的“string”解析为数字，其中“value”是单位值的分数：
+```
+```sql
       SELECT parse_presto_data_size('1B'); -- 1
       SELECT parse_presto_data_size('1kB'); -- 1024
       SELECT parse_presto_data_size('1MB'); -- 1048576
@@ -882,8 +883,9 @@ IPv4 的前缀长度为 32，IPv6 的前缀长度为 128。
 ```cpp
     typeof(x) -> varchar
 
-    Returns the name of the type of x::
-
+   返回 x 类型的名称
+```
+```sql
         SELECT typeof(123); -- integer
         SELECT typeof(1.5); -- double
         SELECT typeof(array[1,2,3]); -- array(integer)

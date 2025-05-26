@@ -359,7 +359,7 @@ export default async function createConfigAsync() {
             {
               tagName: 'link',
               rel: 'icon',
-              href: 'img/docusaurus.png',
+              href: 'img/favicon.png',
             },
             {
               tagName: 'link',
@@ -384,18 +384,18 @@ export default async function createConfigAsync() {
             {
               tagName: 'link',
               rel: 'apple-touch-icon',
-              href: 'img/docusaurus.png',
+              href: 'img/favicon.png',
             },
             {
               tagName: 'link',
               rel: 'mask-icon',
-              href: 'img/docusaurus.png',
+              href: 'img/favicon.png',
               color: 'rgb(62, 204, 94)',
             },
             {
               tagName: 'meta',
               name: 'msapplication-TileImage',
-              content: 'img/docusaurus.png',
+              content: 'img/favicon.png',
             },
             {
               tagName: 'meta',
@@ -561,7 +561,7 @@ export default async function createConfigAsync() {
         theme: PrismLight,
         darkTheme: PrismDark,
       },
-      image: 'img/docusaurus-social-card.jpg',
+      image: 'img/kumo_logo.svg',
       // metadata: [{name: 'twitter:card', content: 'summary'}],
       /*
       algolia: {

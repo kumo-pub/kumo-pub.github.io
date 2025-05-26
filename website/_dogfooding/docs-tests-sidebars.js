@@ -165,7 +165,7 @@ const sidebars = {
           defaultStyle: true,
           value: `
     <span style="font-size: 0.5rem; color: lightgrey;">Powered by</span>
-    <img style="width: 100px; height: 100px; display: block;" src="/img/docusaurus.png" alt="Docusaurus Logo" />
+    <img style="width: 100px; height: 100px; display: block;" src="/img/favicon.png" alt="Docusaurus Logo" />
   `,
         },
       ],

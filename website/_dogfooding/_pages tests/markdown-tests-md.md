@@ -202,13 +202,13 @@ Custom heading syntax `{#custom-heading-id}` still works
 
 #### Closed image tag:
 
-<img src="/img/docusaurus.png"/>
+<img src="/img/favicon.png"/>
 
 <br/>
 
 #### Unclosed image tag:
 
-<img src="/img/docusaurus.png">
+<img src="/img/favicon.png">
 
 <br/>
 

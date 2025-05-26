@@ -131,7 +131,7 @@
         },
         {
             "id": "https://kumo-pub.github.io/tests/blog/2021/10/08/blog-post-mdx-require-feed-tests",
-            "content_html": "<p>Some MDX tests, mostly to test how the RSS feed render those</p>\n<!-- -->\n<p>Test MDX with require calls</p>\n<!-- -->\n<img src=\"https://kumo-pub.github.io/img/docusaurus.png\">\n<img>\n<img>",
+            "content_html": "<p>Some MDX tests, mostly to test how the RSS feed render those</p>\n<!-- -->\n<p>Test MDX with require calls</p>\n<!-- -->\n<img src=\"https://kumo-pub.github.io/img/favicon.png\">\n<img>\n<img>",
             "url": "https://kumo-pub.github.io/tests/blog/2021/10/08/blog-post-mdx-require-feed-tests",
             "title": "Blog post MDX require Feed tests",
             "summary": "Some MDX tests, mostly to test how the RSS feed render those",
