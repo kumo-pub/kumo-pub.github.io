@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[18146],{29328:e=>{e.exports=JSON.parse('{"metadata":{"permalink":"/blog","page":1,"postsPerPage":5,"totalPages":1,"totalCount":3,"blogDescription":"Read blog posts about Docusaurus from the team","blogTitle":"Docusaurus blog"}}')}}]);

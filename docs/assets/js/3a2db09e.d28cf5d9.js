@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkkumo_website=self.webpackChunkkumo_website||[]).push([[18121],{68070:s=>{s.exports=JSON.parse('{"tags":[{"label":"Tips","permalink":"/blog/tags/tips","description":"Blog posts about Docusaurus\' new tips","count":1},{"label":"Release","permalink":"/blog/tags/release","description":"Blog posts about Docusaurus\' new releases","count":2}]}')}}]);
