@@ -1,0 +1,360 @@
+---
+author: kumo
+---
+
+# 从docker开始工作
+
+基于 Kumo AI 基础设施，通过 Docker 启动开发工作
+
+## intro {#intro}
+
+*kumo* provide a develop base docker already power by the kumo gateway tool -- `kmdo`.
+
+the details as below:
+
+| name          | version |
+|--------------|--------|
+| *system* | ubuntu:20.04|
+| *g++*| 9.4 |
+| *gcc*| 9.4 |
+| *cmake* | 3.31 |
+| *kmdo* | 0.6.28 |
+
+also we may still release other docker images, get all the docker images list by [github packages](https://github.com/orgs/kumose/packages).
+
+## kumo do  {#kumo-do}
+
+### get image
+
+kmdo docker image see [releases](https://github.com/kumose/kmdo/pkgs/container/kmdo).
+
+for example, we using the `0.6.28` version image:
+
+```bash title="bash"
+docker pull ghcr.io/kumose/kmdo:0.6.28
+```
+
+### run docker
+
+start up docker by:
+
+```bash title="bash"
+docker run -it ghcr.io/kumose/kmdo:0.6.28
+```
+
+### try kmdo
+
+```bash title="bash"
+$ kmdo
+kmdo is a powerful command-line tool for component management and project packaging/release.
+It helps you download, install, and run platform components locally, while providing one-click
+packaging and release capabilities for your own projects via the 'pkg' subcommand.
+
+Key features:
+- Component Management: Install/update/run platform components (supports version specification).
+- Project Packaging: Build, test, and release your projects with 'kmdo pub'.
+- Mirror Management: Manage component mirrors for fast, offline access.
+- Environment Control: Configure and integrate kmdo system environment variables.
+
+Usage:
+  kmdo [flags] <command> [args...]
+	kmdo [flags] <component> [args...]
+  kmdo [command]
+
+Examples:
+
+	# Component Management
+	$ kmdo install <component>[:version]  # Install a specific component/version
+
+	# Project Packaging & Release
+	$ kmdo pub init                       # Generate .kmdo-pkg.yaml configuration
+	$ kmdo pub build                      # Build current project
+	$ kmdo pub release                    # Release current project officially
+	$ kmdo pub release --snapshot         # Build snapshot version for testing
+
+	# Mirror & Environment
+	$ kmdo mirror list                    # List components in mirror index
+	$ kmdo env show                       # Show kmdo system environment variables
+
+Available Commands:
+  env         Manage kmdo system environment variables
+  install     install binaries and deployment files in mirror
+  tree        Print the complete command tree (beautified with pterm)
+  history     Display or clean the historical execution record of kmdo
+  mirror      Manage repository mirrors for binary components
+  pub         kmdo packaging & release tool
+  kmpkg       C++ dependency management tool to assist C++ development
+  init        init binary and deploy file to tarfile
+  docker       create a demo bare cluster by docker
+  cluster     Manage kmdo system environment variables
+  help        Help about any command
+  completion  Generate the autocompletion script for the specified shell
+
+Flags:
+  -h, --help            help for kmdo
+  -l, --logile string   Specify the binary path of component instance Specify the binary path of component instance
+      --verbose         Enable verbose mode
+  -v, --version         bomp version
+
+Use "kmdo [command] --help" for more information about a command.
+  • thanks for using kmdo!
+```
+
+### list available Component
+
+show the kmdo mirror available components:
+
+```bash title="bash"
+$kmdo mirror list
+  • Loading Index           LoadingIndex(seq/total)=1/2
+  • Index List              IndexList(seq/total)=2/2
+=====================================================================================
+KUMO Mirror Index Component List
+=====================================================================================
+
+NAME                 OWNER           HIDE       DEPRECATE  DESCRIPTION
+-------------------------------------------------------------------------------------
+kmup                 kumo            No         No         kmup is a git repository for kumo.
+kmpkg                kumo            No         No         c++ package manager for kumo develop.
+kmcmake              kumo            No         No         cmake template for c++ developments.
+kmdo                 kumo            No         No         kmdo for kumo tools.
+etcd                 kumo            No         No         etcd.
+kmpkgtool            kumo            No         No         c++ package manager kmpkg cmd tool kumo develop.
+cmake                Kitware         No         No         CMake, the cross-platform, open-source build system.
+prometheus           prometheus      No         No         The Prometheus monitoring system and time series database.
+grafana              grafana         No         No         The open and composable observability and data visualization platform. Visualize metrics, logs, and traces from multiple sources like Prometheus, Loki, Elasticsearch, InfluxDB, Postgres and many more.
+
+Total components: 9
+  • thanks for using kmdo!
+```
+
+show detail information of the component of `kmcmake`:
+
+```bash title="bash"
+$ kmdo mirror list -n kmcmake
+  • Loading Index           LoadingIndex(seq/total)=1/2
+  • Loading Component Version LoadingComponentVersion(seq/total)=2/2
+=== Component Basic Information ===
+Name                : kmcmake
+Owner               : kumo
+Description         : cmake template for c++ developments.
+Owner Email         : kumo-pub@outlook.com
+Source Repository   : https://github.com/kumose/kmcmake.git
+Homepage            : https://github.com/kumose/kmcmake
+Documentation       : https://pub.kumose.cc/kmcmake/
+Hidden              : No
+Deprecated          : No
+
+=== Component Versions (1 total) ===
+Version         Channel      Timestamp                 Git Tree        Binary Path
+------------------------------------------------------------------------------------------------
+0.1.15          nightly      2025-12-06T04:26:29+08:00 0f2198e8a5d4...
+• thanks for using kmdo!
+```
+
+## setup develop environment
+
+### 1 initialize system
+
+install kmdo tools:
+
+```bash title="bash"
+$kmdo install  kmcmake
+$kmdo install  kmpkgtool
+```
+
+install extra system tools:
+
+```bash title="bash"
+sudo apt update -y
+sudo apt install zip unzip gfortran flex bison net-tools
+```
+
+### 2 install `kmpkg core repo`:
+
+```bash title="bash"
+git clone https://github.com/kumose/kmpkgcore.git
+```
+then initialize the `kmpkgcore` as system default `kmpkg` repo:
+
+```bash title="bash"
+$cd  kmpkgcore
+./bootstrap-kmpkg.sh
+```
+edit `~/.bashrc`, add the below to the tail of the file:
+
+```bash title="bash"
+export KMPKG_HOME=/home/kumose/kmpkgcore
+export PATH=$PATH:$KMPKG_HOME
+export KMPKG_CMAKE=$KMPKG_HOME/scripts/buildsystems/kmpkg.cmake
+```
+
+the source the env make it effect:
+
+```bash title="bash"
+$source ~/.bashrc
+```
+
+try:
+
+```bash title="bash"
+$ kmpkg
+usage: kmpkg <command> [--switches] [--options=values] [arguments] @response_file
+  @response_file         Contains one argument per line expanded at that location
+
+Package Installation:
+  export                 Creates a standalone deployment of installed ports
+  install                Installs a package
+  remove                 Uninstalls a package
+  x-set-installed        Installs, upgrades, or removes packages such that that installed matches
+                         exactly those supplied
+  upgrade                Rebuilds all outdated packages
+
+Package Discovery:
+  x-check-support        Tests whether a port is supported without building it
+  depend-info            Displays a list of dependencies for ports
+  list                   Lists installed libraries
+  owns                   Searches for the owner of a file in installed packages
+  x-package-info         Display detailed information on packages
+  portsdiff              Diffs changes in port versions between commits
+  search                 Searches for packages available to be built
+  update                 Lists packages that can be upgraded
+
+Package Manipulation:
+  add                    Adds dependency to manifest
+  x-add-version          Adds a version to the version database
+  create                 Creates a new port
+  edit                   Edits a port, optionally with $EDITOR, defaults to "code"
+  env                    Creates a clean shell environment for development or compiling
+  format-manifest        Prettyfies kmpkg.json
+  hash                   Gets a file's SHA256 or SHA512
+  x-init-registry        Creates a blank git registry
+  new                    Creates a new manifest
+  x-update-baseline      Updates baselines of git registries in a manifest to those registries' HEAD
+                         commit
+
+Other:
+  ci                     Tries building all ports for CI testing
+  x-ci-verify-versions   Checks integrity of the version database
+  contact                Displays contact information to send feedback
+  fetch                  Fetches something from the system or the internet
+  integrate              Integrates kmpkg with machines, projects, or shells
+
+For More Help:
+  help topics            Displays full list of help topics
+  help <topic>           Displays specific help topic
+  help commands          Displays full list of commands, including rare ones not listed here
+  help <command>         Displays help detail for <command>
+
+For more help (including examples) see https://pub.kumose.cc/kmpkg
+```
+
+## try `ksearch`
+
+download repo:
+
+```bash title="bash"
+$cd ~
+$git clone https://github.com/kumose/ksearch.git
+```
+
+compile:
+
+```bash title="bash"
+$cd ksearch
+cmake --preset=default
+cmake --build build -j 6
+cp conf build -r
+mkdir build/log
+```
+
+get local ipaddr:
+
+```bash title="bash"
+$ ifconfig
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 172.17.0.2  netmask 255.255.0.0  broadcast 172.17.255.255
+        ether ea:0b:79:af:25:c4  txqueuelen 0  (Ethernet)
+        RX packets 291007  bytes 419838636 (419.8 MB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 151136  bytes 10632619 (10.6 MB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1000  (Local Loopback)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+```
+
+the `172.17.0.2` will be the addr.
+
+edit build/conf/kns.conf:
+
+```text title="kns.conf"
+-defer_close_second=300
+-db_path=./rocks_db
+-snapshot_interval_s=600
+-election_timeout_ms=10000
+-raft_max_election_delay_ms=5000
+-log_uri=myraftlog://my_raft_log?id=
+-stable_uri=local://./raft_data/stable
+-snapshot_uri=local://./data/raft_data/snapshot
+-meta_replica_number=1
+-meta_server_bns=172.17.0.2:8010
+-store_request_timeout=480000
+-store_connect_timeout=5000
+-bthread_concurrency=100
+-bvar_dump
+-bvar_dump_file=./monitor/bvar.kns.data
+-meta_port=8010
+```
+
+start `kns` service:
+
+```bash
+cd build
+./ksearch/kns &
+```
+
+then try:
+
+```bash
+$ ls ksearch/tools/script/*kns*
+ksearch/tools/script/create_kns.sh
+ksearch/tools/script/create_kns_peer.sh
+ksearch/tools/script/drop_kns.sh
+ksearch/tools/script/drop_kns_peer.sh
+ksearch/tools/script/resume_kns.sh
+ksearch/tools/script/resume_kns_peer.sh
+ksearch/tools/script/stop_kns.sh
+ksearch/tools/script/stop_kns_peer.sh
+ksearch/tools/script/update_kns_peer.sh
+```
+
+try this tools to known the work of it functions.
+
+example usage:
+
+```bash
+$../ksearch/tools/script/create_kns.sh 172.17.0.2:8010
+```
+
+## extra document links
+
+* kmcmake [docs](https://pub.kumose.cc/kmcmake)
+* kmdo [docs](https://pub.kumose.cc/kmdo)
+* kmpkg [docs](https://pub.kumose.cc/kmpkg)
+* c++ development guide [docs](https://pub.kumose.cc/cppdev)
+
+
+
+
+
+
+
+
+
